@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# キャッシュ（スクレイピング結果）
+.cache/
+*.sqlite
+*.sqlite-journal
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test
+coverage/
+
+# Vite/Vitest が config 読み込み時に作る一時ファイル
+*.timestamp-*.mjs
+vitest.config.ts.timestamp-*
+
+# Environment
+.env
+.env.local
