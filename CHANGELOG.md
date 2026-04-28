@@ -9,11 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Planned (Phase 1)
 
-- **Phase 1a**: houki-abbreviations v0.2.0 で通達系エントリ追加（消基通・所基通・法基通 等）
-- **Phase 1b**: 通達取得（消基通・所基通・法基通）の本実装（cheerio + iconv-lite で Shift_JIS 対応）
-- **Phase 1c**: 質疑応答事例取得の本実装
-- **Phase 1d**: タックスアンサー取得の本実装
+- **Phase 1a**: 通達取得（消基通・所基通・法基通）の本実装（cheerio + iconv-lite で Shift_JIS 対応）
+- **Phase 1b**: 質疑応答事例取得の本実装
+- **Phase 1c**: タックスアンサー取得の本実装
 - 法的位置付けメタ情報の付与（`legal_status` フィールド）
+
+## [0.0.2] - 2026-04-27
+
+### Changed
+
+- **`@shuji-bonji/houki-abbreviations` を `^0.2.0` に更新** — 通達系エントリ 9 件（消基通・所基通・法基通・相基通・通基通・徴基通・措通・印基通・電帳法取通）が利用可能に
+- **`resolve_abbreviation` ハンドラのテスト追加**:
+  - 消基通 → `in_scope: true`（houki-nta 管轄）の確認
+  - 電帳法取通 → `in_scope: true` + `category: 'kobetsu-tsutatsu'` の確認
+  - 正式名称（消費税法基本通達）からの逆引き
+
+### Notes
+
+houki-abbreviations v0.2.0 の通達系エントリ追加に伴い、houki-nta-mcp の `resolve_abbreviation` が **国税庁管轄**として扱うエントリが 9 件取得可能になった。Phase 1 本実装（実 URL からの取得）はまだだが、辞書経由での「これは国税庁管轄か」判定は完全動作。
 
 ## [0.0.1] - 2026-04-27
 
@@ -48,5 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 2. 国税庁サイトの実地調査（URL 構造・Shift_JIS 確認・cheerio パース動作確認）
 3. `kentaroajisaka/tax-law-mcp` のソースコード詳読
 
-[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.0.2
 [0.0.1]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.0.1

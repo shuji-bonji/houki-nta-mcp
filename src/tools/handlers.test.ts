@@ -55,6 +55,40 @@ describe('handleResolveAbbreviation — houki-abbreviations 連携', () => {
     expect(r.hint).toContain('houki-egov');
   });
 
+  it('houki-nta 管轄エントリ（消基通）には in_scope=true を返す', async () => {
+    // houki-abbreviations v0.2.0 で追加された通達系エントリ
+    const r = (await handleResolveAbbreviation({ abbr: '消基通' })) as {
+      resolved: { formal: string; category: string; source_mcp_hint: string } | null;
+      in_scope: boolean;
+      hint?: string;
+    };
+    expect(r.resolved).not.toBeNull();
+    expect(r.resolved?.formal).toBe('消費税法基本通達');
+    expect(r.resolved?.category).toBe('kihon-tsutatsu');
+    expect(r.resolved?.source_mcp_hint).toBe('houki-nta');
+    expect(r.in_scope).toBe(true);
+    expect(r.hint).toBeUndefined();
+  });
+
+  it('houki-nta 管轄エントリ（電帳法取通）も in_scope=true', async () => {
+    const r = (await handleResolveAbbreviation({ abbr: '電帳法取通' })) as {
+      resolved: { category: string; source_mcp_hint: string } | null;
+      in_scope: boolean;
+    };
+    expect(r.resolved?.category).toBe('kobetsu-tsutatsu');
+    expect(r.resolved?.source_mcp_hint).toBe('houki-nta');
+    expect(r.in_scope).toBe(true);
+  });
+
+  it('正式名称（消費税法基本通達）でも引ける', async () => {
+    const r = (await handleResolveAbbreviation({ abbr: '消費税法基本通達' })) as {
+      resolved: { abbr: string } | null;
+      in_scope: boolean;
+    };
+    expect(r.resolved?.abbr).toBe('消基通');
+    expect(r.in_scope).toBe(true);
+  });
+
   it('辞書に無いエントリは resolved: null を返す', async () => {
     const r = (await handleResolveAbbreviation({ abbr: '存在しない通達' })) as {
       resolved: unknown;
@@ -63,9 +97,6 @@ describe('handleResolveAbbreviation — houki-abbreviations 連携', () => {
     expect(r.resolved).toBeNull();
     expect(r.note).toContain('辞書に該当なし');
   });
-
-  // Phase 1 以降: houki-abbreviations に houki-nta 管轄エントリ（消基通等）が
-  // 追加されたら、in_scope=true のテストケースを足す。
 });
 
 describe('toolHandlers map', () => {
