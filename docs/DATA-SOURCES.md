@@ -200,8 +200,48 @@ Phase 2 で「初回起動時に通達一式をダウンロードしてローカ
 
 ## TODO（Phase 1 着手前）
 
-- [ ] 国税庁サイトの実地調査（URL 構造、Shift_JIS の有無、HTML 構造）
+- [x] 国税庁サイトの実地調査（URL 構造、Shift_JIS の有無、HTML 構造）
+- [x] サンプル通達（消基通 1-1-1 / 1-4-1〜1-4-17 / 5-1-1〜5-1-11）を実際に fetch して構造把握
+- [x] cheerio + iconv-lite の動作確認
 - [ ] `kentaroajisaka/tax-law-mcp` のソースコード詳読（パース手法）
 - [ ] robots.txt 確認
-- [ ] サンプル通達（消基通 5-1-9 等）を実際に fetch して構造把握
-- [ ] cheerio + iconv-lite の動作確認
+
+## 構造変更リスクへの対策（Phase 1c で導入済み）
+
+国税庁サイトのリニューアルで parser が壊れるリスクは構造的に避けられない。Phase 1c では以下の多層防衛を採用:
+
+```mermaid
+flowchart LR
+    A[実 nta.go.jp] -->|週1| B[CI canary<br/>= INTEGRATION=1<br/>を週次実行]
+    B -->|失敗時| C[GitHub Actions の<br/>失敗通知で検知]
+    A -->|node-fetch| D[Phase 1 ライブ取得]
+    D -.fallback.-> E[Phase 2 ローカル SQLite<br/>初回 DL 後はオフライン]
+
+    style B fill:#fef3c7,color:#000
+    style E fill:#dcfce7,color:#000
+```
+
+具体的な仕組み:
+
+1. **fixture ベースのユニットテスト** — `tests/fixtures/` に固定 HTML を保存し、parser 単体は構造変更の影響を受けない
+2. **CI canary**（`.github/workflows/canary.yml`） — 毎週月曜に `INTEGRATION=1 npm test` を回し、実 URL でパース成功するか確認
+3. **複数フォールバックセレクタ** — `div.imp-cnt-tsutatsu#bodyArea` が無ければ `#bodyArea` 単独で再試行（scraper / parser 両方）
+4. **Phase 2 の bulk DL 移行** — 初回 DL に成功すれば構造変更は致命傷にならない
+
+詳細は [DESIGN.md の Phase 2 設計](DESIGN.md#phase-2-設計-bulk-dl--ローカル-sqlite-fts5) を参照。
+
+## 公的代替ソースの調査結果（none）
+
+houki-nta-mcp が必要な「通達本文」を構造化された形で配布する公的ソースは存在しない。
+
+| 候補 | 結果 | 備考 |
+|---|---|---|
+| e-Gov 法令API | ❌ | 通達は法令ではないので対象外 |
+| 国税庁 公式 API | ❌ | 法人番号・インボイスのみ。通達系は無し |
+| e-Gov 行政文書ファイル管理簿 | ❌ | 文書名・保存期間の索引のみで本文は無し |
+| 国税庁 「官報公示内容」ページ | ❌ | 国税庁告示（手数料等）のみで税法解釈通達は無し |
+| 政府オープンデータ catalog (data.go.jp) | ❌ | 通達の登録なし |
+| 商用 DB (Westlaw / TKC LEX/DB / 第一法規) | △ | 網羅的だが有料・MCP 化不可 |
+| `kentaroajisaka/tax-law-mcp` | △ | MIT で 17 通達分を JSON 化済み。参考実装として価値ありだがスコープが小さい |
+
+結論: **国税庁サイトの直接スクレイピングが事実上の唯一の選択肢**。これを前提に Phase 2 の bulk DL + ローカル DB で運用負荷を緩和する。

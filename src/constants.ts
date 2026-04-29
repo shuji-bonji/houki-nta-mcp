@@ -25,6 +25,30 @@ export const NTA_BASE_URLS = {
   bunshoKaitou: 'https://www.nta.go.jp/about/organization/ntc/bunsyokaito/index.htm',
 } as const;
 
+/**
+ * 法令解釈通達の本文ルート URL（trailing slash 必須）。
+ *
+ * houki-abbreviations 側は URL を持たないため、ここで通達 formal 名 → ルート URL を保持する。
+ * 各通達の節ページは `${root}{章2桁}/{節2桁}.htm` で組み立てる（buildSectionUrl 参照）。
+ *
+ * Phase 1c では **消費税法基本通達のみ** 本実装。
+ * 他の基本通達（所基通・法基通 等）は URL を実地確認した上で Phase 1d で追加する。
+ */
+export const TSUTATSU_URL_ROOTS: Readonly<Record<string, string>> = {
+  消費税法基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/',
+} as const;
+
+/**
+ * 通達の法的位置付け。`legal_status` フィールドとしてレスポンスに付与する。
+ * 最高裁 昭和43.12.24（墓地埋葬法事件）の論理に基づく定義。
+ */
+export const TSUTATSU_LEGAL_STATUS = {
+  binds_citizens: false,
+  binds_courts: false,
+  binds_tax_office: true,
+  note: '通達は行政内部文書。納税者・裁判所には直接的拘束力なし。ただし税務署員は職務として守る義務あり（最高裁 昭和43.12.24）',
+} as const;
+
 /** このMCPが扱う category（houki-abbreviations の Category 型のサブセット） */
 export const NTA_CATEGORIES = [
   'kihon-tsutatsu',

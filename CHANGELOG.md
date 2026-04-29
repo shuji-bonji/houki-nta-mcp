@@ -7,12 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Planned (Phase 1)
+## [0.1.0] - 2026-04-29
 
-- **Phase 1a**: 通達取得（消基通・所基通・法基通）の本実装（cheerio + iconv-lite で Shift_JIS 対応）
-- **Phase 1b**: 質疑応答事例取得の本実装
-- **Phase 1c**: タックスアンサー取得の本実装
-- 法的位置付けメタ情報の付与（`legal_status` フィールド）
+**Phase 1b/1b'/1c リリース**。`nta_get_tsutatsu` が **消費税法基本通達**（消基通）に対して動作する最初のリリース。
+
+### Added (Phase 1b — 節ページ parser)
+
+- **`src/services/nta-scraper.ts`** — 国税庁サイト fetch 層
+  - `iconv-lite` で Shift_JIS / UTF-8 を auto-detect デコード
+  - User-Agent / Accept-Language を付与（DATA-SOURCES.md のマナー準拠）
+  - 4xx は即エラー、5xx・ネットワークエラーは指数バックオフで retry
+  - `fetchImpl` を差し替え可能でテスト容易
+- **`src/services/tsutatsu-parser.ts`** — 節ページ parser
+  - cheerio で章-項-号構造を抽出（消基通の HTML 構造に対応）
+  - `1-4-1`、`1-4-13の2`、`11-5-7` などの clause 番号形式を網羅
+  - `<br>` 含む複数行本文 / `(注)` のネスト構造を保持
+  - `TsutatsuClause` / `TsutatsuParagraph` / `TsutatsuSection` 型定義
+- **`src/services/tsutatsu-toc-parser.ts`** — TOC ページ parser
+  - 章 → 節 → 款の階層構造抽出（消基通 21 章すべて対応）
+  - href の絶対 URL 化
+  - `TsutatsuToc` / `TsutatsuTocChapter` / `TsutatsuTocSection` / `TsutatsuTocSubsection` 型定義
+- **`src/utils/clause.ts`** — 通達番号パース + URL 組み立て
+  - `parseClauseNumber("1-4-13の2")` → `{ chapter: 1, section: 4, article: "13の2" }`
+  - `buildSectionUrl(rootUrl, chapter, section)` → `${root}{章2桁}/{節2桁}.htm`
+- **`src/services/tsutatsu-render.ts`** — Markdown レンダラ
+  - `renderClauseMarkdown` / `renderSectionMarkdown`
+  - 出典 URL・取得時刻・`legal_status` の note を末尾に付与
+- **`tests/fixtures/`** — 固定 HTML 4 本（01.htm / 01/01.htm / 01/04.htm / 05/01.htm）
+- **`scripts/fetch-fixtures.mjs`** — fixture 取得補助スクリプト
+
+### Added (Phase 1c — `nta_get_tsutatsu` 本実装)
+
+- **`handleNtaGetTsutatsu` の本実装**（消基通のみ対応）
+  - `name` を houki-abbreviations で resolve → 管轄判定
+  - `clause` を `parseClauseNumber` で分解 → `buildSectionUrl` で URL 生成
+  - fetch + parse → 該当 clause を抽出
+  - `format: 'markdown' | 'json'` で出し分け
+  - `legal_status` フィールド付与（最高裁 昭和43.12.24 の論理）
+- **`getTsutatsu(args, options)`** — テスト容易な内部関数（`fetchImpl` 差し替え可）
+- **CI canary**（`.github/workflows/canary.yml`）— 毎週月曜 01:00 UTC に `INTEGRATION=1` で実 nta.go.jp を叩いて構造変更を早期検知
+- **`src/constants.ts`** に `TSUTATSU_URL_ROOTS` / `TSUTATSU_LEGAL_STATUS` 追加
+
+### Changed
+
+- **eslint config**: `no-irregular-whitespace` で全角スペースをコメント・正規表現内に許容
+  （日本の通達本文の正規化処理で全角スペースのリテラル使用が避けられないため）
+- **`extractClauseNumber` 正規表現**: `s` フラグ追加。`<br>` を含む複数行本文の clause を取りこぼさない
+
+### Documentation
+
+- **`docs/DESIGN.md`** に Phase 2 (bulk DL + SQLite FTS5) 設計を追記
+- **`docs/DATA-SOURCES.md`** に構造変更リスク対策（CI canary / fallback selector / Phase 2 移行）と公的代替ソース調査結果を追記
+
+### Planned (Phase 1d 以降)
+
+- Phase 1d: 他通達の URL マッピング追加（所基通・法基通・相基通 等）
+- Phase 1e: 質疑応答事例 / タックスアンサー取得
+- Phase 2: bulk DL モード（SQLite FTS5）+ 改正検知 + `nta_search_tsutatsu` 本実装
+- Phase 3: 文書回答事例（PDF）— pdf-reader-mcp 連携
 
 ## [0.0.2] - 2026-04-27
 
@@ -61,6 +113,7 @@ houki-abbreviations v0.2.0 の通達系エントリ追加に伴い、houki-nta-m
 2. 国税庁サイトの実地調査（URL 構造・Shift_JIS 確認・cheerio パース動作確認）
 3. `kentaroajisaka/tax-law-mcp` のソースコード詳読
 
-[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.0
 [0.0.2]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.0.2
 [0.0.1]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.0.1

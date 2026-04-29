@@ -1,0 +1,30 @@
+name: Canary (NTA site integration)
+
+# 国税庁サイト (nta.go.jp) の HTML 構造変更を早期検知するための定期ジョブ。
+#
+# - 通常 CI と切り離して別ワークフローにすることで、PR ごとに nta.go.jp を叩かない
+# - 週次（毎週月曜 10:00 JST = 01:00 UTC）に実行
+# - 失敗してもメインの CI は通る（必要に応じて issue 自動起票を後で追加）
+# - 手動実行も可能（workflow_dispatch）
+
+on:
+  schedule:
+    # 毎週月曜 01:00 UTC（JST 10:00）
+    - cron: '0 1 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - run: npm ci
+      - name: Run integration tests against nta.go.jp
+        env:
+          INTEGRATION: '1'
+        run: npm test

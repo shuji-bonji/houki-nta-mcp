@@ -24,6 +24,12 @@ export default tseslint.config(
           caughtErrorsIgnorePattern: '^_',
         },
       ],
+      // 日本の法令・通達を扱う性質上、コメントや正規表現に
+      // 全角スペース (U+3000) を含むことが避けられない。
+      'no-irregular-whitespace': [
+        'error',
+        { skipComments: true, skipRegExps: true, skipTemplates: true },
+      ],
     },
   },
   {
