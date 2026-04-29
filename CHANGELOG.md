@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-29
+
+### Fixed
+
+- **`bin` 実行ビット問題**: v0.1.0 の tarball では `dist/index.js` に実行ビットが立っておらず、`npx @shuji-bonji/houki-nta-mcp` が `command not found` で失敗する不具合を修正。`build` script を `tsc && chmod +x dist/index.js` に変更し、tsc 後に明示的に実行ビットを付与する。
+
 ## [0.1.0] - 2026-04-29
 
 **Phase 1b/1b'/1c リリース**。`nta_get_tsutatsu` が **消費税法基本通達**（消基通）に対して動作する最初のリリース。
@@ -113,7 +119,8 @@ houki-abbreviations v0.2.0 の通達系エントリ追加に伴い、houki-nta-m
 2. 国税庁サイトの実地調査（URL 構造・Shift_JIS 確認・cheerio パース動作確認）
 3. `kentaroajisaka/tax-law-mcp` のソースコード詳読
 
-[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.1
 [0.1.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.0
 [0.0.2]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.0.2
 [0.0.1]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.0.1
