@@ -82,7 +82,10 @@ export async function getTsutatsu(
   const rootUrl = TSUTATSU_URL_ROOTS[resolved.formal];
   if (!rootUrl) {
     return {
-      error: `"${resolved.formal}" は houki-nta-mcp v0.0.x ではまだ未対応です`,
+      error: `"${resolved.formal}" は houki-nta-mcp v0.1.x では未対応です`,
+      hint:
+        '他通達（所基通・法基通・相基通 等）は URL 規則と clause 番号体系（章-節-条 vs 条-項）' +
+        'が消基通と異なるため、TOC 事前 DL を要する Phase 2 (bulk DL + SQLite) で一括対応予定。',
       supported: Object.keys(TSUTATSU_URL_ROOTS),
       resolved,
       tool: 'nta_get_tsutatsu',

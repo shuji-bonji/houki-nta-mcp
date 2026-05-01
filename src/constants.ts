@@ -31,8 +31,21 @@ export const NTA_BASE_URLS = {
  * houki-abbreviations 側は URL を持たないため、ここで通達 formal 名 → ルート URL を保持する。
  * 各通達の節ページは `${root}{章2桁}/{節2桁}.htm` で組み立てる（buildSectionUrl 参照）。
  *
- * Phase 1c では **消費税法基本通達のみ** 本実装。
- * 他の基本通達（所基通・法基通 等）は URL を実地確認した上で Phase 1d で追加する。
+ * ## スコープ制限（v0.1.x）
+ *
+ * v0.1.x では **消費税法基本通達のみ** 対応。他通達（所基通・法基通・相基通 等）は
+ * Phase 1d の実地調査で **URL 規則と clause 番号体系が消基通と異なる** ことが判明し、
+ * 単純な URL マッピング追加では対応できないため、Phase 2 (bulk DL + SQLite) で
+ * 「TOC 事前 DL → clause→URL lookup table」を構築する形で一括対応する設計とした。
+ *
+ * 通達ごとの差異の概要:
+ *   - 消基通: 3 階層 clause "1-4-13の2"（章-節-条）→ URL: `{root}{章}/{節}.htm` 直接組立可
+ *   - 所基通: 2 階層 clause "2-4の2"（条-項）→ URL は `{root}{章}/{節}.htm` だが
+ *             clause だけでは章/節を一意に特定できない（TOC lookup 必須）
+ *   - 法基通: URL 規則が違う `{root}{章}/{章}_{節}.htm`
+ *   - 相基通: URL 規則が違う `{root}{章}/00.htm` 等
+ *
+ * 詳細は docs/DESIGN.md の Phase 2 設計と docs/DATA-SOURCES.md の調査結果を参照。
  */
 export const TSUTATSU_URL_ROOTS: Readonly<Record<string, string>> = {
   消費税法基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/',

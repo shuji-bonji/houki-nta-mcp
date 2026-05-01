@@ -230,6 +230,47 @@ flowchart LR
 
 詳細は [DESIGN.md の Phase 2 設計](DESIGN.md#phase-2-設計-bulk-dl--ローカル-sqlite-fts5) を参照。
 
+## Phase 1d 調査結果: 通達ごとの URL/clause 体系（2026-05-01）
+
+houki-abbreviations の通達系 9 件について、国税庁サイトの実 URL と HTML 構造を実地調査した結果、
+**消基通スタイル（章-節-条 の 3 階層 clause + URL 直接組立）が成立するのは消基通のみ**であることが判明した。
+
+### URL ルートの確認結果
+
+`/law/tsutatsu/menu.htm`（通達索引、UTF-8 配信）から各通達のトップ URL を抽出:
+
+| 通達 | URL ルート | TOP ファイル名 | 備考 |
+|---|---|---|---|
+| 消基通 | `/law/tsutatsu/kihon/shohi/` | `01.htm` | ✅ Phase 1c 対応済 |
+| 所基通 | `/law/tsutatsu/kihon/shotoku/` | `01.htm` | URL 規則は消基通と同じ |
+| 法基通 | `/law/tsutatsu/kihon/hojin/` | `01.htm` | URL 規則違い: `01_01.htm` |
+| 相基通 | `/law/tsutatsu/kihon/sisan/sozoku2/` | `01.htm` | URL 規則違い: `01/00.htm` 等 |
+| 通基通 | `/law/tsutatsu/kihon/tsusoku/` | `00.htm` | TOP ファイル名違い |
+| 徴基通 | `/law/tsutatsu/kihon/chosyu/` | `index.htm` | TOP ファイル名違い |
+| 印基通 | `/law/tsutatsu/kihon/inshi/` | `mokuji.htm` | TOP ファイル名違い |
+| 措通 | `/law/tsutatsu/kobetsu/{税目}/sochiho/` | 多数 | 税目ごとに別ツリー |
+| 電帳法取通 | `/law/tsutatsu/kobetsu/denshichoubo/` | `index.htm` | 個別通達 |
+
+### clause 番号体系の差異
+
+```mermaid
+graph TB
+    A[消基通スタイル<br/>3 階層 章-節-条] --> A1[例: 1-4-13の2<br/>= 第1章 第4節 第13条の2<br/>章=1, 節=4 で URL 一意]
+    B[他通達スタイル<br/>2 階層 条-項] --> B1[例: 所基通 2-4の2<br/>= 第2条 第4項の2?<br/>章/節を一意に決められない]
+
+    style A fill:#dcfce7,color:#000
+    style B fill:#fee2e2,color:#000
+```
+
+### 結論
+
+- **消基通のみ「clause → URL」が直接組立可能** — `parseClauseNumber` + `buildSectionUrl` で完結
+- **他通達はすべて TOC lookup 必須** — clause 番号だけでは URL を決められない
+- このため、他通達対応は **Phase 2 の `clause→URL lookup table`** と一体で実装する設計とした
+  （Phase 1d を縮小し、Phase 2 と統合）
+
+実装上の制限は `src/constants.ts#TSUTATSU_URL_ROOTS` のコメントと、`docs/DESIGN.md` の Phase 1d / Phase 2 セクションに集約した。
+
 ## 公的代替ソースの調査結果（none）
 
 houki-nta-mcp が必要な「通達本文」を構造化された形で配布する公的ソースは存在しない。

@@ -142,13 +142,16 @@ describe('getTsutatsu — 引数バリデーション', () => {
     expect(r.error).toContain('不正');
   });
 
-  it('houki-nta 管轄だが URL 未対応の通達（電帳法取通 等）は supported list を返す', async () => {
+  it('houki-nta 管轄だが URL 未対応の通達（電帳法取通 等）は supported list と hint を返す', async () => {
     const r = (await getTsutatsu({ name: '電帳法取通', clause: '1-1-1' })) as {
       error?: string;
+      hint?: string;
       supported?: string[];
     };
     expect(r.error).toContain('未対応');
     expect(r.supported).toContain('消費税法基本通達');
+    // Phase 1d 調査結果を踏まえ、Phase 2 対応予定の hint を返す
+    expect(r.hint).toContain('Phase 2');
   });
 });
 

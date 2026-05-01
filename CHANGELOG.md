@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-01
+
+**Phase 1d リリース（調査主体）**。当初の「他通達 URL マッピング追加」計画から方針転換し、構造調査の結果を文書化。コードは最小変更（エラーメッセージ親切化のみ）。
+
+### Investigation (Phase 1d)
+
+houki-abbreviations の通達系 9 件について、国税庁サイトの実 URL と HTML 構造を実地調査:
+
+- **URL ルートの確認**: `/law/tsutatsu/menu.htm` から各通達のトップ URL を抽出。9 件すべて確認
+- **重要な発見**: 消基通スタイル（3 階層 clause + 直接 URL 組立）が成立するのは **消基通のみ**
+  - 所基通: URL 規則は同じだが clause が 2 階層（`条-項` 形式: `2-4の2`）→ TOC lookup 必須
+  - 法基通: URL 規則が違う（`{章}_{節}.htm` 形式）
+  - 相基通: URL 規則が違う（`{章}/00.htm` 等）
+  - 通基通・徴基通・印基通: TOP ファイル名が `00.htm` / `index.htm` / `mokuji.htm` で揃わず
+  - 措通: 税目ごとに別ツリー（`/kobetsu/{税目}/sochiho/`）
+- **方針転換**: Phase 1d は「他通達対応は Phase 2 (bulk DL + SQLite) と統合する」として縮小
+
+### Changed
+
+- **`src/constants.ts`**: `TSUTATSU_URL_ROOTS` のスコープ制限と Phase 2 への統合理由をコメントで明記
+- **`handleNtaGetTsutatsu`**: 「houki-nta 管轄だが URL 未対応」のエラーで `hint` フィールドを返す。
+  clause 番号体系の違いと Phase 2 で対応予定の旨を伝える親切エラーメッセージ
+- **`docs/DESIGN.md`**: Phase 1d 調査結果を反映した通達差異表を追加。Phase 2 schema に
+  `clause→URL lookup` のための `source_url` / `chapter_number` / `section_number` 列と
+  `idx_clause_lookup` を追加
+- **`docs/DATA-SOURCES.md`**: 通達ごとの URL ルート一覧と clause 体系の差異を追記
+
+### Added
+
+- 調査用 fixture（`tests/fixtures/`）に以下を追加（テストには使わない、調査の証跡）
+  - `www.nta.go.jp_law_tsutatsu_menu.htm`（通達索引、UTF-8）
+  - `www.nta.go.jp_law_tsutatsu_kihon_shotoku_01.htm`（所基通 TOC）
+  - `www.nta.go.jp_law_tsutatsu_kihon_shotoku_01_01.htm`（所基通 第1章 第1節）
+  - `www.nta.go.jp_law_tsutatsu_kihon_hojin_01.htm`（法基通 TOC）
+  - `www.nta.go.jp_law_tsutatsu_kihon_hojin_01_01.htm`（法基通 404 確認用）
+  - `www.nta.go.jp_law_tsutatsu_kihon_sisan_sozoku2_01.htm`（相基通 TOC）
+
+### Notes
+
+このリリースで `nta_get_tsutatsu` が新たに動くようになる通達は **無し**。実利用への影響は無い。
+他通達対応は次の **Phase 2 リリース（v0.2.0 以降）** で TOC 事前 DL + clause→URL lookup を実装してから一括対応する。
+
 ## [0.1.1] - 2026-04-29
 
 ### Fixed
@@ -119,7 +161,8 @@ houki-abbreviations v0.2.0 の通達系エントリ追加に伴い、houki-nta-m
 2. 国税庁サイトの実地調査（URL 構造・Shift_JIS 確認・cheerio パース動作確認）
 3. `kentaroajisaka/tax-law-mcp` のソースコード詳読
 
-[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.2
 [0.1.1]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.1
 [0.1.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.0
 [0.0.2]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.0.2
