@@ -116,3 +116,108 @@ export function hasAnyClause(db: DatabaseT.Database, formalName?: string): boole
   const row = db.prepare(`SELECT count(*) AS n FROM clause`).get() as { n: number };
   return row.n > 0;
 }
+
+/* -------------------------------------------------------------------------- */
+/* clause lookup — Phase 2d で nta_get_tsutatsu の DB 経由応答に使う           */
+/* -------------------------------------------------------------------------- */
+
+/** DB から取得した clause 1 件 + 通達メタ */
+export interface ClauseRow {
+  /** 通達 formal 名 */
+  tsutatsu: string;
+  /** 通達略称 */
+  abbr: string;
+  /** clause 番号（DB 投入時の正規化済み形式） */
+  clauseNumber: string;
+  /** 章番号（取得時に section テーブルから join） */
+  chapterNumber: number | null;
+  /** 節番号 */
+  sectionNumber: number | null;
+  /** タイトル */
+  title: string;
+  /** 連結本文（FTS5 検索対象でもある） */
+  fullText: string;
+  /** 本文を構造化した paragraphs 配列（JSON パース済み） */
+  paragraphs: Array<{ indent: 1 | 2 | 3; text: string }>;
+  /** 取得元 URL */
+  sourceUrl: string;
+  /** その節の最後の取得時刻 */
+  fetchedAt: string;
+}
+
+/**
+ * DB から指定通達の指定 clause を取得する。
+ * 該当が無ければ null（呼び出し側でライブ取得にフォールバックさせる）。
+ */
+export function getClauseFromDb(
+  db: DatabaseT.Database,
+  formalName: string,
+  clauseNumber: string
+): ClauseRow | null {
+  const sql = `
+    SELECT
+      t.formal_name AS tsutatsu,
+      t.abbr        AS abbr,
+      c.clause_number AS clauseNumber,
+      c.chapter_number AS chapterNumber,
+      c.section_number AS sectionNumber,
+      c.title       AS title,
+      c.full_text   AS fullText,
+      c.paragraphs_json AS paragraphsJson,
+      c.source_url  AS sourceUrl,
+      COALESCE(s.fetched_at, '') AS fetchedAt
+    FROM clause c
+    JOIN tsutatsu t ON t.id = c.tsutatsu_id
+    LEFT JOIN section s
+      ON s.tsutatsu_id = c.tsutatsu_id
+     AND s.chapter_number = c.chapter_number
+     AND s.section_number = c.section_number
+    WHERE t.formal_name = ? AND c.clause_number = ?
+    LIMIT 1
+  `;
+  const row = db.prepare(sql).get(formalName, clauseNumber) as
+    | (Omit<ClauseRow, 'paragraphs'> & { paragraphsJson: string })
+    | undefined;
+  if (!row) return null;
+
+  let paragraphs: ClauseRow['paragraphs'] = [];
+  try {
+    const parsed = JSON.parse(row.paragraphsJson) as ClauseRow['paragraphs'];
+    if (Array.isArray(parsed)) paragraphs = parsed;
+  } catch {
+    // JSON パース失敗は空配列で扱う（実害最小、本文 fullText は別フィールドで持つ）
+  }
+
+  return {
+    tsutatsu: row.tsutatsu,
+    abbr: row.abbr,
+    clauseNumber: row.clauseNumber,
+    chapterNumber: row.chapterNumber,
+    sectionNumber: row.sectionNumber,
+    title: row.title,
+    fullText: row.fullText,
+    paragraphs,
+    sourceUrl: row.sourceUrl,
+    fetchedAt: row.fetchedAt,
+  };
+}
+
+/**
+ * 指定通達の利用可能 clause 番号一覧を返す（DB 経由）。
+ * `clause "X-Y-Z" が見つかりません` のエラー時に hint として提示するために使う。
+ */
+export function listAvailableClauses(
+  db: DatabaseT.Database,
+  formalName: string,
+  limit = 200
+): string[] {
+  const rows = db
+    .prepare(
+      `SELECT c.clause_number AS n
+       FROM clause c JOIN tsutatsu t ON t.id = c.tsutatsu_id
+       WHERE t.formal_name = ?
+       ORDER BY c.id LIMIT ?`
+    )
+    .all(formalName, limit) as Array<{ n: string }>;
+  return rows.map((r) => r.n);
+}

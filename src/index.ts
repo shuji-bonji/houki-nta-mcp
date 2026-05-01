@@ -73,7 +73,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 2c: nta_search_tsutatsu via FTS5 live)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 2d: nta_get_tsutatsu DB-first + live fallback)`
   );
 }
 

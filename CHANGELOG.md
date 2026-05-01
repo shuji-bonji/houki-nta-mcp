@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0-alpha.2] - 2026-05-01
+
+**Phase 2d-1 alpha リリース**。`nta_get_tsutatsu` を **DB-first + live fallback** に拡張。
+bulk DL 済みなら fetch なしで即時応答（消基通の応答を約 100 倍高速化）。
+他通達も bulk DL されていれば DB 経由で取得可能（Phase 1d 残課題への解）。
+
+### Added (Phase 2d-1)
+
+- **`getClauseFromDb(db, formalName, clauseNumber)`**: 通達 + clause 番号から SQLite を引いて 1 件返す
+  - paragraphs_json を自動 JSON.parse
+  - section テーブルと join して fetched_at も付与
+- **`listAvailableClauses(db, formalName, limit)`**: DB 内の利用可能 clause 番号一覧（hint 用）
+- **`ClauseRow`**: DB lookup 結果の型定義（services/db-search から export）
+
+### Changed (Phase 2d-1)
+
+- **`getTsutatsu` のフロー変更**:
+  ```
+  略称解決 → 管轄判定 → DB lookup
+    → DB hit: そのまま返す（fetch なし、source: 'db'）
+    → DB miss + 通達自体は DB に存在: available_clauses を返す
+    → DB miss + ライブ対応通達: 既存のライブ取得経路（source: 'live'）
+    → DB miss + ライブ未対応通達: bulk-download を促す hint
+  ```
+- **`getTsutatsu(args, options)` の `options` に `dbPath` 追加** — テスト容易化
+- レスポンスに **`source: 'db' | 'live'`** フィールド追加（json format 時）
+- 起動メッセージを `Phase 2d: nta_get_tsutatsu DB-first + live fallback` に更新
+
+### Performance
+
+| 経路 | レスポンス時間（消基通 1-4-1） |
+|---|---|
+| ライブ取得（v0.3.0-alpha.1 まで） | ~700ms（fetch + parse） |
+| DB lookup（v0.3.0-alpha.2） | **~10ms** |
+
+### Notes
+
+- `--bulk-download` を実行していなくても、消基通はライブ取得にフォールバックして引き続き動く（v0.2.0 と同等）
+- Phase 1d で「他通達は clause→URL 逆引き不可」だった課題が、DB lookup により解決
+- 他通達（所基通・法基通・相基通）の bulk DL 自体は **Phase 2d-2 / 2d-3** で対応（URL builder 拡張が必要）
+
+### Added (テスト)
+
+- `getTsutatsu` Phase 2d 経路のテスト 3 件を追加:
+  - DB seed → DB lookup で fetch されないことを確認
+  - DB に通達あり / clause 無しのとき available_clauses 返却
+  - DB 空 + ライブ対応通達でフォールバック + `source: 'live'` 確認
+- 既存テストを `dbPath: ':memory:'` 注入で更新（DB 経路を必ず空にしてフォールバックさせる）
+
+### Verified
+
+- 消基通 1-4-1 を seed した DB で fetch が呼ばれずに DB lookup される動作確認（テストで保証）
+- format='json' レスポンスに `source` フィールドが付与され、DB / live を判別可能
+
+### Planned (Phase 2 残り)
+
+- Phase 2d-2: 所基通の bulk DL 対応（URL は消基通と同形式 — `TSUTATSU_URL_ROOTS` に追加するだけ）
+- Phase 2d-3: 法基通・相基通の URL builder 拡張（`{章}_{節}.htm` 形式 / 章ごとの `00.htm` 形式）
+- Phase 2e: QA / TaxAnswer の bulk DL + search 対応
+- Phase 2f: 改正検知 + キャッシュ無効化
+
 ## [0.3.0-alpha.1] - 2026-05-01
 
 **Phase 2c alpha リリース**。`nta_search_tsutatsu` を FTS5 経由で本実装。
@@ -319,7 +380,8 @@ houki-abbreviations v0.2.0 の通達系エントリ追加に伴い、houki-nta-m
 2. 国税庁サイトの実地調査（URL 構造・Shift_JIS 確認・cheerio パース動作確認）
 3. `kentaroajisaka/tax-law-mcp` のソースコード詳読
 
-[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.3.0-alpha.1...HEAD
+[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.3.0-alpha.2...HEAD
+[0.3.0-alpha.2]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.3.0-alpha.2
 [0.3.0-alpha.1]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.3.0-alpha.1
 [0.3.0-alpha.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.3.0-alpha.0
 [0.2.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.2.0

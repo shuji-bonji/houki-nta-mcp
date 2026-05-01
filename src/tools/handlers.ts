@@ -20,7 +20,13 @@ import {
 } from '../constants.js';
 import type { QaTopic } from '../constants.js';
 import { closeDb, openDb } from '../db/index.js';
-import { hasAnyClause, searchClauseFts } from '../services/db-search.js';
+import {
+  getClauseFromDb,
+  hasAnyClause,
+  listAvailableClauses,
+  searchClauseFts,
+} from '../services/db-search.js';
+import type { ClauseRow } from '../services/db-search.js';
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
 import { parseQaJirei } from '../services/qa-parser.js';
 import { parseTaxAnswer } from '../services/tax-answer-parser.js';
@@ -120,11 +126,18 @@ export async function handleNtaGetTsutatsu(args: GetTsutatsuArgs) {
 
 /**
  * `handleNtaGetTsutatsu` のテスト容易な内部関数。
- * `fetchImpl` を差し替えてユニットテストできるようにする。
+ *
+ * フロー（Phase 2d 以降）:
+ *   1. 略称解決 + 管轄判定
+ *   2. **DB lookup**: bulk DL 済みなら DB から即時応答（fetch なし）
+ *   3. DB miss なら **ライブ取得**: TSUTATSU_URL_ROOTS にあれば fetch + parse
+ *   4. どちらも無ければ、bulk DL を促す hint を返す
+ *
+ * `fetchImpl` を差し替えてユニットテストできる。`dbPath` で in-memory DB 注入も可。
  */
 export async function getTsutatsu(
   args: GetTsutatsuArgs,
-  options: { fetchImpl?: typeof fetch } = {}
+  options: { fetchImpl?: typeof fetch; dbPath?: string } = {}
 ) {
   // 1. 略称解決
   const resolved = resolveAbbreviation(args.name);
@@ -144,37 +157,59 @@ export async function getTsutatsu(
     };
   }
 
-  // 2. 通達ルート URL の解決
+  // 2. clause 必須チェック
+  if (!args.clause) {
+    return {
+      error: 'clause を指定してください',
+      hint: '例: "5-1-9" / "1-4-13の2"（消基通スタイル）/ "2-4の2"（所基通スタイル）',
+      resolved,
+    };
+  }
+
+  // 3. DB lookup を試みる（bulk DL 済みなら即時応答）
+  const db = openDb(options.dbPath);
+  try {
+    const dbHit = getClauseFromDb(db, resolved.formal, args.clause);
+    if (dbHit) {
+      return renderDbHit(dbHit, args.format, resolved.formal);
+    }
+
+    // 4. DB に formal_name エントリ自体があるが該当 clause が無い場合は available_clauses を返す
+    if (hasAnyClause(db, resolved.formal)) {
+      return {
+        error: `clause "${args.clause}" は DB 内の "${resolved.formal}" に見つかりません`,
+        hint: '別の clause 番号を試すか、`--bulk-download` で再取得してください（最新の改正反映用）',
+        available_clauses: listAvailableClauses(db, resolved.formal, 50),
+      };
+    }
+  } finally {
+    closeDb(db);
+  }
+
+  // 5. DB miss → ライブ取得経路へフォールバック
   const rootUrl = TSUTATSU_URL_ROOTS[resolved.formal];
   if (!rootUrl) {
     return {
-      error: `"${resolved.formal}" は houki-nta-mcp v0.1.x では未対応です`,
+      error: `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`,
       hint:
-        '他通達（所基通・法基通・相基通 等）は URL 規則と clause 番号体系（章-節-条 vs 条-項）' +
-        'が消基通と異なるため、TOC 事前 DL を要する Phase 2 (bulk DL + SQLite) で一括対応予定。',
-      supported: Object.keys(TSUTATSU_URL_ROOTS),
+        `先に \`houki-nta-mcp --bulk-download --tsutatsu="${resolved.formal}"\` を実行して ` +
+        'DB に投入してください（Phase 2d 以降は他通達も bulk DL 経由で対応）。',
+      supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
       resolved,
       tool: 'nta_get_tsutatsu',
     };
   }
 
-  // 3. clause 必須チェック
-  if (!args.clause) {
-    return {
-      error: 'clause を指定してください',
-      hint: '例: "5-1-9" / "1-4-13の2" のような「章-節-条」形式で指定',
-      resolved,
-    };
-  }
   const parsed = parseClauseNumber(args.clause);
   if (!parsed) {
     return {
       error: `clause の形式が不正: "${args.clause}"`,
-      hint: '"5-1-9" / "1-4-13の2" のような「章-節-条」形式で指定してください',
+      hint:
+        'ライブ取得には「章-節-条」形式（例: "5-1-9" / "1-4-13の2"）が必要です。' +
+        '他通達体系（条-項）の場合は `--bulk-download` で DB 投入してください',
     };
   }
 
-  // 4. URL 組み立て + fetch + parse
   const url = buildSectionUrl(rootUrl, parsed.chapter, parsed.section);
   let html: string;
   let sourceUrl: string;
@@ -208,7 +243,6 @@ export async function getTsutatsu(
     throw err;
   }
 
-  // 5. 該当 clause を抽出
   const clause = section.clauses.find((c) => c.clauseNumber === args.clause);
   if (!clause) {
     return {
@@ -218,7 +252,6 @@ export async function getTsutatsu(
     };
   }
 
-  // 6. レンダリング
   if (args.format === 'json') {
     return {
       tsutatsu: resolved.formal,
@@ -230,14 +263,45 @@ export async function getTsutatsu(
       },
       sourceUrl: section.sourceUrl,
       fetchedAt: section.fetchedAt,
+      source: 'live' as const,
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   }
-  // default: markdown
   return renderClauseMarkdown(clause, {
     sourceUrl: section.sourceUrl,
     fetchedAt: section.fetchedAt,
   });
+}
+
+/**
+ * DB ヒットを既存の Markdown / JSON レンダラに合わせて返す。
+ * fullText / paragraphs を持っているので renderClauseMarkdown にそのまま渡せる。
+ */
+function renderDbHit(row: ClauseRow, format: GetTsutatsuArgs['format'], tsutatsu: string) {
+  if (format === 'json') {
+    return {
+      tsutatsu,
+      clause: {
+        clauseNumber: row.clauseNumber,
+        title: row.title,
+        paragraphs: row.paragraphs,
+        fullText: row.fullText,
+      },
+      sourceUrl: row.sourceUrl,
+      fetchedAt: row.fetchedAt,
+      source: 'db' as const,
+      legal_status: TSUTATSU_LEGAL_STATUS,
+    };
+  }
+  return renderClauseMarkdown(
+    {
+      clauseNumber: row.clauseNumber,
+      title: row.title,
+      paragraphs: row.paragraphs,
+      fullText: row.fullText,
+    },
+    { sourceUrl: row.sourceUrl, fetchedAt: row.fetchedAt }
+  );
 }
 
 /**

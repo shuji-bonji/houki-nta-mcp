@@ -131,12 +131,14 @@ function sjisHtmlResponse(fixtureName: string): Response {
 
 describe('getTsutatsu — 引数バリデーション', () => {
   it('辞書に無い名前はエラー', async () => {
-    const r = (await getTsutatsu({ name: '存在しない通達' })) as { error?: string };
+    const r = (await getTsutatsu({ name: '存在しない通達' }, { dbPath: ':memory:' })) as {
+      error?: string;
+    };
     expect(r.error).toContain('辞書に該当なし');
   });
 
   it('管轄外（消法 = houki-egov）は誘導 hint を返す', async () => {
-    const r = (await getTsutatsu({ name: '消法' })) as {
+    const r = (await getTsutatsu({ name: '消法' }, { dbPath: ':memory:' })) as {
       error?: string;
       hint?: string;
     };
@@ -145,27 +147,33 @@ describe('getTsutatsu — 引数バリデーション', () => {
   });
 
   it('clause 未指定はエラー', async () => {
-    const r = (await getTsutatsu({ name: '消基通' })) as { error?: string; hint?: string };
+    const r = (await getTsutatsu({ name: '消基通' }, { dbPath: ':memory:' })) as {
+      error?: string;
+      hint?: string;
+    };
     expect(r.error).toContain('clause');
     expect(r.hint).toContain('5-1-9');
   });
 
-  it('不正な clause 形式はエラー', async () => {
-    const r = (await getTsutatsu({ name: '消基通', clause: '5-1' })) as { error?: string };
-    expect(r.error).toContain('clause');
+  it('不正な clause 形式（DB miss + ライブ取得経路でも不正）はエラー', async () => {
+    const r = (await getTsutatsu({ name: '消基通', clause: '5-1' }, { dbPath: ':memory:' })) as {
+      error?: string;
+    };
     expect(r.error).toContain('不正');
   });
 
-  it('houki-nta 管轄だが URL 未対応の通達（電帳法取通 等）は supported list と hint を返す', async () => {
-    const r = (await getTsutatsu({ name: '電帳法取通', clause: '1-1-1' })) as {
+  it('houki-nta 管轄だが DB 未投入 + ライブ未対応の通達（電帳法取通）はエラー + hint', async () => {
+    const r = (await getTsutatsu(
+      { name: '電帳法取通', clause: '1-1-1' },
+      { dbPath: ':memory:' }
+    )) as {
       error?: string;
       hint?: string;
-      supported?: string[];
+      supported_for_live?: string[];
     };
-    expect(r.error).toContain('未対応');
-    expect(r.supported).toContain('消費税法基本通達');
-    // Phase 1d 調査結果を踏まえ、Phase 2 対応予定の hint を返す
-    expect(r.hint).toContain('Phase 2');
+    expect(r.error).toContain('DB にも未投入');
+    expect(r.hint).toContain('--bulk-download');
+    expect(r.supported_for_live).toContain('消費税法基本通達');
   });
 });
 
@@ -175,7 +183,10 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
       sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
     ) as unknown as typeof fetch;
 
-    const r = (await getTsutatsu({ name: '消基通', clause: '1-4-1' }, { fetchImpl })) as string;
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as string;
 
     expect(typeof r).toBe('string');
     expect(r).toContain('1-4-1');
@@ -192,7 +203,7 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
 
     const r = (await getTsutatsu(
       { name: '消基通', clause: '1-4-13の2', format: 'json' },
-      { fetchImpl }
+      { fetchImpl, dbPath: ':memory:' }
     )) as {
       tsutatsu: string;
       clause: { clauseNumber: string; title: string; paragraphs: unknown[] };
@@ -216,7 +227,7 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
 
     const r = (await getTsutatsu(
       { name: '消費税法基本通達', clause: '5-1-1', format: 'json' },
-      { fetchImpl }
+      { fetchImpl, dbPath: ':memory:' }
     )) as { clause: { clauseNumber: string } };
 
     expect(r.clause.clauseNumber).toBe('5-1-1');
@@ -230,7 +241,10 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
       sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
     ) as unknown as typeof fetch;
 
-    const r = (await getTsutatsu({ name: '消基通', clause: '1-4-99' }, { fetchImpl })) as {
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-99' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as {
       error?: string;
       available_clauses?: string[];
     };
@@ -245,13 +259,145 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
       async () => new Response('not found', { status: 404, statusText: 'Not Found' })
     ) as unknown as typeof fetch;
 
-    const r = (await getTsutatsu({ name: '消基通', clause: '1-4-1' }, { fetchImpl })) as {
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as {
       error?: string;
       status?: number;
     };
 
     expect(r.error).toContain('取得に失敗');
     expect(r.status).toBe(404);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* getTsutatsu — Phase 2d DB lookup 経路                                       */
+/* -------------------------------------------------------------------------- */
+
+describe('getTsutatsu — DB lookup 経路（Phase 2d）', () => {
+  // テスト用に in-memory DB に通達と clause を seed するヘルパ
+  // openDb で別 DB を毎回 open するので、PATH を共有する形で seed → 検証する
+  // ※ better-sqlite3 の :memory: は接続ごとに別 DB になるため、tmpfile を使う
+  it('seed した通達 + clause を DB lookup で返す（fetch しない）', async () => {
+    const tmpFile = `/tmp/houki-nta-mcp-test-${Date.now()}.db`;
+
+    // seed: 同じパスで openDb → INSERT → 閉じる
+    const Database = (await import('better-sqlite3')).default;
+    const seedDb = new Database(tmpFile);
+    const { initSchema } = await import('../db/schema.js');
+    initSchema(seedDb);
+    const tsutatsuId = (
+      seedDb
+        .prepare(
+          `INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?) RETURNING id`
+        )
+        .get('消費税法基本通達', '消基通', 'https://www.nta.go.jp/x/') as { id: number }
+    ).id;
+    seedDb
+      .prepare(
+        `INSERT INTO section(tsutatsu_id, chapter_number, section_number, title, url, fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(tsutatsuId, 1, 4, 'X', 'https://www.nta.go.jp/01/04.htm', '2026-05-01T00:00:00.000Z');
+    seedDb
+      .prepare(
+        `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        tsutatsuId,
+        '1-4-1',
+        'https://www.nta.go.jp/01/04.htm',
+        1,
+        4,
+        '納税義務が免除される課税期間',
+        '法第9条第1項本文 …',
+        JSON.stringify([{ indent: 1, text: '法第9条第1項本文 …' }])
+      );
+    seedDb.close();
+
+    // fetchImpl は使わないことを確認するため、呼び出されたら fail する mock を仕込む
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('fetch should NOT be called when DB has the clause');
+    }) as unknown as typeof fetch;
+
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1', format: 'json' },
+      { fetchImpl, dbPath: tmpFile }
+    )) as {
+      tsutatsu: string;
+      clause: { clauseNumber: string; title: string };
+      sourceUrl: string;
+      source: 'db' | 'live';
+    };
+
+    expect(r.tsutatsu).toBe('消費税法基本通達');
+    expect(r.clause.clauseNumber).toBe('1-4-1');
+    expect(r.clause.title).toContain('納税義務');
+    expect(r.source).toBe('db');
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    // クリーンアップ
+    const fs = await import('node:fs');
+    fs.rmSync(tmpFile, { force: true });
+    fs.rmSync(`${tmpFile}-wal`, { force: true });
+    fs.rmSync(`${tmpFile}-shm`, { force: true });
+  });
+
+  it('DB に通達はあるが該当 clause が無い場合、available_clauses を返す', async () => {
+    const tmpFile = `/tmp/houki-nta-mcp-test-${Date.now()}-${Math.random()}.db`;
+
+    const Database = (await import('better-sqlite3')).default;
+    const seedDb = new Database(tmpFile);
+    const { initSchema } = await import('../db/schema.js');
+    initSchema(seedDb);
+    const tsutatsuId = (
+      seedDb
+        .prepare(
+          `INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?) RETURNING id`
+        )
+        .get('消費税法基本通達', '消基通', 'https://x/') as { id: number }
+    ).id;
+    seedDb
+      .prepare(
+        `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(tsutatsuId, '1-1-1', 'u', 1, 1, 't', 'f', '[]');
+    seedDb.close();
+
+    const r = (await getTsutatsu({ name: '消基通', clause: '99-99-99' }, { dbPath: tmpFile })) as {
+      error?: string;
+      available_clauses?: string[];
+    };
+
+    expect(r.error).toContain('99-99-99');
+    expect(r.available_clauses).toContain('1-1-1');
+
+    const fs = await import('node:fs');
+    fs.rmSync(tmpFile, { force: true });
+    fs.rmSync(`${tmpFile}-wal`, { force: true });
+    fs.rmSync(`${tmpFile}-shm`, { force: true });
+  });
+
+  it('DB が空 + ライブ取得対応通達なら、ライブ取得にフォールバック', async () => {
+    const fetchImpl = vi.fn(async () =>
+      sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
+    ) as unknown as typeof fetch;
+
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as {
+      clause: { clauseNumber: string };
+      source: 'db' | 'live';
+    };
+
+    expect(r.clause.clauseNumber).toBe('1-4-1');
+    expect(r.source).toBe('live');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
 
