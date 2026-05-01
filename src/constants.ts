@@ -50,6 +50,7 @@ export const NTA_BASE_URLS = {
 export const TSUTATSU_URL_ROOTS: Readonly<Record<string, string>> = {
   消費税法基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/',
   所得税基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/shotoku/',
+  法人税基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/hojin/',
 } as const;
 
 /**
@@ -62,10 +63,11 @@ export const TSUTATSU_URL_ROOTS: Readonly<Record<string, string>> = {
  *
  * 未登録の formal_name はデフォルトで 'shohi' として扱う（後方互換）。
  */
-export type TsutatsuTocStyle = 'shohi' | 'shotoku';
+export type TsutatsuTocStyle = 'shohi' | 'shotoku' | 'hojin';
 export const TSUTATSU_TOC_STYLES: Readonly<Record<string, TsutatsuTocStyle>> = {
   消費税法基本通達: 'shohi',
   所得税基本通達: 'shotoku',
+  法人税基本通達: 'hojin',
 } as const;
 
 /**

@@ -73,7 +73,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 2d-3: 所基通 section parser 互換性確立 / extractClauseNumber 拡張)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 2d-4: 法基通 TOC parser 追加 / 3 通達 bulk DL 対応)`
   );
 }
 

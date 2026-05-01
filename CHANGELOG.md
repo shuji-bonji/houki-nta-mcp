@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0-alpha.5] - 2026-05-01
+
+**Phase 2d-4 alpha リリース**。**法人税基本通達（法基通）** の bulk DL を可能にする
+専用 TOC parser を追加。bulk-downloader を 3 通達対応（消基通 / 所基通 / 法基通）に拡張。
+
+法基通の section ページは消基通と同じ clause 番号体系（3 階層 `{章}-{節/款}-{条}`）
+だったため、既存 `parseTsutatsuSection` がそのまま動作。追加修正は不要だった。
+
+### Added (Phase 2d-4)
+
+- **`parseTsutatsuTocHojin(html, sourceUrl, fetchedAt)`** (`src/services/tsutatsu-toc-parser-hojin.ts`):
+  - 法基通の TOC ページ専用 parser（`<h2>第N章</h2>` + `<ul.noListImg.indent1><li><a></a></li></ul>` 構造）
+  - 入れ子 `<ul>` で「款」も section として収集（4 階層 URL `/{章}/{章}_{節}_{款}.htm` も拾える）
+  - 「第12章の2」のような枝番章も対応。`number` は連番化、`title` には HTML 上の章番号をそのまま保持
+  - 「附則」「法令等」「サイトマップ」の h2 は section が無いため自動的に除外
+- **`TSUTATSU_URL_ROOTS` に法基通追加**: `法人税基本通達 → https://www.nta.go.jp/law/tsutatsu/kihon/hojin/`
+- **`TSUTATSU_TOC_STYLES` に `'hojin'` 追加**: bulk-downloader が parser を切り替え
+- **`scripts/fetch-fixtures-hojin.mjs`**: 法基通の代表的な節を 6 本まとめて取得する fixture スクリプト
+- **`scripts/probe-toc-hojin.mjs`**: 法基通 TOC parser の動作確認 probe
+- **テスト追加**:
+  - `tsutatsu-toc-parser-hojin.test.ts`: 法基通 TOC fixture を使った parser テスト（章数 ≥ 20、section 合計 > 200、枝番章含む）
+  - `tsutatsu-parser-hojin.test.ts`: 法基通の節 fixture 5 本に対する `parseTsutatsuSection` 互換性テスト
+
+### Changed (Phase 2d-4)
+
+- **`bulkDownloadTsutatsu` の TOC parser 切替対応を 3 通達に拡張**:
+  - `'shohi'` / `'shotoku'` / `'hojin'` の 3 スタイルを `TSUTATSU_TOC_STYLES` で判別
+  - 未登録 formal_name は `'shohi'` をデフォルトとする（後方互換）
+
+### Verified (実 fixture での動作確認)
+
+| 通達 | TOC parser | section parser | clause 数 |
+|---|---|---|---|
+| 法基通 TOC | parseTsutatsuTocHojin | — | 26 章 / 全 200+ 節 / 255 リンク |
+| 法基通 01/01_01 | — | parseTsutatsuSection | 12 (`1-1-1` 〜) |
+| 法基通 02/02_01_01 | — | parseTsutatsuSection | 16 (`2-1-1` 〜) |
+| 法基通 02/02_01_01_2 | — | parseTsutatsuSection | 3 (枝番款の節 OK) |
+| 法基通 07/07_01_01 | — | parseTsutatsuSection | 13 (`7-1-1` 〜) |
+| 法基通 09/09_02_03 | — | parseTsutatsuSection | 4 (`9-2-12` 〜) |
+| 法基通 18/18_01_01 | — | parseTsutatsuSection | 5 (新章 国際最低課税) |
+
+### Notes
+
+- 法基通の **bulk DL 実走** はユーザー側で `houki-nta-mcp --bulk-download --tsutatsu 法人税基本通達` を実行して検証してほしい
+  - rate-limit 1 req/sec で約 200 節 → 4-5 分程度
+- **相続税法基本通達（相基通）** は v0.3.0-alpha.6 で別リリースとして対応:
+  - URL ルート: `/law/tsutatsu/kihon/sisan/sozoku2/`（旧 memory の情報は古かった）
+  - HTML 構造が flat（`<p align="center">第N章</p>` + `<p class="indent2">{番号} <a></a></p>`）で消基通・所基通・法基通とも別物
+  - clause 番号にナカグロ複数条共通 (`1の3・1の4共-1` / `2・2の2共-1`) という新形式が登場。`extractClauseNumber` の追加拡張も必要
+
 ## [0.3.0-alpha.4] - 2026-05-01
 
 **Phase 2d-3 alpha リリース**。所基通の **section ページ parser 互換性** を確立。

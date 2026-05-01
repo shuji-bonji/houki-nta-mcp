@@ -19,6 +19,7 @@ import { fetchNtaPage, NtaFetchError } from './nta-scraper.js';
 import { parseTsutatsuSection, TsutatsuParseError } from './tsutatsu-parser.js';
 import { parseTsutatsuToc } from './tsutatsu-toc-parser.js';
 import { parseTsutatsuTocShotoku } from './tsutatsu-toc-parser-shotoku.js';
+import { parseTsutatsuTocHojin } from './tsutatsu-toc-parser-hojin.js';
 
 /** bulk DL 進捗イベント */
 export interface BulkDownloadProgress {
@@ -84,7 +85,9 @@ export async function bulkDownloadTsutatsu(
   const toc =
     tocStyle === 'shotoku'
       ? parseTsutatsuTocShotoku(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt)
-      : parseTsutatsuToc(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt);
+      : tocStyle === 'hojin'
+        ? parseTsutatsuTocHojin(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt)
+        : parseTsutatsuToc(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt);
 
   // 2. tsutatsu / chapter / section の登録
   const insertTsutatsu = db.prepare(
