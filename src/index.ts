@@ -73,7 +73,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 2d: nta_get_tsutatsu DB-first + live fallback)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 2d-2: 所基通 TOC parser 追加 / bulk-downloader TOC 切替対応)`
   );
 }
 

@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0-alpha.3] - 2026-05-01
+
+**Phase 2d-2 alpha リリース**。**所得税基本通達（所基通）** の bulk DL を可能にする
+専用 TOC parser を追加し、bulk-downloader を「TOC parser 切替」対応に拡張。
+
+### Added (Phase 2d-2)
+
+- **`parseTsutatsuTocShotoku(html, sourceUrl, fetchedAt)`** (`src/services/tsutatsu-toc-parser-shotoku.ts`):
+  - 所基通の TOC ページ専用 parser（HTML 構造が消基通と異なる: `<h2>第N編</h2>` + `<h3>第N章</h3>` + `<ul><li><a></a></li></ul>`）
+  - 編をまたいで章番号がリセットされる構造を吸収するため、TOC 出現順で `chapter.number` を 1 から連番化
+  - 章タイトルに `第N編 ...` をプレフィックスとして保持し、編情報を欠落させない
+  - section URL は anchor (`#a-XX`) を剥がして正規化、`/law/tsutatsu/kihon/` 配下のみを対象に重複除去
+- **`TSUTATSU_TOC_STYLES: Record<string, 'shohi' | 'shotoku'>`** (`src/constants.ts`):
+  - 通達ごとの TOC HTML スタイルを宣言。bulk-downloader が parser を切り替える際の単一情報源
+- **`TSUTATSU_URL_ROOTS` に所基通を追加**: `所得税基本通達 → https://www.nta.go.jp/law/tsutatsu/kihon/shotoku/`
+
+### Changed (Phase 2d-2)
+
+- **`bulkDownloadTsutatsu` の TOC parser 切替対応**:
+  - `TSUTATSU_TOC_STYLES[formalName]` で 'shohi' / 'shotoku' を判別し、対応する parser を呼び出す
+  - 未登録 formal_name は 'shohi' をデフォルトとする（後方互換）
+
+### Added (テスト)
+
+- **`tsutatsu-toc-parser-shotoku.test.ts`**: 所基通 TOC fixture を使った parser テスト
+  - 章が編をまたいで連番化されることを確認
+  - 章タイトルに編情報がプレフィックスされることを確認
+  - section URL が絶対 URL かつ `/law/tsutatsu/kihon/shotoku/` 配下であることを確認
+  - 全セクション数 100 超の網羅性確認
+
+### Notes
+
+- 所基通の **section ページ parser** (節 HTML → clause 抽出) の検証は **Phase 2d-3** に持ち越し
+  - 現時点で確認済みなのは「TOC を parse して section URL リストを得る」ところまで
+  - 所基通の節ページ HTML 構造は消基通と類似と推測されるが、bulk DL 実走で要検証
+- bulk DL 想定コマンド: `houki-nta-mcp --bulk-download --tsutatsu 所得税基本通達`
+
 ## [0.3.0-alpha.2] - 2026-05-01
 
 **Phase 2d-1 alpha リリース**。`nta_get_tsutatsu` を **DB-first + live fallback** に拡張。

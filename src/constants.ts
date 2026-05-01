@@ -49,6 +49,23 @@ export const NTA_BASE_URLS = {
  */
 export const TSUTATSU_URL_ROOTS: Readonly<Record<string, string>> = {
   消費税法基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/',
+  所得税基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/shotoku/',
+} as const;
+
+/**
+ * 通達ごとの TOC ページ HTML スタイル。
+ *
+ * 通達ごとに TOC HTML 構造が異なるため、bulk-downloader 側で parser を切り替える必要がある。
+ *
+ *   - 'shohi'   : 消基通スタイル `<p><strong>第N章</strong></p>` + `<p class="indent2">第N節 <a></a></p>`
+ *   - 'shotoku' : 所基通スタイル `<h2>第N編</h2>` / `<h3>第N章</h3>` + `<ul><li><a></a></li></ul>`
+ *
+ * 未登録の formal_name はデフォルトで 'shohi' として扱う（後方互換）。
+ */
+export type TsutatsuTocStyle = 'shohi' | 'shotoku';
+export const TSUTATSU_TOC_STYLES: Readonly<Record<string, TsutatsuTocStyle>> = {
+  消費税法基本通達: 'shohi',
+  所得税基本通達: 'shotoku',
 } as const;
 
 /**

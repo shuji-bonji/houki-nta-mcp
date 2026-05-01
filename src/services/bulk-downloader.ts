@@ -13,11 +13,12 @@
 
 import type DatabaseT from 'better-sqlite3';
 
-import { TSUTATSU_URL_ROOTS } from '../constants.js';
+import { TSUTATSU_TOC_STYLES, TSUTATSU_URL_ROOTS } from '../constants.js';
 import { logger } from '../utils/logger.js';
 import { fetchNtaPage, NtaFetchError } from './nta-scraper.js';
 import { parseTsutatsuSection, TsutatsuParseError } from './tsutatsu-parser.js';
 import { parseTsutatsuToc } from './tsutatsu-toc-parser.js';
+import { parseTsutatsuTocShotoku } from './tsutatsu-toc-parser-shotoku.js';
 
 /** bulk DL 進捗イベント */
 export interface BulkDownloadProgress {
@@ -76,10 +77,14 @@ export async function bulkDownloadTsutatsu(
   const startedAt = new Date().toISOString();
   const startMs = Date.now();
 
-  // 1. TOC 取得
+  // 1. TOC 取得（通達ごとに TOC HTML 構造が違うので parser を切り替え）
   onProgress?.({ phase: 'toc', message: `TOC 取得中: ${tocUrl}` });
   const tocFetched = await fetchNtaPage(tocUrl, fetchImpl ? { fetchImpl } : {});
-  const toc = parseTsutatsuToc(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt);
+  const tocStyle = TSUTATSU_TOC_STYLES[formalName] ?? 'shohi';
+  const toc =
+    tocStyle === 'shotoku'
+      ? parseTsutatsuTocShotoku(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt)
+      : parseTsutatsuToc(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt);
 
   // 2. tsutatsu / chapter / section の登録
   const insertTsutatsu = db.prepare(
