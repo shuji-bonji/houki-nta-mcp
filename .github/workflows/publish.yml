@@ -57,8 +57,9 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      # tag (vX.Y.Z) と package.json version の整合性検証
-      - name: Verify version matches tag
+      # tag (vX.Y.Z) と package.json version の整合性検証 + dist-tag 判定
+      - name: Verify version and resolve dist-tag
+        id: meta
         run: |
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           TAG_VERSION=${GITHUB_REF#refs/tags/v}
@@ -68,8 +69,20 @@ jobs:
           fi
           echo "Version verified: $PACKAGE_VERSION"
 
+          # prerelease 判定 (semver の "-" 以降があれば prerelease)
+          # alpha/beta/rc など全て "next" タグで publish し、latest を汚さない方針。
+          # npm はバージョン文字列に "-" を含むと latest 公開時に明示的 --tag を要求するため、
+          # ここで自動的に --tag を解決する。
+          if [[ "$PACKAGE_VERSION" =~ - ]]; then
+            echo "dist_tag=next" >> $GITHUB_OUTPUT
+            echo "Resolved dist-tag: next (prerelease)"
+          else
+            echo "dist_tag=latest" >> $GITHUB_OUTPUT
+            echo "Resolved dist-tag: latest (stable)"
+          fi
+
       # OIDC + provenance 付き publish
       # NOTE: `npx publish` は別物の古いパッケージ（publish@0.6.0）を起動して
       #       しまうので必ず `npm publish` を使うこと。
       - name: Publish to npm with provenance
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag ${{ steps.meta.outputs.dist_tag }}
