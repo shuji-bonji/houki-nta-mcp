@@ -176,9 +176,14 @@ function extractClauses($: CheerioAPI, $body: cheerio.Cheerio<Element>): Tsutats
 }
 
 /**
- * `<h2>` の次の兄弟以降を集めて、次の `<h2>` の手前で止める。
- * h2 が異なる親（div でラップ）の中にあっても対応するため、
- * body 内の全要素の DOM 順を組み立てて切り出す。
+ * `<h2>` の次の兄弟以降を集めて、次の `<h2>` または `<h1>` の手前で止める。
+ *
+ * 所基通の節ページ（例: /shotoku/04/01.htm）は **同一ファイル内に複数の `<h1>`**
+ * （別節タイトル）が並ぶ構造なので、h1 も境界に含める必要がある。h1 を境界に
+ * しなければ、前 clause の paragraph に隣接節のタイトルが混入する。
+ *
+ * h2 が異なる親（div でラップ）の中にあっても対応するため、body 内の全要素の
+ * DOM 順を組み立てて切り出す。
  */
 function collectUntilNextH2(
   $: CheerioAPI,
@@ -189,7 +194,13 @@ function collectUntilNextH2(
   while (node) {
     if (node.type === 'tag') {
       const el = node as Element;
-      if (el.tagName === 'h2') break;
+      if (el.tagName === 'h2' || el.tagName === 'h1') break;
+      // 所基通の節ページは別節タイトル <h1> が <div class="page-header"> でラップされて
+      // 兄弟ノードとして登場する。これも境界として break する必要がある。
+      if (el.tagName === 'div') {
+        const $el = $(el);
+        if ($el.is('.page-header') || $el.find('> h1, > h2').length > 0) break;
+      }
       collected.push($(el));
     }
     node = node.nextSibling;
@@ -265,30 +276,50 @@ function classifyIndent($el: cheerio.Cheerio<Element>): ParagraphIndent | null {
 
 /**
  * `1－4－13の2 本文…` の形から clauseNumber と本文を切り出す。
+ *
  * 全角ハイフン `－` (U+FF0D) はパース後 ASCII `-` に正規化する。
+ *
+ * 対応形式（所基通の実調査結果より）:
+ *  - 消基通: `1-4-1` / `1－4－13の2` / `11-5-7`（章-節-条 3 階層）
+ *  - 所基通: `2-1` / `2-4の2` / `2-4の3`（条-項 2 階層）
+ *  - 所基通: `23-1` / `24-6の2` / `90-2` / `161-1の2` / `161-1の3`（複数バリエーション）
+ *  - 所基通源泉: `183～193共-1` / `204～206共-2`（複数条の共通通達。`～` は U+301C / U+FF5E、`共` を含む）
  */
 export function extractClauseNumber(
   rawText: string
 ): { clauseNumber: string; body: string } | null {
   const trimmed = rawText.replace(/^\s+/, '');
-  // 例: "1－1－1", "1－4－13の2", "11－5－7"
-  // `s` フラグ: 本文に <br>→改行 が含まれていても末尾まで取り込めるよう dotall にする。
+
+  // 「183～193共－1」形式（複数条共通通達）の検出を先に試みる。
+  // ～ には U+301C, U+30FC, U+FF5E のいずれも入りうる（HTML エンコードのゆらぎを許容）
+  // `s` フラグ: <br>→改行 含みの本文末尾まで取り込めるよう dotall にする。
+  const kyoMatch = trimmed.match(
+    /^([0-9０-９]+[〜ー～～][0-9０-９]+共[-－][0-9０-９]+(?:の[0-9０-９]+)?)([\s　]*)(.*)$/s
+  );
+  if (kyoMatch) {
+    return {
+      clauseNumber: normalizeClauseNumber(kyoMatch[1]),
+      body: kyoMatch[3].trim(),
+    };
+  }
+
+  // 通常形式: "1－1－1" / "1－4－13の2" / "23-1" / "2-4の2"
   const match = trimmed.match(
     /^([0-9０-９]+(?:[-－][0-9０-９]+)+(?:の[0-9０-９]+)?)([\s　]*)(.*)$/s
   );
   if (!match) return null;
 
-  const numberRaw = match[1];
-  const rest = match[3];
+  return {
+    clauseNumber: normalizeClauseNumber(match[1]),
+    body: match[3].trim(),
+  };
+}
 
-  const clauseNumber = numberRaw
+/** 全角ハイフン → ASCII、全角数字 → 半角数字に正規化。`～` `共` はそのまま残す */
+function normalizeClauseNumber(s: string): string {
+  return s
     .replace(/－/g, '-')
     .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
-
-  return {
-    clauseNumber,
-    body: rest.trim(),
-  };
 }
 
 /** 全角／半角空白の連続をスペース 1 つに、改行はトリム。前後 trim 済み */

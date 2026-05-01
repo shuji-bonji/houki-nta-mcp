@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0-alpha.4] - 2026-05-01
+
+**Phase 2d-3 alpha リリース**。所基通の **section ページ parser 互換性** を確立。
+所基通の節 HTML を parseTsutatsuSection で正しく扱えるよう、clause 番号 regex の
+拡張と DOM 走査の境界条件を修正。所基通の bulk DL 実走に対する parser 側の準備が
+整った。
+
+### Added (Phase 2d-3)
+
+- **scripts/fetch-fixtures-shotoku.mjs**: 所基通の代表的な節を 6 本まとめて取得する fixture 取得スクリプト
+- **src/services/tsutatsu-parser-shotoku.test.ts**: 所基通 fixture を使った parseTsutatsuSection の互換性テスト
+  - 2 階層 clause (`2-1` / `2-4の2` / `2-4の3`)、複数 h1 同居、複数条共通通達 (`183～193共-1`) を網羅
+
+### Changed (Phase 2d-3) — `src/services/tsutatsu-parser.ts`
+
+- **`extractClauseNumber` の regex 拡張**:
+  - 「**複数条共通通達**」形式 `183～193共-1` / `204～206共-2` に対応
+  - `〜` (U+301C / U+30FC) と `～` (U+FF5E) のゆらぎを許容
+  - 通常形式は従来どおり (`1-4-13の2` / `2-4の2` / `161-1の2`)
+- **`collectUntilNextH2` の境界拡張**:
+  - 次の `<h1>` でも clause 区切りとして停止（所基通の節ページは複数 h1 が同一 HTML 内に並ぶ）
+  - `<div class="page-header">` または直下に h1/h2 を持つ div も境界として停止
+  - これにより所基通 04/01.htm の「23-1 paragraph に隣接節タイトル「法第24条《配当所得》関係」が混入する」問題を解消
+
+### Verified (実 fixture 6 本での parser 結果)
+
+| Fixture | 修正前 clauses | 修正後 clauses | 形式 |
+|---|---|---|---|
+| shotoku/01/01.htm | 6 | 6 | `2-1` 〜 `2-4の3` (2階層 + の付き) |
+| shotoku/04/01.htm | 10 | 10 | `23-1` 〜 `24-10` (複数 h1 混入解消) |
+| shotoku/04/05.htm | 5 | 5 | `31-1` 〜 `31-5` |
+| shotoku/17/01.htm | 9 | 9 | `90-2` 〜 `90-10` |
+| shotoku/22/01.htm | 21 | 21 | `161-1` / `161-1の2` / `161-1の3` … |
+| shotoku/30/01.htm | **0** | **7** | `183～193共-1` 〜 `183～193共-8` |
+| shohi/01/01.htm | 1 | 1 | 消基通 — 後方互換 OK |
+| shohi/05/01.htm | 11 | 11 | 消基通 — 後方互換 OK |
+
+消基通の動作を壊さずに、所基通の 30/01.htm（給与所得源泉徴収）が **0 件 → 7 件** に改善。
+
+### Notes
+
+- 所基通の **bulk DL 実走** はユーザー側で `houki-nta-mcp --bulk-download --tsutatsu 所得税基本通達` を実行して検証してほしい（rate-limit 1 req/sec で約 200 節 → 数分）
+- **法基通 / 相基通** の URL builder 拡張は v0.3.0-alpha.5 に持ち越し（URL 規則も TOC HTML 構造も別物のため、別リリースで集中対応）
+
 ## [0.3.0-alpha.3] - 2026-05-01
 
 **Phase 2d-2 alpha リリース**。**所得税基本通達（所基通）** の bulk DL を可能にする
