@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0-alpha.1] - 2026-05-01
+
+**Phase 2c alpha リリース**。`nta_search_tsutatsu` を FTS5 経由で本実装。
+事前に `houki-nta-mcp --bulk-download` で DB を構築しておく必要がある。
+
+### Added (Phase 2c — search via FTS5)
+
+- **`src/services/db-search.ts`**: FTS5 (trigram) ベースの clause 検索
+  - `searchClauseFts(db, keyword, options)` — keyword で `clause_fts MATCH`、rank ソート、`snippet()` でハイライト付き抜粋
+  - `hasAnyClause(db, formalName?)` — DB に検索対象が入っているか確認
+  - `sanitizeFtsQuery(raw)` — FTS5 メタ文字除去 + 複数語の AND 結合 + フレーズ化
+- **`handleNtaSearchTsutatsu` 本実装**:
+  - `keyword` で全文検索、`limit` で件数制限（default 10、最大 50）
+  - DB が空のときは「`houki-nta-mcp --bulk-download` を実行してください」の親切エラー + hint を返す
+  - レスポンスに `tsutatsu / abbr / clauseNumber / title / snippet / sourceUrl` + `legal_status`
+- **`searchTsutatsu(args, options)`** — テスト容易な内部関数（`dbPath` で `:memory:` 注入可）
+- 起動メッセージを `Phase 2c: nta_search_tsutatsu via FTS5 live` に更新
+
+### Added (テスト)
+
+- `src/services/db-search.test.ts`: 7 テスト
+  - sanitizeFtsQuery（単一語フレーズ化 / 複数語 AND / メタ文字除去 / 空入力）
+  - hasAnyClause（空 DB / seed 後 / formalName 絞り込み）
+  - searchClauseFts（基本ヒット / formalName 絞り込み / limit / 空クエリ）
+- `src/tools/handlers.test.ts` に Phase 2c のテスト追加（DB 空のとき hint 返却 / keyword 必須）
+
+### Changed
+
+- スタブから本実装になった `nta_search_tsutatsu` のテストを「未実装スタブ」リストから外す
+  （`nta_search_qa` / `nta_search_tax_answer` は引き続きスタブ、Phase 2e で対応）
+
+### Notes
+
+- `--bulk-download` を実行しないと search は使えない（hint 経由でユーザーに促す設計）
+- 検索インデックスは bulk DL 時の trigger で自動構築される
+- 当面は **消費税法基本通達のみ** が検索対象（Phase 2d で他通達追加）
+
+### Verified
+
+- 章 1 のみで bulk DL（89 clauses）後の FTS5 検索で「納税義務」「消費税」「適格請求書」等が想定通りヒットすることを probe で確認済み（v0.3.0-alpha.0 段階）
+
+### Planned (Phase 2 残り)
+
+- Phase 2d: 他通達の bulk DL 対応 + handler の DB 経由 lookup（clause→URL の構造差異を吸収）
+- Phase 2e: QA / TaxAnswer の bulk DL + search 対応
+- Phase 2f: 改正検知 + キャッシュ無効化
+
 ## [0.3.0-alpha.0] - 2026-05-01
 
 **Phase 2a + 2b alpha リリース**。bulk DL + SQLite FTS5 の基盤を導入。
@@ -272,7 +319,8 @@ houki-abbreviations v0.2.0 の通達系エントリ追加に伴い、houki-nta-m
 2. 国税庁サイトの実地調査（URL 構造・Shift_JIS 確認・cheerio パース動作確認）
 3. `kentaroajisaka/tax-law-mcp` のソースコード詳読
 
-[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.3.0-alpha.0...HEAD
+[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.3.0-alpha.1...HEAD
+[0.3.0-alpha.1]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.3.0-alpha.1
 [0.3.0-alpha.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.3.0-alpha.0
 [0.2.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.2.0
 [0.1.2]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.2

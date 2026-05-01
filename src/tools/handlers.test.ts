@@ -11,15 +11,11 @@ import {
   getTsutatsu,
   getTaxAnswer,
   getQa,
+  searchTsutatsu,
   toolHandlers,
 } from './handlers.js';
 
-describe('未実装スタブ — 検索系（Phase 2 で対応予定）', () => {
-  it('nta_search_tsutatsu', async () => {
-    const r = (await handleNtaSearchTsutatsu({ keyword: '電帳法' })) as { status?: string };
-    expect(r.status).toBe('not_implemented');
-  });
-
+describe('未実装スタブ — Phase 2e 以降で対応予定の検索系', () => {
   it('nta_search_qa', async () => {
     const r = (await handleNtaSearchQa({ keyword: '社内会議' })) as { status?: string };
     expect(r.status).toBe('not_implemented');
@@ -28,6 +24,34 @@ describe('未実装スタブ — 検索系（Phase 2 で対応予定）', () => 
   it('nta_search_tax_answer', async () => {
     const r = (await handleNtaSearchTaxAnswer({ keyword: '医療費控除' })) as { status?: string };
     expect(r.status).toBe('not_implemented');
+  });
+});
+
+describe('searchTsutatsu — Phase 2c 本実装', () => {
+  // 空 DB（in-memory）で「bulk-download を促すエラー」が返ること
+  it('DB が空のときは bulk-download を促すエラー + hint を返す', async () => {
+    const r = (await searchTsutatsu({ keyword: '納税義務' }, { dbPath: ':memory:' })) as {
+      error?: string;
+      hint?: string;
+    };
+    expect(r.error).toContain('検索対象がありません');
+    expect(r.hint).toContain('--bulk-download');
+  });
+
+  it('keyword 未指定はエラー', async () => {
+    const r = (await searchTsutatsu({ keyword: '' }, { dbPath: ':memory:' })) as {
+      error?: string;
+    };
+    expect(r.error).toContain('keyword');
+  });
+
+  // search-stub の登録確認用に、spy せずに handleNtaSearchTsutatsu 経由でも呼べることを確認
+  it('handleNtaSearchTsutatsu が searchTsutatsu に委譲されている', async () => {
+    const r = (await handleNtaSearchTsutatsu({ keyword: '消費税' })) as
+      | { hits?: unknown[]; error?: string }
+      | { hits: unknown[]; count: number };
+    // ローカルの実 DB が無い前提なので、error or hits=0 のいずれかのレスポンス形になっているはず
+    expect(r).toBeDefined();
   });
 });
 

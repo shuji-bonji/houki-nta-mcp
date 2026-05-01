@@ -19,6 +19,8 @@ import {
   TSUTATSU_URL_ROOTS,
 } from '../constants.js';
 import type { QaTopic } from '../constants.js';
+import { closeDb, openDb } from '../db/index.js';
+import { hasAnyClause, searchClauseFts } from '../services/db-search.js';
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
 import { parseQaJirei } from '../services/qa-parser.js';
 import { parseTaxAnswer } from '../services/tax-answer-parser.js';
@@ -42,13 +44,63 @@ const NOT_IMPLEMENTED = {
 };
 
 /**
- * nta_search_tsutatsu — 通達検索（スタブ）
+ * nta_search_tsutatsu — 通達検索（Phase 2c 本実装）
  *
- * Phase 1c では検索インデックスを持たないため未実装。
- * Phase 2 (bulk DL + SQLite FTS5) で本実装予定。
+ * ローカル DB の FTS5 (trigram) で全文検索する。事前に
+ * `houki-nta-mcp --bulk-download` で DB を構築しておく必要がある。
  */
-export async function handleNtaSearchTsutatsu(_args: SearchTsutatsuArgs) {
-  return { ...NOT_IMPLEMENTED, tool: 'nta_search_tsutatsu' };
+export async function handleNtaSearchTsutatsu(args: SearchTsutatsuArgs) {
+  return searchTsutatsu(args);
+}
+
+/**
+ * `handleNtaSearchTsutatsu` のテスト容易な内部関数。
+ *
+ * `dbPath` を `:memory:` などにしてテストから呼べる。
+ */
+export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath?: string } = {}) {
+  const keyword = args.keyword?.trim();
+  if (!keyword) {
+    return { error: 'keyword を指定してください' };
+  }
+
+  const db = openDb(options.dbPath);
+  try {
+    if (!hasAnyClause(db)) {
+      return {
+        error: 'ローカル DB に検索対象がありません',
+        hint: '初回は `houki-nta-mcp --bulk-download` を実行して通達一式をローカル DB に投入してください（消費税法基本通達: 約 100 秒）',
+        tool: 'nta_search_tsutatsu',
+      };
+    }
+
+    const limit = Math.min(Math.max(args.limit ?? 10, 1), 50);
+    const hits = searchClauseFts(db, keyword, { limit });
+
+    if (hits.length === 0) {
+      return {
+        keyword,
+        hits: [],
+        message: `"${keyword}" にマッチする clause はありません`,
+      };
+    }
+
+    return {
+      keyword,
+      count: hits.length,
+      hits: hits.map((h) => ({
+        tsutatsu: h.tsutatsu,
+        abbr: h.abbr,
+        clauseNumber: h.clauseNumber,
+        title: h.title,
+        snippet: h.snippet,
+        sourceUrl: h.sourceUrl,
+      })),
+      legal_status: TSUTATSU_LEGAL_STATUS,
+    };
+  } finally {
+    closeDb(db);
+  }
 }
 
 /**
