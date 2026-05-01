@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * houki-nta-mcp Server
+ * houki-nta-mcp Server / CLI エントリ
  *
- * 国税庁の通達・質疑応答事例・タックスアンサーへのアクセスを提供する MCP サーバ。
- * Phase 0 ではツール定義のみ。Phase 1 で実装。
+ * 引数なしの場合は MCP サーバを stdio で起動。
+ * `--bulk-download` 等のサブコマンドが指定された場合は CLI モードで動作（src/cli.ts）。
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
+import { runCliIfRequested } from './cli.js';
 import { tools } from './tools/definitions.js';
 import { toolHandlers } from './tools/handlers.js';
 import { PACKAGE_INFO } from './config.js';
@@ -62,13 +63,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Start server
+// Start server (or run CLI subcommand)
 async function main() {
+  // CLI モード（--bulk-download / --version / --help）が指定されていればそちらに分岐
+  const handled = await runCliIfRequested(process.argv.slice(2));
+  if (handled) return;
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (nta_get_tsutatsu/tax_answer/qa live)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 2a/2b: bulk DL + SQLite ready)`
   );
 }
 

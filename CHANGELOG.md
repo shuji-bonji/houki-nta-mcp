@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0-alpha.0] - 2026-05-01
+
+**Phase 2a + 2b alpha リリース**。bulk DL + SQLite FTS5 の基盤を導入。
+search 系ツール（`nta_search_*`）の本実装は Phase 2c で行うため、本リリースでは
+DB 構築 CLI が動くところまで（既存 MCP ツールの挙動は変更なし）。
+
+### Added (Phase 2a — DB 基盤)
+
+- **`better-sqlite3` ^12.9.0** を dependencies に追加（FTS5 完全対応・同期 API）
+- **`src/db/schema.ts`**: スキーマ定義 + 初期化（`initSchema` / `clearAllData` / `getSchemaVersion`）
+  - `tsutatsu` / `chapter` / `section` / `clause` 4 テーブル
+  - `clause_fts` (FTS5 + tokenize='trigram') による全文検索インデックス
+  - clause INSERT/UPDATE/DELETE で FTS を自動更新する trigger
+  - `(tsutatsu_id, clause_number)` の UNIQUE INDEX で **clause→URL lookup** を実現（Phase 1d 残課題への解）
+- **`src/db/index.ts`**: DB ファイルパス管理（XDG_CACHE_HOME 対応）と open/close ヘルパ
+  - 環境変数: `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME`
+  - デフォルト: `${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db`
+
+### Added (Phase 2b — bulk downloader + CLI)
+
+- **`src/services/bulk-downloader.ts`**: 1 通達を bulk DL する `bulkDownloadTsutatsu()`
+  - TOC ページ → 全節 URL 抽出 → 順次 fetch + parse + DB insert
+  - レート制限 1 req/sec（`requestIntervalMs` で上書き可、デフォルト 1100ms）
+  - `onlyChapter` で章単位の絞り込み（テスト・部分 DL 用）
+  - `onProgress` コールバックで進捗通知
+  - 失敗節は warn ログを出して続行（NtaFetchError / TsutatsuParseError のみ）
+  - **同 formal_name で idempotent**: 再実行時は古い clause / section を消してから入れ直す
+- **`src/cli.ts`**: CLI モード実装
+  - `houki-nta-mcp --bulk-download` で消基通を一括 DL
+  - `--tsutatsu=<formal名>` でターゲット指定
+  - `--db-path=<path>` で DB ファイルパス上書き
+  - `--version` / `--help` も追加
+- **`src/index.ts`** を CLI/MCP の両モード対応エントリに変更
+  - 引数なし → MCP server 起動（既定）
+  - サブコマンド指定 → CLI 処理してから exit
+
+### Added (テスト)
+
+- `src/db/schema.test.ts`: 4 テスト（schema / FTS5 trigger / UNIQUE INDEX / clearAllData）
+- `src/services/bulk-downloader.test.ts`: 3 テスト（fixture モックで bulk DL E2E）
+- `scripts/probe-bulk-dl.mjs`: 章 1 で実 nta.go.jp に対して bulk DL を試すデバッグスクリプト
+
+### Verified
+
+- 章 1 のみ実 bulk DL（章 1 = 8 節 / 89 clauses）が **8 秒で完了**
+- FTS5 trigram で「納税義務」「消費税」等の日本語キーワード検索が機能
+- clause→URL lookup（例: `1-1-1` → `/01/01.htm`）が解決可能
+
+### Notes
+
+- このリリースは **alpha**。既存の `nta_get_tsutatsu` / `nta_get_tax_answer` / `nta_get_qa` の挙動に変更はない
+- `nta_search_tsutatsu` 等の検索系 tool 本実装は **Phase 2c** で対応
+- 他通達（所基通・法基通・相基通）の DB 投入は **Phase 2d** で対応
+- 改正検知 / 自動再 DL は **Phase 2f** で対応
+
+### Planned (Phase 2 残り)
+
+- Phase 2c: `nta_search_tsutatsu` を FTS5 で本実装
+- Phase 2d: 他通達の bulk DL 対応 + handler の DB lookup 経路追加
+- Phase 2e: QA / TaxAnswer の bulk DL + search 対応
+- Phase 2f: 改正検知 + キャッシュ無効化
+
 ## [0.2.0] - 2026-05-01
 
 **Phase 1e リリース**。`nta_get_tax_answer` と `nta_get_qa` を本実装。
@@ -210,7 +272,8 @@ houki-abbreviations v0.2.0 の通達系エントリ追加に伴い、houki-nta-m
 2. 国税庁サイトの実地調査（URL 構造・Shift_JIS 確認・cheerio パース動作確認）
 3. `kentaroajisaka/tax-law-mcp` のソースコード詳読
 
-[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.3.0-alpha.0...HEAD
+[0.3.0-alpha.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.3.0-alpha.0
 [0.2.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.2.0
 [0.1.2]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.2
 [0.1.1]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.1
