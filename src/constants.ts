@@ -62,6 +62,62 @@ export const TSUTATSU_LEGAL_STATUS = {
   note: '通達は行政内部文書。納税者・裁判所には直接的拘束力なし。ただし税務署員は職務として守る義務あり（最高裁 昭和43.12.24）',
 } as const;
 
+/**
+ * タックスアンサーのカテゴリ ベース URL。
+ */
+export const TAX_ANSWER_BASE_URL = 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/';
+
+/**
+ * タックスアンサー番号の先頭桁 → 税目フォルダのマッピング。
+ *
+ * 例: 6101 → "shohi" → /taxes/shiraberu/taxanswer/shohi/6101.htm
+ *
+ * 8xxx 帯は要追加調査（2026-05 時点で sake/8001 は 404）。Phase 2 で対応予定。
+ */
+export const TAX_ANSWER_FOLDER_MAP: Readonly<Record<string, string>> = {
+  '1': 'shotoku', // 所得税
+  '2': 'gensen', // 源泉徴収
+  '3': 'joto', // 譲渡所得
+  '4': 'sozoku', // 相続税・贈与税
+  '5': 'hojin', // 法人税
+  '6': 'shohi', // 消費税
+  '7': 'inshi', // 印紙税
+  '9': 'osirase', // お知らせ（税目横断）
+} as const;
+
+/**
+ * タックスアンサー / 質疑応答事例の法的位置付け。
+ * これらは行政の解説資料であり、通達よりさらに参考性が低い（拘束力ゼロ）。
+ */
+export const NTA_GENERAL_INFO_LEGAL_STATUS = {
+  binds_citizens: false,
+  binds_courts: false,
+  binds_tax_office: false,
+  note: 'タックスアンサー・質疑応答事例は国税庁の参考解説資料。法的拘束力はなく、実務判断は通達・法令本文に基づく必要がある',
+} as const;
+
+/**
+ * 質疑応答事例のベース URL。
+ * 個別事例 URL は `${base}{税目}/{カテゴリ}/{事例番号}.htm` の形式。
+ */
+export const QA_BASE_URL = 'https://www.nta.go.jp/law/shitsugi/';
+
+/**
+ * 質疑応答事例の税目フォルダ一覧（DATA-SOURCES.md より、実地確認済み）。
+ */
+export const QA_TOPICS = [
+  'shotoku', // 所得税
+  'gensen', // 源泉所得税
+  'joto', // 譲渡所得
+  'sozoku', // 相続税・贈与税
+  'hyoka', // 財産の評価
+  'hojin', // 法人税
+  'shohi', // 消費税
+  'inshi', // 印紙税
+  'hotei', // 法定調書
+] as const;
+export type QaTopic = (typeof QA_TOPICS)[number];
+
 /** このMCPが扱う category（houki-abbreviations の Category 型のサブセット） */
 export const NTA_CATEGORIES = [
   'kihon-tsutatsu',

@@ -1,14 +1,28 @@
 /**
  * MCP Tool Handlers — houki-nta-mcp
  *
- * Phase 1c で `nta_get_tsutatsu` を本実装。`nta_search_*` / `nta_*_qa` /
- * `nta_*_tax_answer` は引き続きスタブ（Phase 1c 後半 / 1d で実装）。
+ * Phase 1c で `nta_get_tsutatsu` を本実装。
+ * Phase 1e で `nta_get_tax_answer` / `nta_get_qa` を本実装。
+ * `nta_search_*` 系は Phase 2 (bulk DL + FTS5) で対応予定。
  */
 
 import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
 
-import { NTA_HINT, TSUTATSU_LEGAL_STATUS, TSUTATSU_URL_ROOTS } from '../constants.js';
+import {
+  NTA_GENERAL_INFO_LEGAL_STATUS,
+  NTA_HINT,
+  QA_BASE_URL,
+  QA_TOPICS,
+  TAX_ANSWER_BASE_URL,
+  TAX_ANSWER_FOLDER_MAP,
+  TSUTATSU_LEGAL_STATUS,
+  TSUTATSU_URL_ROOTS,
+} from '../constants.js';
+import type { QaTopic } from '../constants.js';
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
+import { parseQaJirei } from '../services/qa-parser.js';
+import { parseTaxAnswer } from '../services/tax-answer-parser.js';
+import { renderQaMarkdown, renderTaxAnswerMarkdown } from '../services/tax-answer-render.js';
 import { parseTsutatsuSection, TsutatsuParseError } from '../services/tsutatsu-parser.js';
 import { renderClauseMarkdown } from '../services/tsutatsu-render.js';
 import { buildSectionUrl, parseClauseNumber } from '../utils/clause.js';
@@ -175,31 +189,171 @@ export async function getTsutatsu(
 }
 
 /**
- * nta_search_qa — 質疑応答事例検索（Phase 0 スタブ）
+ * nta_search_qa — 質疑応答事例検索（スタブ）
+ *
+ * Phase 1e では検索インデックスを持たないため未実装。Phase 2 (FTS5) で対応。
  */
 export async function handleNtaSearchQa(_args: SearchQaArgs) {
   return { ...NOT_IMPLEMENTED, tool: 'nta_search_qa' };
 }
 
 /**
- * nta_get_qa — 質疑応答事例取得（Phase 0 スタブ）
+ * nta_get_qa — 質疑応答事例取得（Phase 1e 本実装）
  */
-export async function handleNtaGetQa(_args: GetQaArgs) {
-  return { ...NOT_IMPLEMENTED, tool: 'nta_get_qa' };
+export async function handleNtaGetQa(args: GetQaArgs) {
+  return getQa(args);
 }
 
 /**
- * nta_search_tax_answer — タックスアンサー検索（Phase 0 スタブ）
+ * `handleNtaGetQa` のテスト容易な内部関数。
+ */
+export async function getQa(args: GetQaArgs, options: { fetchImpl?: typeof fetch } = {}) {
+  const topic = args.topic;
+  if (!QA_TOPICS.includes(topic as QaTopic)) {
+    return {
+      error: `topic "${topic}" は houki-nta-mcp では未対応です`,
+      hint: '対応税目: shotoku, gensen, joto, sozoku, hyoka, hojin, shohi, inshi, hotei',
+    };
+  }
+  if (!args.category || !args.id) {
+    return {
+      error: 'category と id を両方指定してください',
+      hint: '/law/shitsugi/{topic}/01.htm の TOC ページで category 番号と事例番号を確認',
+    };
+  }
+
+  // パディングを綺麗に: "2" → "02" に揃える（実 URL は 2 桁ゼロ埋めが多い）
+  const category = args.category.padStart(2, '0');
+  const id = args.id.padStart(2, '0');
+  const url = `${QA_BASE_URL}${topic}/${category}/${id}.htm`;
+
+  let html: string;
+  let sourceUrl: string;
+  let fetchedAt: string;
+  try {
+    const fetched = await fetchNtaPage(url, { fetchImpl: options.fetchImpl });
+    html = fetched.html;
+    sourceUrl = fetched.sourceUrl;
+    fetchedAt = fetched.fetchedAt;
+  } catch (err) {
+    if (err instanceof NtaFetchError) {
+      return {
+        error: `国税庁サイトからの取得に失敗: ${err.message}`,
+        url,
+        ...(err.status !== undefined ? { status: err.status } : {}),
+      };
+    }
+    throw err;
+  }
+
+  let qa;
+  try {
+    qa = parseQaJirei({
+      html,
+      sourceUrl,
+      fetchedAt,
+      topic: topic as QaTopic,
+      category,
+      id,
+    });
+  } catch (err) {
+    if (err instanceof TsutatsuParseError) {
+      return {
+        error: `質疑応答事例ページのパースに失敗: ${err.message}`,
+        url,
+      };
+    }
+    throw err;
+  }
+
+  if (args.format === 'json') {
+    return {
+      qa,
+      legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+    };
+  }
+  return renderQaMarkdown(qa);
+}
+
+/**
+ * nta_search_tax_answer — タックスアンサー検索（スタブ）
+ *
+ * Phase 1e では検索インデックスを持たないため未実装。Phase 2 (FTS5) で対応。
  */
 export async function handleNtaSearchTaxAnswer(_args: SearchTaxAnswerArgs) {
   return { ...NOT_IMPLEMENTED, tool: 'nta_search_tax_answer' };
 }
 
 /**
- * nta_get_tax_answer — タックスアンサー取得（Phase 0 スタブ）
+ * nta_get_tax_answer — タックスアンサー取得（Phase 1e 本実装）
  */
-export async function handleNtaGetTaxAnswer(_args: GetTaxAnswerArgs) {
-  return { ...NOT_IMPLEMENTED, tool: 'nta_get_tax_answer' };
+export async function handleNtaGetTaxAnswer(args: GetTaxAnswerArgs) {
+  return getTaxAnswer(args);
+}
+
+/**
+ * `handleNtaGetTaxAnswer` のテスト容易な内部関数。
+ */
+export async function getTaxAnswer(
+  args: GetTaxAnswerArgs,
+  options: { fetchImpl?: typeof fetch } = {}
+) {
+  const no = args.no?.trim();
+  if (!no || !/^\d+$/.test(no)) {
+    return {
+      error: `タックスアンサー番号は数字で指定してください: "${args.no}" は不正`,
+      hint: '例: "6101" (消費税の基本的なしくみ), "1120" (医療費控除)',
+    };
+  }
+  const folder = TAX_ANSWER_FOLDER_MAP[no[0]];
+  if (!folder) {
+    return {
+      error: `番号 "${no}" の先頭桁 "${no[0]}" は houki-nta-mcp v0.2.x では未対応`,
+      hint: '対応番号帯: 1xxx=所得税, 2xxx=源泉, 3xxx=譲渡, 4xxx=相続・贈与, 5xxx=法人税, 6xxx=消費税, 7xxx=印紙税, 9xxx=お知らせ。8xxx 帯は未対応（Phase 2 で対応予定）',
+    };
+  }
+
+  const url = `${TAX_ANSWER_BASE_URL}${folder}/${no}.htm`;
+
+  let html: string;
+  let sourceUrl: string;
+  let fetchedAt: string;
+  try {
+    const fetched = await fetchNtaPage(url, { fetchImpl: options.fetchImpl });
+    html = fetched.html;
+    sourceUrl = fetched.sourceUrl;
+    fetchedAt = fetched.fetchedAt;
+  } catch (err) {
+    if (err instanceof NtaFetchError) {
+      return {
+        error: `国税庁サイトからの取得に失敗: ${err.message}`,
+        url,
+        ...(err.status !== undefined ? { status: err.status } : {}),
+      };
+    }
+    throw err;
+  }
+
+  let taxAnswer;
+  try {
+    taxAnswer = parseTaxAnswer(html, sourceUrl, fetchedAt);
+  } catch (err) {
+    if (err instanceof TsutatsuParseError) {
+      return {
+        error: `タックスアンサーページのパースに失敗: ${err.message}`,
+        url,
+      };
+    }
+    throw err;
+  }
+
+  if (args.format === 'json') {
+    return {
+      taxAnswer,
+      legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+    };
+  }
+  return renderTaxAnswerMarkdown(taxAnswer);
 }
 
 /**

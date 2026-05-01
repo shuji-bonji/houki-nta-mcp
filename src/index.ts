@@ -68,7 +68,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (nta_get_tsutatsu live for 消基通)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (nta_get_tsutatsu/tax_answer/qa live)`
   );
 }
 

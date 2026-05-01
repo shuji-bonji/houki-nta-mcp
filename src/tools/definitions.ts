@@ -91,13 +91,35 @@ export const tools: Tool[] = [
   },
   {
     name: 'nta_get_qa',
-    description: '質疑応答事例の本文を取得する。Phase 0 ではスタブ。',
+    description:
+      '国税庁の質疑応答事例 1 件を取得する。URL 形式: /law/shitsugi/{topic}/{category}/{id}.htm',
     inputSchema: {
       type: 'object',
       properties: {
-        identifier: {
+        topic: {
           type: 'string',
-          description: '事例タイトル or ID',
+          enum: [
+            'shotoku',
+            'gensen',
+            'joto',
+            'sozoku',
+            'hyoka',
+            'hojin',
+            'shohi',
+            'inshi',
+            'hotei',
+          ],
+          description:
+            '税目フォルダ。shotoku=所得税, gensen=源泉所得税, joto=譲渡所得, sozoku=相続税・贈与税, hyoka=財産の評価, hojin=法人税, shohi=消費税, inshi=印紙税, hotei=法定調書',
+        },
+        category: {
+          type: 'string',
+          description:
+            'カテゴリ番号（章相当）。例: "01", "02"。/law/shitsugi/{topic}/01.htm の TOC で確認できる',
+        },
+        id: {
+          type: 'string',
+          description: '事例番号。例: "19"',
         },
         format: {
           type: 'string',
@@ -106,7 +128,7 @@ export const tools: Tool[] = [
           default: 'markdown',
         },
       },
-      required: ['identifier'],
+      required: ['topic', 'category', 'id'],
     },
   },
   {
@@ -130,13 +152,15 @@ export const tools: Tool[] = [
   },
   {
     name: 'nta_get_tax_answer',
-    description: 'タックスアンサー本文を取得する。Phase 0 ではスタブ。',
+    description:
+      '国税庁のタックスアンサー（よくある税の質問）本文を番号で取得する。番号の先頭桁から税目フォルダを自動判定。例: 6101 → 消費税の基本的なしくみ',
     inputSchema: {
       type: 'object',
       properties: {
         no: {
           type: 'string',
-          description: 'タックスアンサー番号。例: "6101", "1100"',
+          description:
+            'タックスアンサー番号。先頭桁で税目決定: 1xxx=所得税, 2xxx=源泉, 3xxx=譲渡, 4xxx=相続・贈与, 5xxx=法人税, 6xxx=消費税, 7xxx=印紙税, 9xxx=お知らせ。例: "6101", "1120"',
         },
         format: {
           type: 'string',

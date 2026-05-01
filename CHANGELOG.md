@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-01
+
+**Phase 1e リリース**。`nta_get_tax_answer` と `nta_get_qa` を本実装。
+
+### Added (Phase 1e — タックスアンサー / 質疑応答事例 取得)
+
+- **`nta_get_tax_answer`**: 国税庁タックスアンサー本文を番号で取得
+  - 番号の先頭桁から税目フォルダを自動判定（1xxx=所得税 / 2xxx=源泉 / 3xxx=譲渡 / 4xxx=相続・贈与 / 5xxx=法人税 / 6xxx=消費税 / 7xxx=印紙税 / 9xxx=お知らせ）
+  - URL: `/taxes/shiraberu/taxanswer/{税目フォルダ}/{番号}.htm` を直接組立
+  - 8xxx 帯は要追加調査のため未対応（Phase 2 で対応予定）
+  - 例: `{ no: "6101" }` → 消費税の基本的なしくみ
+- **`nta_get_qa`**: 質疑応答事例本文を取得
+  - 引数: `topic`（税目）/ `category`（カテゴリ番号）/ `id`（事例番号）
+  - URL: `/law/shitsugi/{topic}/{category}/{id}.htm` を直接組立
+  - 対応 topic: shotoku / gensen / joto / sozoku / hyoka / hojin / shohi / inshi / hotei
+  - category/id は 1 桁を 2 桁にゼロパディング
+  - 例: `{ topic: "shohi", category: "02", id: "19" }` → 個人事業者が所有するゴルフ会員権の譲渡
+- **`src/services/tax-answer-parser.ts`**: タックスアンサー parser
+  - `<div class="imp-cnt" id="bodyArea">` ルート（通達と異なる）
+  - `<h1>No.{番号} {タイトル}</h1>` から `no` と `title` を抽出
+  - `<p>[令和7年4月1日現在法令等]</p>` から `effectiveDate` 抽出
+  - h2 ごとに section 分割、`対象税目` セクションは `taxCategory` に格納
+- **`src/services/qa-parser.ts`**: 質疑応答事例 parser
+  - `<div class="imp-cnt-tsutatsu" id="bodyArea">` ルート（通達と同じ）
+  - `<h2>【照会要旨】`/`【回答要旨】`/`【関係法令通達】` 配下の段落を構造抽出
+- **`src/services/tax-answer-render.ts`**: Markdown レンダラ（タックスアンサー + 質疑応答事例）
+- **`src/types/tax-answer.ts`** / **`src/types/qa.ts`**: データ型定義
+- **`src/constants.ts`** に `TAX_ANSWER_BASE_URL` / `TAX_ANSWER_FOLDER_MAP` / `QA_BASE_URL` / `QA_TOPICS` / `NTA_GENERAL_INFO_LEGAL_STATUS` 追加
+- **`tests/fixtures/`** に以下を追加:
+  - タックスアンサー: shohi/6101, shotoku/1120, hojin/5759, sozoku/4102, gensen/2502, joto/3240, inshi/7124, osirase/9201
+  - 質疑応答事例: shohi/02/19（ゴルフ会員権）
+  - インデックス: `taxanswer/index2.htm`, `taxanswer/code/bunya-syohizei.htm`, `taxanswer/code/bunya-hojin.htm`, `law/shitsugi/01.htm`, `law/shitsugi/shohi/01.htm`
+
+### Changed
+
+- **`legal_status` フィールドの追加**: タックスアンサー / 質疑応答事例レスポンスに `NTA_GENERAL_INFO_LEGAL_STATUS` を付与（拘束力ゼロを明示。実務判断は通達・法令本文に基づく必要があると注記）
+- **definitions.ts**: `nta_get_qa` の引数仕様を `{ identifier }` から `{ topic, category, id }` に変更（破壊的変更）
+
+### Notes (BREAKING CHANGE)
+
+- `nta_get_qa` の引数が変わっています。v0.1.x で `{ identifier: "..." }` を使っていた場合は `{ topic, category, id }` 形式へ移行してください。
+  もっとも v0.1.x の `nta_get_qa` はスタブ（未実装）だったため、実利用での影響はありません。
+
+### Planned (Phase 2 以降)
+
+- Phase 2: bulk DL + SQLite FTS5 — `nta_search_*` 系の本実装
+- Phase 1d': 他通達の clause→URL lookup table（Phase 2 と統合）
+- Phase 3: 文書回答事例（PDF）— pdf-reader-mcp 連携
+
 ## [0.1.2] - 2026-05-01
 
 **Phase 1d リリース（調査主体）**。当初の「他通達 URL マッピング追加」計画から方針転換し、構造調査の結果を文書化。コードは最小変更（エラーメッセージ親切化のみ）。
@@ -161,7 +210,8 @@ houki-abbreviations v0.2.0 の通達系エントリ追加に伴い、houki-nta-m
 2. 国税庁サイトの実地調査（URL 構造・Shift_JIS 確認・cheerio パース動作確認）
 3. `kentaroajisaka/tax-law-mcp` のソースコード詳読
 
-[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/shuji-bonji/houki-nta-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.2.0
 [0.1.2]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.2
 [0.1.1]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.1
 [0.1.0]: https://github.com/shuji-bonji/houki-nta-mcp/releases/tag/v0.1.0

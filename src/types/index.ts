@@ -43,8 +43,12 @@ export interface SearchQaArgs {
 
 /** 質疑応答事例取得引数 */
 export interface GetQaArgs {
-  /** タイトル or ID */
-  identifier: string;
+  /** 税目フォルダ。例: "shohi", "shotoku", "hojin" */
+  topic: string;
+  /** カテゴリ番号。例: "02"（章相当） */
+  category: string;
+  /** 事例番号。例: "19" */
+  id: string;
   /** 出力形式 */
   format?: OutputFormat;
 }

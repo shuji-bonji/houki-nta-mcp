@@ -8,23 +8,21 @@
 
 法律本文は houki-hub family の別 MCP（[`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp)）が担当します。
 
-## 状態: v0.1.0 — 消費税法基本通達（消基通）の取得が動作
+## 状態: v0.2.0 — 通達 / タックスアンサー / 質疑応答事例 が動作
 
-`nta_get_tsutatsu` が **消費税法基本通達**に対して本実装されました。`<br>` 含む複数行本文 / 「の2」サフィックス（1-4-13の2 等）/ 章タイトル / 注の階層構造に対応しています。
-
-他通達（所基通・法基通・相基通 等）の URL マッピングは Phase 1d で追加予定です。検索・質疑応答事例・タックスアンサーは Phase 1e 以降。実装ロードマップは [`docs/DESIGN.md`](docs/DESIGN.md) を参照。
+3 つの取得系ツール（`nta_get_tsutatsu` / `nta_get_tax_answer` / `nta_get_qa`）が本実装済みです。検索系（`nta_search_*`）は Phase 2 で対応予定。実装ロードマップは [`docs/DESIGN.md`](docs/DESIGN.md) を参照。
 
 ## 提供ツールと現在の状態
 
 | Tool | 用途 | 状態 |
 |---|---|---|
 | `nta_get_tsutatsu` | 通達本文を取得（章-項-号 単位指定）| ✅ v0.1.0（消基通のみ）|
+| `nta_get_tax_answer` | タックスアンサー本文を取得（番号指定、税目は自動振り分け）| ✅ v0.2.0 |
+| `nta_get_qa` | 質疑応答事例の本文を取得（topic/category/id 指定）| ✅ v0.2.0 |
 | `resolve_abbreviation` | 略称→エントリ解決（houki-abbreviations 経由）| ✅ v0.0.1 |
 | `nta_search_tsutatsu` | 通達をキーワード検索 | 🚧 Phase 2（FTS5）|
-| `nta_search_qa` | 質疑応答事例をキーワード検索 | 🚧 Phase 1e |
-| `nta_get_qa` | 質疑応答事例の本文を取得 | 🚧 Phase 1e |
-| `nta_search_tax_answer` | タックスアンサーをキーワード検索 | 🚧 Phase 1e |
-| `nta_get_tax_answer` | タックスアンサー本文を取得（番号指定）| 🚧 Phase 1e |
+| `nta_search_qa` | 質疑応答事例をキーワード検索 | 🚧 Phase 2 |
+| `nta_search_tax_answer` | タックスアンサーをキーワード検索 | 🚧 Phase 2 |
 
 ## 使い方の例
 
@@ -42,6 +40,18 @@
 // 管轄外（消法 = 消費税法本体）→ houki-egov-mcp に誘導
 { "name": "消法", "clause": "9" }
 // → { error: "...houki-egov の管轄...", hint: "houki-egov-mcp で取得してください" }
+
+// nta_get_tax_answer — 番号で取得（先頭桁から税目自動判定）
+{ "no": "6101" }
+// → "# No.6101 消費税の基本的なしくみ ..." 7 sections + 法令時点 + 出典
+
+{ "no": "1120", "format": "json" }
+// → { taxAnswer: { no, title, effectiveDate, taxCategory, sections },
+//     legal_status: { binds_citizens: false, binds_courts: false, binds_tax_office: false, ... } }
+
+// nta_get_qa — 質疑応答事例を取得
+{ "topic": "shohi", "category": "02", "id": "19" }
+// → "# 個人事業者が所有するゴルフ会員権の譲渡 ## 【照会要旨】 ... ## 【回答要旨】 ... ## 【関係法令通達】 ..."
 ```
 
 ## 通達の法的位置付け（重要）
@@ -79,7 +89,7 @@
 |---|---|---|
 | [`@shuji-bonji/houki-abbreviations`](https://github.com/shuji-bonji/houki-abbreviations) | 略称辞書（共有ライブラリ） | ✅ v0.1.0 |
 | [`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp) | e-Gov 法令API クライアント | ✅ v0.2.0 |
-| **`@shuji-bonji/houki-nta-mcp`** | **国税庁通達・Q&A・タックスアンサー（このリポジトリ）** | ✅ v0.1.0（消基通） |
+| **`@shuji-bonji/houki-nta-mcp`** | **国税庁通達・Q&A・タックスアンサー（このリポジトリ）** | ✅ v0.2.0（取得系 3 ツール） |
 | `@shuji-bonji/houki-mhlw-mcp` | 厚労省通達・通知 | 計画中 |
 | `@shuji-bonji/houki-court-mcp` | 判例（裁判所サイト） | 構想中 |
 | `@shuji-bonji/houki-saiketsu-mcp` | 国税不服審判所裁決 | 構想中 |
