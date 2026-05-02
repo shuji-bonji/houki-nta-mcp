@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0-alpha.1] - 2026-05-02
+
+**Phase 3b 第 1 段** — 改正通達（一部改正通達）の bulk DL + FTS5 検索に対応。
+通達本体に加えて、4 通達分の改正履歴（通達番号・改正本文・添付 PDF URL）を扱えるように
+なった。Phase 3 設計どおり、PDF 本文は `pdf-reader-mcp` に hint として URL を渡す形で
+責務分離。
+
+### Added (Phase 3b)
+
+- **新規ツール 2 件**:
+  - `nta_search_kaisei_tsutatsu` — 改正通達 FTS5 検索（taxonomy / limit 絞り込み対応）
+  - `nta_get_kaisei_tsutatsu` — docId で改正通達 1 件取得（本文 + 添付 PDF URL を含む）
+- **新規 parser**:
+  - `services/kaisei-toc-parser.ts` — 改正索引 (kaisei_*.htm) → 個別ページ URL リスト化、`extractIssuedAt`（元号→ISO日付）/ `extractDocIdFromUrl` / `extractTaxonomyFromUrl` 付き
+  - `services/kaisei-parser.ts` — 個別改正通達ページ → `NtaDocument`（本文・宛先・発出日・添付 PDF）抽出。`parsePdfSizeKb` で「PDF/470KB」「PDF/1.18MB」等のサイズ表記を KB に正規化
+- **`services/kaisei-bulk-downloader.ts`** + CLI `--bulk-download-kaisei`:
+  - 4 通達 (消基通/所基通/法基通/相基通) の改正索引を順次 fetch → 個別ページを 1 req/sec で DL → `document` テーブルへ INSERT OR REPLACE
+  - fail-soft（個別ページ失敗は continue）
+- **DB schema v3**:
+  - `document` テーブル + `document_fts` (trigram) + 自動 indexing trigger
+  - `(doc_type, doc_id)` UNIQUE。`taxonomy` / `issued_at` / `issuer` / `attached_pdfs_json` / `content_hash` カラム
+- **db-search 拡張**:
+  - `searchDocumentFts` / `getDocumentFromDb` / `listAvailableDocIds`
+  - クエリは Phase 2d-5 の Normalize-everywhere に統合
+- **types/document.ts**: `NtaDocument` / `AttachedPdf` / `DocType` / `KaiseiIndexEntry` の型定義
+- **テスト**:
+  - `kaisei-toc-parser.test.ts` — 索引 22 件抽出 / 全角数字対応 / 元号変換 / URL 解析
+  - `kaisei-parser.test.ts` — 個別ページの本文・宛先・発出日・添付 PDF / `parsePdfSizeKb` の MB→KB 換算
+
+### Changed
+
+- **CLI ヘルプ**: `--bulk-download-kaisei` を追加
+- **`tools/definitions.ts`**: 9 ツール構成に拡張（既存 7 + 改正通達 2）
+- **起動ログ**: Phase 3b（改正通達 bulk DL + FTS5）対応を明示
+
+### Verified (実 fixture での動作確認)
+
+| 項目 | 結果 |
+|---|---|
+| 消基通 改正索引 → 個別 URL 抽出 | 22 件 |
+| 個別ページ (令和8年4月1日) パース | docId / taxonomy / 発出日 / 宛先 / 本文 / 添付 PDF 全 OK |
+| 添付 PDF サイズ抽出 | 470KB（KB 単位）/ 1.18MB → 1208KB（MB 換算） |
+| 全角数字「令和７年４月１日」発出日抽出 | 2025-04-01 |
+
+### Notes
+
+- 改正通達 bulk DL: 4 通達合計で約 100 件前後 / 数分（rate-limit 1 req/sec）
+- 添付 PDF の本文は **`pdf-reader-mcp` に委譲**（hint として URL とサイズを返すのみ）
+- 既存 DB は schema v2 → v3 で自動マイグレーション (DROP & CREATE)。v0.3.x で投入した
+  通達本体の DB は **`--bulk-download-all --refresh` で再構築**してから `--bulk-download-kaisei` を実行
+
+### Phase 3b 残作業（次回以降）
+
+- v0.4.0-alpha.2: 事務運営指針 (`jimu-unei`) 対応
+- v0.4.0-alpha.3: 文書回答事例 (`bunshokaitou`) 対応
+- v0.4.0: 3 種別揃って正式リリース
+
 ## [0.3.1] - 2026-05-02
 
 **v0.3.0 リリース直後に発覚した法基通 bulk DL 完走バグの patch リリース**。

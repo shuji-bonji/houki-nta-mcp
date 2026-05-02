@@ -19,8 +19,9 @@ import type DatabaseT from 'better-sqlite3';
  *
  * - v1: 初版（Phase 2a-c）
  * - v2: section に content_hash カラムを追加（Phase 2e: 改正検知用）
+ * - v3: document / document_fts テーブル追加（Phase 3b: 改正通達・事務運営指針・文書回答事例）
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -103,6 +104,56 @@ CREATE TRIGGER IF NOT EXISTS clause_au AFTER UPDATE ON clause BEGIN
   INSERT INTO clause_fts(rowid, clause_number, title, full_text)
   VALUES (new.id, new.clause_number, new.title, new.full_text);
 END;
+
+-- ========================================================================
+-- v3 (Phase 3b): 改正通達 / 事務運営指針 / 文書回答事例 を共通テーブルで扱う
+-- ========================================================================
+-- 通達本体 (clause) と違い、これらは「1 文書 = 1 レコード」のフラットな構造。
+-- doc_type で種別を区別、(doc_type, doc_id) で一意。
+CREATE TABLE IF NOT EXISTS document (
+  id INTEGER PRIMARY KEY,
+  doc_type TEXT NOT NULL,             -- 'kaisei' / 'jimu-unei' / 'bunshokaitou'
+  doc_id TEXT NOT NULL,               -- 例: '0026003-067' (新形式) / '240401' (旧形式)
+  taxonomy TEXT,                      -- 税目フォルダ。例: 'shohi' / 'shotoku' / 'hojin' / 'sisan/sozoku'
+  title TEXT NOT NULL,                -- 例: '消費税法基本通達の一部改正について（法令解釈通達）'
+  issued_at TEXT,                     -- 発出日 (ISO YYYY-MM-DD)
+  issuer TEXT,                        -- 例: '国税庁長官' / '各国税局長 殿' のような宛先・発出者
+  source_url TEXT NOT NULL,           -- 個別 HTML の URL
+  fetched_at TEXT NOT NULL,
+  full_text TEXT NOT NULL,            -- 本文（normalize 済み）
+  attached_pdfs_json TEXT NOT NULL,   -- JSON: [{ title, url, sizeKb? }]
+  content_hash TEXT,                  -- 改正検知用 SHA-1
+  UNIQUE(doc_type, doc_id)
+);
+CREATE INDEX IF NOT EXISTS idx_document_lookup ON document(doc_type, doc_id);
+CREATE INDEX IF NOT EXISTS idx_document_taxonomy ON document(doc_type, taxonomy);
+
+-- 全文検索（FTS5 trigram）
+CREATE VIRTUAL TABLE IF NOT EXISTS document_fts USING fts5(
+  doc_type UNINDEXED,
+  taxonomy UNINDEXED,
+  title,
+  full_text,
+  content='document',
+  content_rowid='id',
+  tokenize='trigram'
+);
+
+-- document trigger（clause と同様）
+CREATE TRIGGER IF NOT EXISTS document_ai AFTER INSERT ON document BEGIN
+  INSERT INTO document_fts(rowid, doc_type, taxonomy, title, full_text)
+  VALUES (new.id, new.doc_type, new.taxonomy, new.title, new.full_text);
+END;
+CREATE TRIGGER IF NOT EXISTS document_ad AFTER DELETE ON document BEGIN
+  INSERT INTO document_fts(document_fts, rowid, doc_type, taxonomy, title, full_text)
+  VALUES ('delete', old.id, old.doc_type, old.taxonomy, old.title, old.full_text);
+END;
+CREATE TRIGGER IF NOT EXISTS document_au AFTER UPDATE ON document BEGIN
+  INSERT INTO document_fts(document_fts, rowid, doc_type, taxonomy, title, full_text)
+  VALUES ('delete', old.id, old.doc_type, old.taxonomy, old.title, old.full_text);
+  INSERT INTO document_fts(rowid, doc_type, taxonomy, title, full_text)
+  VALUES (new.id, new.doc_type, new.taxonomy, new.title, new.full_text);
+END;
 `;
 
 /**
@@ -138,9 +189,14 @@ export function getSchemaVersion(db: DatabaseT.Database): number | null {
   }
 }
 
-/** スキーマ全体を DROP して再作成（Phase 2a の単純なマイグレーション） */
+/** スキーマ全体を DROP して再作成（単純マイグレーション） */
 function dropAndRecreate(db: DatabaseT.Database): void {
   db.exec(`
+    DROP TRIGGER IF EXISTS document_au;
+    DROP TRIGGER IF EXISTS document_ad;
+    DROP TRIGGER IF EXISTS document_ai;
+    DROP TABLE IF EXISTS document_fts;
+    DROP TABLE IF EXISTS document;
     DROP TRIGGER IF EXISTS clause_au;
     DROP TRIGGER IF EXISTS clause_ad;
     DROP TRIGGER IF EXISTS clause_ai;
@@ -163,10 +219,12 @@ function dropAndRecreate(db: DatabaseT.Database): void {
  */
 export function clearAllData(db: DatabaseT.Database): void {
   db.exec(`
+    DELETE FROM document;
     DELETE FROM clause;
     DELETE FROM section;
     DELETE FROM chapter;
     DELETE FROM tsutatsu;
     INSERT INTO clause_fts(clause_fts) VALUES ('rebuild');
+    INSERT INTO document_fts(document_fts) VALUES ('rebuild');
   `);
 }

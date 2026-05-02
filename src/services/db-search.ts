@@ -10,6 +10,7 @@
 import type DatabaseT from 'better-sqlite3';
 
 import { normalizeClauseNumber, normalizeSearchQuery } from './text-normalize.js';
+import type { AttachedPdf, DocType, NtaDocument } from '../types/document.js';
 
 /** 検索ヒット 1 件 */
 export interface ClauseSearchHit {
@@ -229,6 +230,146 @@ export function listAvailableClauses(
     )
     .all(formalName, limit) as Array<{ n: string }>;
   return rows.map((r) => r.n);
+}
+
+/* -------------------------------------------------------------------------- */
+/* document — Phase 3b で追加（改正通達 / 事務運営指針 / 文書回答事例）         */
+/* -------------------------------------------------------------------------- */
+
+export interface DocumentSearchHit {
+  docType: DocType;
+  docId: string;
+  taxonomy: string | null;
+  title: string;
+  issuedAt: string | null;
+  sourceUrl: string;
+  snippet: string;
+  rank: number;
+}
+
+export interface SearchDocumentOptions {
+  /** 'kaisei' / 'jimu-unei' / 'bunshokaitou' で絞る */
+  docType?: DocType;
+  /** 税目で絞る。例: 'shohi' */
+  taxonomy?: string;
+  /** 取得件数。default 10、最大 50 */
+  limit?: number;
+}
+
+/**
+ * `document_fts` を使った全文検索。
+ */
+export function searchDocumentFts(
+  db: DatabaseT.Database,
+  keyword: string,
+  options: SearchDocumentOptions = {}
+): DocumentSearchHit[] {
+  const limit = Math.min(Math.max(options.limit ?? 10, 1), 50);
+  const sanitized = sanitizeFtsQuery(keyword);
+  if (!sanitized) return [];
+
+  const params: Array<string | number> = [sanitized];
+  let where = `document_fts MATCH ?`;
+  if (options.docType) {
+    where += ` AND d.doc_type = ?`;
+    params.push(options.docType);
+  }
+  if (options.taxonomy) {
+    where += ` AND d.taxonomy = ?`;
+    params.push(options.taxonomy);
+  }
+  params.push(limit);
+
+  const sql = `
+    SELECT
+      d.doc_type AS docType,
+      d.doc_id   AS docId,
+      d.taxonomy AS taxonomy,
+      d.title    AS title,
+      d.issued_at AS issuedAt,
+      d.source_url AS sourceUrl,
+      snippet(document_fts, 3, '<b>', '</b>', ' … ', 16) AS snippet,
+      document_fts.rank AS rank
+    FROM document_fts
+    JOIN document d ON d.id = document_fts.rowid
+    WHERE ${where}
+    ORDER BY document_fts.rank
+    LIMIT ?
+  `;
+  return db.prepare(sql).all(...params) as DocumentSearchHit[];
+}
+
+/**
+ * doc_type + doc_id で 1 件取得。
+ */
+export function getDocumentFromDb(
+  db: DatabaseT.Database,
+  docType: DocType,
+  docId: string
+): NtaDocument | null {
+  const row = db
+    .prepare(
+      `SELECT doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url,
+              fetched_at, full_text, attached_pdfs_json
+       FROM document
+       WHERE doc_type = ? AND doc_id = ?
+       LIMIT 1`
+    )
+    .get(docType, docId) as
+    | {
+        doc_type: DocType;
+        doc_id: string;
+        taxonomy: string | null;
+        title: string;
+        issued_at: string | null;
+        issuer: string | null;
+        source_url: string;
+        fetched_at: string;
+        full_text: string;
+        attached_pdfs_json: string;
+      }
+    | undefined;
+  if (!row) return null;
+
+  let attachedPdfs: AttachedPdf[] = [];
+  try {
+    const parsed = JSON.parse(row.attached_pdfs_json) as AttachedPdf[];
+    if (Array.isArray(parsed)) attachedPdfs = parsed;
+  } catch {
+    // JSON 壊れは空配列で扱う
+  }
+
+  return {
+    docType: row.doc_type,
+    docId: row.doc_id,
+    taxonomy: row.taxonomy ?? undefined,
+    title: row.title,
+    issuedAt: row.issued_at ?? undefined,
+    issuer: row.issuer ?? undefined,
+    sourceUrl: row.source_url,
+    fetchedAt: row.fetched_at,
+    fullText: row.full_text,
+    attachedPdfs,
+  };
+}
+
+/**
+ * 利用可能 docId の一覧（hint 用）。
+ */
+export function listAvailableDocIds(
+  db: DatabaseT.Database,
+  docType: DocType,
+  limit = 50
+): Array<{ docId: string; title: string; issuedAt: string | null }> {
+  return db
+    .prepare(
+      `SELECT doc_id AS docId, title, issued_at AS issuedAt
+       FROM document
+       WHERE doc_type = ?
+       ORDER BY issued_at DESC NULLS LAST, doc_id DESC
+       LIMIT ?`
+    )
+    .all(docType, limit) as Array<{ docId: string; title: string; issuedAt: string | null }>;
 }
 
 /* -------------------------------------------------------------------------- */

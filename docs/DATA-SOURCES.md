@@ -286,3 +286,45 @@ houki-nta-mcp が必要な「通達本文」を構造化された形で配布す
 | `kentaroajisaka/tax-law-mcp` | △ | MIT で 17 通達分を JSON 化済み。参考実装として価値ありだがスコープが小さい |
 
 結論: **国税庁サイトの直接スクレイピングが事実上の唯一の選択肢**。これを前提に Phase 2 の bulk DL + ローカル DB で運用負荷を緩和する。
+
+## Phase 3a 実地調査（2026-05-02）
+
+Phase 1/2 の通達本体に加えて、士業ユースケースで参照される周辺コンテンツの所在を調査した。
+
+### 文書回答事例 (bunshokaitou)
+
+- 索引: `https://www.nta.go.jp/law/bunshokaito/01.htm`
+- HTML 主体（旧 URL `/about/organization/ntc/bunsyokaito/index.htm` は 404）
+- 各税目フォルダ:
+  - `/law/bunshokaito/{税目}/02.htm` — 回答年月日順
+  - `/law/bunshokaito/{税目}/02_1.htm` — 項目別
+- 個別事例ページから様式 PDF へのリンクあり（補助）
+
+### 事務運営指針 (jimu-unei)
+
+- 索引: `https://www.nta.go.jp/law/jimu-unei/jimu.htm`
+- 各指針が独立 HTML: `/law/jimu-unei/{税目}/{種別}/{YYMMDD}/index.htm`
+- 個別ページ: H1（指針名）+ 文書番号 + 宛先 + 本文 + 別紙（PDF 様式類）
+- HTML 100 件 / PDF 2 件（索引上）
+
+### 一部改正通達 (kaisei)
+
+- 各税目の `/law/tsutatsu/kihon/{税目}/kaisei/kaisei_*.htm` が索引
+- 個別ページ: `/law/tsutatsu/kihon/{税目}/kaisei/{文書ID}/index.htm` (例: `0026003-067`)
+- 構造シンプル: H1 + 文書番号 + 宛先 + 本文 + 別紙 PDF 1 件
+- HTML のみ（PDF は別紙のみ）
+
+### インボイス Q&A 特設
+
+- メイン: `https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice.htm`
+- HTML 23 件 + **PDF 39 件**（PDF 主体）
+- 主要 PDF:
+  - `pdf/qa/24.pdf` — 取扱いに関するご質問
+  - `pdf/0024002-057_a.pdf` — インボイス記載事項チェックシート
+  - 他、説明会資料・公的窓口一覧など
+
+### 重要な発見
+
+事前 memory にあった「Phase 3 = PDF 処理」は精度が低かった。実態は **インボイス Q&A 以外は HTML 主体**。
+houki-nta-mcp の Phase 3 は HTML parser を 3 種類拡張する形で実装でき、PDF は hint
+（URL + メタ情報）として返すだけで済む（pdf-reader-mcp に責務委譲）。

@@ -173,6 +173,53 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: 'nta_search_kaisei_tsutatsu',
+    description:
+      '改正通達（一部改正通達）を FTS5 でキーワード検索する。事前に `--bulk-download-kaisei` で DB 投入が必要。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        keyword: {
+          type: 'string',
+          description: '検索キーワード。例: "電子帳簿", "インボイス", "軽減税率"',
+        },
+        taxonomy: {
+          type: 'string',
+          description:
+            '税目フォルダで絞り込み。"shohi" / "shotoku" / "hojin" / "sisan/sozoku" のいずれか',
+        },
+        limit: {
+          type: 'number',
+          description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
+          default: LIMITS.searchDefault,
+        },
+      },
+      required: ['keyword'],
+    },
+  },
+  {
+    name: 'nta_get_kaisei_tsutatsu',
+    description:
+      '改正通達の本文を docId で取得する（DB 経由）。本文 + 添付 PDF URL（pdf-reader-mcp で読み取り推奨）を返す。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        docId: {
+          type: 'string',
+          description:
+            '文書 ID。新形式 "0026003-067" または旧形式 "240401" 等。`nta_search_kaisei_tsutatsu` 結果や DB hint で取得',
+        },
+        format: {
+          type: 'string',
+          enum: [...OUTPUT_FORMATS],
+          description: '出力形式',
+          default: 'markdown',
+        },
+      },
+      required: ['docId'],
+    },
+  },
+  {
     name: 'resolve_abbreviation',
     description:
       '略称・通称から houki-abbreviations 経由でエントリを解決する。houki-nta-mcp 管轄外（法令系等）の場合は「他 MCP に誘導」のヒントを返す。',

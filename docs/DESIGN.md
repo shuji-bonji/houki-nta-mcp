@@ -327,6 +327,96 @@ houki-nta-mcp は税務情報の一次資料を取得するが、税理士法 52
 
 - `kentaroajisaka/tax-law-mcp` — 通達 17 件 + 裁決 1,950 件をスクレイピング実装。Shift_JIS 対応済み
 
+## Phase 3 設計: HTML 主体の周辺コンテンツ + PDF hint（v0.4.0 想定）
+
+### 動機
+
+Phase 1/2 で「通達 + Q&A + タックスアンサー」の主軸が揃ったが、士業ユースケースの実用性
+を上げるには周辺の重要文書も検索可能にしたい:
+
+- **改正通達** — 通達本体ではなく「いつどう改正されたか」の文書
+- **事務運営指針** — 通達と並ぶ国税庁内部の運用ルール
+- **文書回答事例** — 個別事案に対する国税庁の回答
+- **インボイス Q&A** — 消費税インボイス制度の特設コンテンツ（PDF 多め）
+
+### Phase 3a 実地調査結果（2026-05-02）
+
+事前の memory には「Phase 3 = PDF 処理」とあったが、**実際は HTML 主体・PDF は補助**だった:
+
+| 種別 | 索引 URL | 主要形式 | 個別ページ URL パターン |
+|---|---|---|---|
+| 改正通達 | `/law/tsutatsu/kihon/{税目}/kaisei/kaisei_*.htm` | **HTML** + 別紙 PDF 1件 | `/law/tsutatsu/kihon/{税目}/kaisei/{文書ID}/index.htm` |
+| 事務運営指針 | `/law/jimu-unei/jimu.htm` | **HTML** + 様式 PDF 数件 | `/law/jimu-unei/{税目}/{種別}/{YYMMDD}/index.htm` |
+| 文書回答事例 | `/law/bunshokaito/01.htm` | **HTML 主** | `/law/bunshokaito/{税目}/02.htm` (一覧) → 個別 |
+| インボイス特設 | `/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice.htm` | **PDF 39件** + HTML | `/taxes/.../invoice_*.htm` + `/pdf/{ID}.pdf` |
+
+⇒ **houki-nta-mcp 自身は HTML を扱い、PDF は hint として URL を返す**方針が実用的。
+PDF パース本体は `pdf-reader-mcp` に責務委譲（memory `houki_pdf_reader_synergy.md` の方針通り）。
+
+### Phase 3 で追加するツール案
+
+```
+nta_search_kaisei_tsutatsu  改正通達検索 (FTS5)
+nta_get_kaisei_tsutatsu     改正通達取得（本文 + 添付 PDF URL）
+nta_search_jimu_unei        事務運営指針検索 (FTS5)
+nta_get_jimu_unei           事務運営指針取得（本文 + 様式 PDF URL）
+nta_search_bunshokaitou     文書回答事例検索 (FTS5)
+nta_get_bunshokaitou        文書回答事例取得（本文 + 添付 PDF URL）
+```
+
+インボイス Q&A は PDF 主体のため、初版では「PDF URL 一覧を返す `nta_list_invoice_pdfs`」程度に留め、
+本格パースは `pdf-reader-mcp` 側のテストベッドとする。
+
+### スキーマ案（Phase 3 拡張）
+
+既存の SQLite に新規テーブルを追加（共通カラム多めの折衷型）:
+
+```sql
+CREATE TABLE document (
+  id INTEGER PRIMARY KEY,
+  doc_type TEXT NOT NULL,           -- 'kaisei' / 'jimu-unei' / 'bunshokaitou'
+  doc_id TEXT NOT NULL,             -- /kaisei/0026003-067/ → '0026003-067' 等
+  taxonomy TEXT,                    -- 税目フォルダ。例: 'shohi' / 'shotoku' / 'hojin' …
+  title TEXT NOT NULL,
+  issued_at TEXT,                   -- 発出日（取得できる場合）
+  issuer TEXT,                      -- 国税庁長官 / 各税局長 等
+  source_url TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  full_text TEXT NOT NULL,
+  attached_pdfs_json TEXT NOT NULL, -- JSON: [{ title, url, sizeKb? }]
+  content_hash TEXT,
+  UNIQUE(doc_type, doc_id)
+);
+
+CREATE VIRTUAL TABLE document_fts USING fts5(
+  title, full_text,
+  content='document', content_rowid='id', tokenize='trigram'
+);
+```
+
+### 段階リリース案
+
+- **v0.4.0-alpha.1**: 改正通達のみ対応（最も構造シンプル、消基通の改正通達 1 件で動作確認）
+- **v0.4.0-alpha.2**: 事務運営指針追加
+- **v0.4.0-alpha.3**: 文書回答事例追加
+- **v0.4.0**: 3 種別揃って正式リリース、インボイス PDF 一覧は別途 v0.4.1+
+
+### 検索ユースケース
+
+> 「電帳法対応の文書回答事例」「令和8年4月の消基通改正の本文」「インボイス制度の事業者登録手続」
+> 等を、横断的に FTS5 検索できる状態を目指す。
+
+### スコープ外（Phase 3 / Phase 4 以降）
+
+- PDF 本文の抽出と FTS5 投入 → `pdf-reader-mcp` に委譲（連携プロトコルは houki-research skill で）
+- 過去アーカイブ（廃止指針・廃止通達） → 必要に応じて拡張
+- 図表・別紙画像の解釈 → スコープ外
+
+### 関連メモリ
+
+- `houki_pdf_reader_synergy.md` — PDF 処理の責務分離方針
+- `houki_nta_tsutatsu_toc_styles.md` — 通達 TOC HTML スタイル一覧（改正通達もここに準拠）
+
 ## 関連ドキュメント
 
 - [docs/DATA-SOURCES.md](DATA-SOURCES.md) — 国税庁公開コンテンツの調査・URL 構造・スクレイピング方針

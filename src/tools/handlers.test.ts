@@ -599,6 +599,9 @@ describe('toolHandlers map', () => {
         'nta_get_qa',
         'nta_search_tax_answer',
         'nta_get_tax_answer',
+        // Phase 3b (v0.4.0-alpha.1) で追加
+        'nta_search_kaisei_tsutatsu',
+        'nta_get_kaisei_tsutatsu',
         'resolve_abbreviation',
       ].sort()
     );

@@ -529,6 +529,130 @@ export async function handleResolveAbbreviation(args: { abbr: string }) {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Phase 3b: 改正通達ハンドラ                                                  */
+/* -------------------------------------------------------------------------- */
+
+import {
+  searchDocumentFts,
+  getDocumentFromDb,
+  listAvailableDocIds,
+} from '../services/db-search.js';
+import type { GetKaiseiTsutatsuArgs, SearchKaiseiTsutatsuArgs } from '../types/index.js';
+
+/**
+ * 改正通達の FTS5 検索。事前に `--bulk-download-kaisei` で DB 投入が必要。
+ */
+export async function handleNtaSearchKaiseiTsutatsu(
+  args: SearchKaiseiTsutatsuArgs,
+  options: { dbPath?: string } = {}
+) {
+  const limit = args.limit ?? 10;
+  const db = openDb(options.dbPath);
+  try {
+    const opts: { docType: 'kaisei'; limit: number; taxonomy?: string } = {
+      docType: 'kaisei',
+      limit,
+    };
+    if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
+    const hits = searchDocumentFts(db, args.keyword, opts);
+
+    if (hits.length === 0) {
+      return {
+        results: [],
+        keyword: args.keyword,
+        hint:
+          '該当なし。`--bulk-download-kaisei` で DB 投入済みか確認してください。' +
+          ' 別キーワードで再試行も推奨',
+        legal_status: TSUTATSU_LEGAL_STATUS,
+      };
+    }
+
+    return {
+      keyword: args.keyword,
+      results: hits.map((h) => ({
+        docType: h.docType,
+        docId: h.docId,
+        taxonomy: h.taxonomy,
+        title: h.title,
+        issuedAt: h.issuedAt,
+        sourceUrl: h.sourceUrl,
+        snippet: h.snippet,
+      })),
+      legal_status: TSUTATSU_LEGAL_STATUS,
+    };
+  } finally {
+    closeDb(db);
+  }
+}
+
+/**
+ * 改正通達を docId で取得する（DB 経由）。
+ */
+export async function handleNtaGetKaiseiTsutatsu(
+  args: GetKaiseiTsutatsuArgs,
+  options: { dbPath?: string } = {}
+) {
+  const db = openDb(options.dbPath);
+  try {
+    const doc = getDocumentFromDb(db, 'kaisei', args.docId);
+    if (!doc) {
+      return {
+        error: `改正通達 docId="${args.docId}" は DB に未投入です`,
+        hint: '`houki-nta-mcp --bulk-download-kaisei` で 4 通達分の改正通達を投入してください',
+        available_doc_ids: listAvailableDocIds(db, 'kaisei', 30),
+      };
+    }
+
+    if (args.format === 'json') {
+      return {
+        document: doc,
+        legal_status: TSUTATSU_LEGAL_STATUS,
+        source: 'db' as const,
+      };
+    }
+    // markdown
+    return renderKaiseiMarkdown(doc);
+  } finally {
+    closeDb(db);
+  }
+}
+
+/** 改正通達の Markdown レンダラ。本文 + 添付 PDF を箇条書きで列挙 */
+function renderKaiseiMarkdown(doc: import('../types/document.js').NtaDocument): string {
+  const lines: string[] = [];
+  lines.push(`# ${doc.title}`);
+  lines.push('');
+  if (doc.issuedAt) lines.push(`- **発出日**: ${doc.issuedAt}`);
+  if (doc.taxonomy) lines.push(`- **税目**: ${doc.taxonomy}`);
+  lines.push(`- **docId**: \`${doc.docId}\``);
+  lines.push(`- **出典**: ${doc.sourceUrl}`);
+  lines.push(`- **取得**: ${doc.fetchedAt}`);
+  if (doc.issuer) {
+    lines.push('');
+    lines.push('## 宛先・発出者');
+    for (const ln of doc.issuer.split('\n')) lines.push(`> ${ln}`);
+  }
+  lines.push('');
+  lines.push('## 本文');
+  lines.push(doc.fullText);
+  if (doc.attachedPdfs.length > 0) {
+    lines.push('');
+    lines.push('## 添付 PDF');
+    lines.push('> PDF 本文は `pdf-reader-mcp` で取得してください。');
+    for (const p of doc.attachedPdfs) {
+      const sz = p.sizeKb ? ` (${p.sizeKb}KB)` : '';
+      lines.push(`- [${p.title}${sz}](${p.url})`);
+    }
+  }
+  lines.push('');
+  lines.push('---');
+  lines.push(
+    '*通達は行政内部文書であり、納税者・裁判所への直接的拘束力なし（最高裁 昭和43.12.24）*'
+  );
+  return lines.join('\n');
+}
+
 /**
  * Tool handlers map
  */
@@ -540,5 +664,7 @@ export const toolHandlers: Record<string, (args: any) => Promise<unknown>> = {
   nta_get_qa: handleNtaGetQa,
   nta_search_tax_answer: handleNtaSearchTaxAnswer,
   nta_get_tax_answer: handleNtaGetTaxAnswer,
+  nta_search_kaisei_tsutatsu: handleNtaSearchKaiseiTsutatsu,
+  nta_get_kaisei_tsutatsu: handleNtaGetKaiseiTsutatsu,
   resolve_abbreviation: handleResolveAbbreviation,
 };

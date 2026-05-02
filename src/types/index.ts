@@ -68,3 +68,21 @@ export interface SearchTaxAnswerArgs {
   /** 取得件数 */
   limit?: number;
 }
+
+/** 改正通達検索引数 (Phase 3b) */
+export interface SearchKaiseiTsutatsuArgs {
+  /** 検索キーワード */
+  keyword: string;
+  /** 税目フォルダで絞り込み。例: 'shohi' / 'shotoku' / 'hojin' / 'sisan/sozoku' */
+  taxonomy?: string;
+  /** 取得件数 */
+  limit?: number;
+}
+
+/** 改正通達取得引数 (Phase 3b) */
+export interface GetKaiseiTsutatsuArgs {
+  /** 文書 ID。例: '0026003-067' / '240401' */
+  docId: string;
+  /** 出力形式 */
+  format?: OutputFormat;
+}

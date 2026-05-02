@@ -15,6 +15,7 @@
 
 import { closeDb, defaultDbPath, openDb } from './db/index.js';
 import { bulkDownloadTsutatsu } from './services/bulk-downloader.js';
+import { bulkDownloadKaisei, KAISEI_INDEX_URLS } from './services/kaisei-bulk-downloader.js';
 import { findStaleSections } from './services/db-search.js';
 import { PACKAGE_INFO } from './config.js';
 import { TSUTATSU_URL_ROOTS } from './constants.js';
@@ -23,6 +24,8 @@ interface CliArgs {
   bulkDownload: boolean;
   /** すべての登録通達を順次 bulk DL する */
   bulkDownloadAll: boolean;
+  /** Phase 3b: 改正通達 bulk DL */
+  bulkDownloadKaisei: boolean;
   /** N 日より古い section を列挙（dry-run）。`--refresh-stale=<days>` */
   staleDays: number | undefined;
   /** stale section を実際に再 DL する（要 --refresh-stale） */
@@ -39,6 +42,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
   const args: CliArgs = {
     bulkDownload: false,
     bulkDownloadAll: false,
+    bulkDownloadKaisei: false,
     staleDays: undefined,
     refreshStale: false,
     tsutatsu: '消費税法基本通達',
@@ -48,7 +52,8 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     version: false,
   };
   for (const a of argv) {
-    if (a === '--bulk-download-all') args.bulkDownloadAll = true;
+    if (a === '--bulk-download-kaisei') args.bulkDownloadKaisei = true;
+    else if (a === '--bulk-download-all') args.bulkDownloadAll = true;
     else if (a === '--bulk-download') args.bulkDownload = true;
     else if (a === '--refresh') args.refresh = true;
     else if (a === '--apply') args.refreshStale = true;
@@ -70,6 +75,7 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
   houki-nta-mcp                            MCP サーバを起動（既定）
   houki-nta-mcp --bulk-download            特定通達を bulk DL してローカル DB に投入
   houki-nta-mcp --bulk-download-all        登録済み通達を全て順次 bulk DL（消基通/所基通/法基通/相基通）
+  houki-nta-mcp --bulk-download-kaisei     4 通達分の改正通達一覧を順次 bulk DL（document テーブルへ投入）
   houki-nta-mcp --refresh-stale=<日数>     N 日以上古い section を列挙（dry-run）
   houki-nta-mcp --refresh-stale=<日数> --apply  N 日以上古い section の通達を実際に再 DL
   houki-nta-mcp --version                  バージョンを表示
@@ -102,6 +108,10 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
     process.stdout.write(`${PACKAGE_INFO.version}\n`);
     return true;
   }
+  if (args.bulkDownloadKaisei) {
+    await runBulkDownloadKaisei(args);
+    return true;
+  }
   if (args.staleDays !== undefined) {
     await runRefreshStale(args, args.staleDays);
     return true;
@@ -115,6 +125,56 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
     return true;
   }
   return false;
+}
+
+/**
+ * Phase 3b: 4 通達分の改正通達索引を順次 bulk DL する。
+ * 1 通達が失敗しても次に進む（fail-soft）。
+ */
+async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
+  const dbPath = args.dbPath ?? defaultDbPath();
+  const targets = Object.entries(KAISEI_INDEX_URLS);
+  process.stderr.write(`[bulk-download-kaisei] DB: ${dbPath}\n`);
+  process.stderr.write(
+    `[bulk-download-kaisei] targets (${targets.length}): ${targets.map(([n]) => n).join(' / ')}\n`
+  );
+
+  const db = openDb(dbPath);
+  const summary: Array<{ formalName: string; status: 'ok' | 'error'; detail: string }> = [];
+  try {
+    for (const [formalName, indexUrl] of targets) {
+      process.stderr.write(`\n[bulk-download-kaisei] ===== ${formalName} =====\n`);
+      try {
+        const result = await bulkDownloadKaisei(db, {
+          indexUrl,
+          onProgress: (p) => {
+            if (p.current && p.total) {
+              process.stderr.write(`  ${p.message}\n`);
+            } else {
+              process.stderr.write(`[${p.phase}] ${p.message}\n`);
+            }
+          },
+        });
+        summary.push({
+          formalName,
+          status: 'ok',
+          detail: `${result.documentsFetched}/${result.totalEntries} docs, ${(result.durationMs / 1000).toFixed(1)}s`,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[bulk-download-kaisei] ${formalName} 失敗: ${msg}\n`);
+        summary.push({ formalName, status: 'error', detail: msg });
+      }
+    }
+    process.stderr.write(`\n[bulk-download-kaisei] ===== サマリ =====\n`);
+    for (const s of summary) {
+      const mark = s.status === 'ok' ? '✓' : '✗';
+      process.stderr.write(`  ${mark} ${s.formalName}: ${s.detail}\n`);
+    }
+    process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
+  } finally {
+    closeDb(db);
+  }
 }
 
 /**
