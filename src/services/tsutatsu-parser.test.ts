@@ -49,6 +49,20 @@ describe('extractClauseNumber', () => {
     });
   });
 
+  it('途中セグメントに「のN」が付く形式 (法基通 第3節の2 配下) — v0.3.1 で対応', () => {
+    // 法基通 01_03_02.htm に「1-3の2-1 ... 1-3の2-4」という、節「3の2」の中の
+    // 連番 clauses が並んでいる。v0.3.0 では regex が末尾の「のN」しか許容せず、
+    // すべて「1-3の2」に丸められて UNIQUE 違反 → bulk DL 早期停止 → 30 clauses のみ。
+    expect(extractClauseNumber('1-3の2-1 完全支配関係を有することとなった日…')).toEqual({
+      clauseNumber: '1-3の2-1',
+      body: '完全支配関係を有することとなった日…',
+    });
+    expect(extractClauseNumber('1－3の2－2 法人税法施行令第4条…')).toEqual({
+      clauseNumber: '1-3の2-2',
+      body: '法人税法施行令第4条…',
+    });
+  });
+
   it('複数行（<br>→改行）の本文も末尾まで取り込める', () => {
     const r = extractClauseNumber('1－4－6　法第9条第1項…\n　ただし…\n　なお…');
     expect(r?.clauseNumber).toBe('1-4-6');

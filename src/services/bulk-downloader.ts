@@ -11,13 +11,36 @@
  * Phase 2a/2b では消費税法基本通達のみ対応。他通達は Phase 2d で追加。
  */
 
+import { createHash } from 'node:crypto';
+
 import type DatabaseT from 'better-sqlite3';
 
 import { TSUTATSU_TOC_STYLES, TSUTATSU_URL_ROOTS } from '../constants.js';
 import { logger } from '../utils/logger.js';
-import { fetchNtaPage, NtaFetchError } from './nta-scraper.js';
-import { parseTsutatsuSection, TsutatsuParseError } from './tsutatsu-parser.js';
+import { fetchNtaPage } from './nta-scraper.js';
+import { parseTsutatsuSection } from './tsutatsu-parser.js';
 import { normalizeJpText } from './text-normalize.js';
+
+/**
+ * section の content_hash を計算する。
+ *
+ * 入力は clauses の (clauseNumber + title + fullText) を連結したもの。
+ * 改正検知に使うので、normalize 後の値で計算する（全角ゆらぎを吸収するため）。
+ */
+function computeSectionContentHash(
+  clauses: ReadonlyArray<{ clauseNumber: string; title: string; fullText: string }>
+): string {
+  const h = createHash('sha1');
+  for (const c of clauses) {
+    h.update(c.clauseNumber);
+    h.update('\n');
+    h.update(normalizeJpText(c.title));
+    h.update('\n');
+    h.update(normalizeJpText(c.fullText));
+    h.update('\n---\n');
+  }
+  return h.digest('hex');
+}
 import { parseTsutatsuToc } from './tsutatsu-toc-parser.js';
 import { parseTsutatsuTocShotoku } from './tsutatsu-toc-parser-shotoku.js';
 import { parseTsutatsuTocHojin } from './tsutatsu-toc-parser-hojin.js';
@@ -105,8 +128,8 @@ export async function bulkDownloadTsutatsu(
   const deleteOldClauses = db.prepare(`DELETE FROM clause WHERE tsutatsu_id = ?`);
   const deleteOldSections = db.prepare(`DELETE FROM section WHERE tsutatsu_id = ?`);
   const insertSection = db.prepare(
-    `INSERT OR REPLACE INTO section(tsutatsu_id, chapter_number, section_number, title, url, fetched_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT OR REPLACE INTO section(tsutatsu_id, chapter_number, section_number, title, url, fetched_at, content_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
   );
   const insertClause = db.prepare(
     `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
@@ -166,14 +189,16 @@ export async function bulkDownloadTsutatsu(
       const fetched = await fetchNtaPage(t.url, fetchImpl ? { fetchImpl } : {});
       const sec = parseTsutatsuSection(fetched.html, fetched.sourceUrl, fetched.fetchedAt);
 
-      // section レコード
+      // section レコード（v2: content_hash で改正検知に備える）
+      const sectionContentHash = computeSectionContentHash(sec.clauses);
       insertSection.run(
         tsutatsuId,
         t.chapter,
         t.section,
         t.title,
         fetched.sourceUrl,
-        fetched.fetchedAt
+        fetched.fetchedAt,
+        sectionContentHash
       );
 
       // clause レコード（FTS は trigger で自動更新）。
@@ -211,10 +236,9 @@ export async function bulkDownloadTsutatsu(
         url: t.url,
         error: msg,
       });
-      // NtaFetchError / TsutatsuParseError は continue。他は throw
-      if (!(err instanceof NtaFetchError) && !(err instanceof TsutatsuParseError)) {
-        throw err;
-      }
+      // 想定外のエラー（SQLite 制約違反 / JSON エラー等）でも fail-soft で次の節に進む。
+      // bulk DL 全体を止めると 1 件のバグで数百節が無駄になるため、ログ警告で済ませる。
+      // ※ Phase 2e (v0.3.0) で「想定外も continue」に方針変更（旧: 想定外は throw）
     }
   }
 
@@ -236,6 +260,120 @@ export async function bulkDownloadTsutatsu(
     finishedAt,
     durationMs,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ライブ取得した 1 section の clauses を DB に書き戻す（write-through cache）。
+ *
+ * Phase 2e で追加。`getTsutatsu` の **ライブ fallback 経路で取得した clauses を
+ * 次回以降 DB lookup でヒットさせる** ために使う。
+ *
+ * 既存 chapter / section レコードが無くても upsert で作成し、clause を投入する。
+ * 失敗しても呼び出し側に影響を与えないよう例外を握りつぶす（best effort cache）。
+ *
+ * 投入時は Normalize-everywhere を適用（title / full_text / paragraphs_json）。
+ *
+ * @returns 投入した clauses 件数（失敗時は 0）
+ */
+export function writeBackLiveSection(
+  db: DatabaseT.Database,
+  options: {
+    formalName: string;
+    abbr: string;
+    rootUrl: string;
+    chapterNumber: number;
+    sectionNumber: number;
+    sectionUrl: string;
+    fetchedAt: string;
+    sectionTitle: string;
+    chapterTitle?: string | undefined;
+    clauses: ReadonlyArray<{
+      clauseNumber: string;
+      title: string;
+      fullText: string;
+      paragraphs: ReadonlyArray<{ indent: 1 | 2 | 3; text: string }>;
+    }>;
+  }
+): number {
+  try {
+    const upsertTsutatsu = db.prepare(
+      `INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?)
+       ON CONFLICT(formal_name) DO UPDATE SET abbr=excluded.abbr, source_root_url=excluded.source_root_url
+       RETURNING id`
+    );
+    const tsutatsuRow = upsertTsutatsu.get(options.formalName, options.abbr, options.rootUrl) as {
+      id: number;
+    };
+    const tsutatsuId = tsutatsuRow.id;
+
+    if (options.chapterTitle) {
+      db.prepare(`INSERT OR REPLACE INTO chapter(tsutatsu_id, number, title) VALUES (?, ?, ?)`).run(
+        tsutatsuId,
+        options.chapterNumber,
+        options.chapterTitle
+      );
+    }
+
+    const sectionContentHash = computeSectionContentHash(options.clauses);
+    db.prepare(
+      `INSERT OR REPLACE INTO section(tsutatsu_id, chapter_number, section_number, title, url, fetched_at, content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      tsutatsuId,
+      options.chapterNumber,
+      options.sectionNumber,
+      options.sectionTitle,
+      options.sectionUrl,
+      options.fetchedAt,
+      sectionContentHash
+    );
+
+    // clause は既存があれば DELETE → INSERT（重複防止 + 最新内容を反映）
+    const deleteOldClause = db.prepare(
+      `DELETE FROM clause WHERE tsutatsu_id = ? AND clause_number = ?`
+    );
+    const insertClause = db.prepare(
+      `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    let count = 0;
+    const tx = db.transaction(() => {
+      for (const c of options.clauses) {
+        deleteOldClause.run(tsutatsuId, c.clauseNumber);
+        const normalizedTitle = normalizeJpText(c.title);
+        const normalizedFullText = normalizeJpText(c.fullText);
+        const normalizedParagraphs = c.paragraphs.map((p) => ({
+          indent: p.indent,
+          text: normalizeJpText(p.text),
+        }));
+        insertClause.run(
+          tsutatsuId,
+          c.clauseNumber,
+          options.sectionUrl,
+          options.chapterNumber,
+          options.sectionNumber,
+          normalizedTitle,
+          normalizedFullText,
+          JSON.stringify(normalizedParagraphs)
+        );
+        count++;
+      }
+    });
+    tx();
+    return count;
+  } catch (err) {
+    // best effort cache: 失敗してもユーザー側の応答は変えない
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn('bulk-downloader', 'writeBackLiveSection 失敗（無視）', {
+      formalName: options.formalName,
+      sectionUrl: options.sectionUrl,
+      error: msg,
+    });
+    return 0;
+  }
 }
 
 function sleep(ms: number): Promise<void> {

@@ -73,7 +73,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 2d-5: 相基通対応 / 4 通達 bulk DL / Normalize-everywhere 適用)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 2 完了: 4 通達 bulk DL / FTS5 / write-through cache / 改正検知)`
   );
 }
 

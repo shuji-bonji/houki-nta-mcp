@@ -14,8 +14,13 @@
 
 import type DatabaseT from 'better-sqlite3';
 
-/** スキーマバージョン。スキーマ変更時に上げる */
-export const SCHEMA_VERSION = 1;
+/**
+ * スキーマバージョン。スキーマ変更時に上げる。
+ *
+ * - v1: 初版（Phase 2a-c）
+ * - v2: section に content_hash カラムを追加（Phase 2e: 改正検知用）
+ */
+export const SCHEMA_VERSION = 2;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -50,6 +55,9 @@ CREATE TABLE IF NOT EXISTS section (
   title TEXT NOT NULL,
   url TEXT,
   fetched_at TEXT NOT NULL,
+  -- v2: 改正検知用の content hash（投入時の clauses fullText 連結 SHA-1）
+  -- NULL は v1 から移行直後で未計算の状態を表す
+  content_hash TEXT,
   PRIMARY KEY (tsutatsu_id, chapter_number, section_number)
 );
 

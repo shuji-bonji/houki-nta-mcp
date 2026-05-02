@@ -15,10 +15,18 @@
 
 import { closeDb, defaultDbPath, openDb } from './db/index.js';
 import { bulkDownloadTsutatsu } from './services/bulk-downloader.js';
+import { findStaleSections } from './services/db-search.js';
 import { PACKAGE_INFO } from './config.js';
+import { TSUTATSU_URL_ROOTS } from './constants.js';
 
 interface CliArgs {
   bulkDownload: boolean;
+  /** すべての登録通達を順次 bulk DL する */
+  bulkDownloadAll: boolean;
+  /** N 日より古い section を列挙（dry-run）。`--refresh-stale=<days>` */
+  staleDays: number | undefined;
+  /** stale section を実際に再 DL する（要 --refresh-stale） */
+  refreshStale: boolean;
   tsutatsu: string;
   dbPath: string | undefined;
   refresh: boolean;
@@ -30,6 +38,9 @@ interface CliArgs {
 export function parseArgs(argv: readonly string[]): CliArgs {
   const args: CliArgs = {
     bulkDownload: false,
+    bulkDownloadAll: false,
+    staleDays: undefined,
+    refreshStale: false,
     tsutatsu: '消費税法基本通達',
     dbPath: undefined,
     refresh: false,
@@ -37,12 +48,18 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     version: false,
   };
   for (const a of argv) {
-    if (a === '--bulk-download') args.bulkDownload = true;
+    if (a === '--bulk-download-all') args.bulkDownloadAll = true;
+    else if (a === '--bulk-download') args.bulkDownload = true;
     else if (a === '--refresh') args.refresh = true;
+    else if (a === '--apply') args.refreshStale = true;
     else if (a === '--help' || a === '-h') args.help = true;
     else if (a === '--version' || a === '-v') args.version = true;
     else if (a.startsWith('--tsutatsu=')) args.tsutatsu = a.slice('--tsutatsu='.length);
     else if (a.startsWith('--db-path=')) args.dbPath = a.slice('--db-path='.length);
+    else if (a.startsWith('--refresh-stale=')) {
+      const v = parseInt(a.slice('--refresh-stale='.length), 10);
+      if (Number.isFinite(v) && v >= 0) args.staleDays = v;
+    }
   }
   return args;
 }
@@ -50,15 +67,19 @@ export function parseArgs(argv: readonly string[]): CliArgs {
 const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
 
 使い方:
-  houki-nta-mcp                       MCP サーバを起動（既定）
-  houki-nta-mcp --bulk-download       通達を bulk DL してローカル DB に投入
-  houki-nta-mcp --version             バージョンを表示
-  houki-nta-mcp --help                このメッセージを表示
+  houki-nta-mcp                            MCP サーバを起動（既定）
+  houki-nta-mcp --bulk-download            特定通達を bulk DL してローカル DB に投入
+  houki-nta-mcp --bulk-download-all        登録済み通達を全て順次 bulk DL（消基通/所基通/法基通/相基通）
+  houki-nta-mcp --refresh-stale=<日数>     N 日以上古い section を列挙（dry-run）
+  houki-nta-mcp --refresh-stale=<日数> --apply  N 日以上古い section の通達を実際に再 DL
+  houki-nta-mcp --version                  バージョンを表示
+  houki-nta-mcp --help                     このメッセージを表示
 
 オプション:
-  --tsutatsu=<formal名>   bulk DL する通達の正式名（既定: 消費税法基本通達）
+  --tsutatsu=<formal名>   --bulk-download 用。bulk DL する通達の正式名（既定: 消費税法基本通達）
   --db-path=<path>        DB ファイルパスを上書き（既定: \${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db）
   --refresh               既存 DB を消去して再 DL
+  --apply                 --refresh-stale と組み合わせて実際の再 DL を実行
 
 環境変数:
   HOUKI_NTA_DB_PATH   DB ファイルパス（--db-path と同等）
@@ -81,11 +102,124 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
     process.stdout.write(`${PACKAGE_INFO.version}\n`);
     return true;
   }
+  if (args.staleDays !== undefined) {
+    await runRefreshStale(args, args.staleDays);
+    return true;
+  }
+  if (args.bulkDownloadAll) {
+    await runBulkDownloadAll(args);
+    return true;
+  }
   if (args.bulkDownload) {
     await runBulkDownload(args);
     return true;
   }
   return false;
+}
+
+/**
+ * fetched_at が `staleDays` 日より古い section を列挙し、`--apply` 指定時は
+ * 該当通達を再 bulk DL する（個別 section だけの再 DL ではなく、その通達全体）。
+ *
+ * dry-run 時は何が古いかを JSON で stdout に出すのみで DB は変更しない。
+ */
+async function runRefreshStale(args: CliArgs, staleDays: number): Promise<void> {
+  const dbPath = args.dbPath ?? defaultDbPath();
+  process.stderr.write(`[refresh-stale] DB: ${dbPath} (${staleDays} 日以上古い section を対象)\n`);
+
+  const db = openDb(dbPath);
+  try {
+    const stale = findStaleSections(db, staleDays);
+    process.stderr.write(`[refresh-stale] 該当: ${stale.length} sections\n`);
+
+    if (!args.refreshStale) {
+      // dry-run: 一覧 JSON を返すだけ
+      process.stdout.write(JSON.stringify(stale, null, 2) + '\n');
+      process.stderr.write(`[refresh-stale] dry-run（--apply で再 DL を実行）\n`);
+      return;
+    }
+
+    // --apply 指定時: 該当通達を再 bulk DL（重複排除）
+    const formalNames = Array.from(new Set(stale.map((s) => s.formalName)));
+    process.stderr.write(`[refresh-stale] 再 DL 対象通達: ${formalNames.join(' / ')}\n`);
+    const summary: Array<{ formalName: string; status: 'ok' | 'error'; detail: string }> = [];
+    for (const formalName of formalNames) {
+      try {
+        const result = await bulkDownloadTsutatsu(db, {
+          formalName,
+          abbr: deriveAbbr(formalName),
+          onProgress: (p) => {
+            if (p.current && p.total) {
+              process.stderr.write(`  ${p.message}\n`);
+            } else {
+              process.stderr.write(`[${p.phase}] ${p.message}\n`);
+            }
+          },
+        });
+        summary.push({
+          formalName,
+          status: 'ok',
+          detail: `${result.sectionsFetched}/${result.sections} 節, ${result.clauses} clauses, ${(result.durationMs / 1000).toFixed(1)}s`,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        summary.push({ formalName, status: 'error', detail: msg });
+      }
+    }
+    process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
+  } finally {
+    closeDb(db);
+  }
+}
+
+/**
+ * すべての登録済み通達を順次 bulk DL する。
+ * 1 通達が失敗しても次に進む（fail-soft）。最後に通達ごとのサマリを出力。
+ */
+async function runBulkDownloadAll(args: CliArgs): Promise<void> {
+  const dbPath = args.dbPath ?? defaultDbPath();
+  const targets = Object.keys(TSUTATSU_URL_ROOTS);
+  process.stderr.write(`[bulk-download-all] DB: ${dbPath}\n`);
+  process.stderr.write(`[bulk-download-all] targets (${targets.length}): ${targets.join(' / ')}\n`);
+
+  const db = openDb(dbPath);
+  const summary: Array<{ formalName: string; status: 'ok' | 'error'; detail: string }> = [];
+  try {
+    for (const formalName of targets) {
+      process.stderr.write(`\n[bulk-download-all] ===== ${formalName} =====\n`);
+      try {
+        const result = await bulkDownloadTsutatsu(db, {
+          formalName,
+          abbr: deriveAbbr(formalName),
+          onProgress: (p) => {
+            if (p.current && p.total) {
+              process.stderr.write(`  ${p.message}\n`);
+            } else {
+              process.stderr.write(`[${p.phase}] ${p.message}\n`);
+            }
+          },
+        });
+        summary.push({
+          formalName,
+          status: 'ok',
+          detail: `${result.sectionsFetched}/${result.sections} 節, ${result.clauses} clauses, ${(result.durationMs / 1000).toFixed(1)}s`,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[bulk-download-all] ${formalName} 失敗: ${msg}\n`);
+        summary.push({ formalName, status: 'error', detail: msg });
+      }
+    }
+
+    process.stderr.write(`\n[bulk-download-all] ===== サマリ =====\n`);
+    for (const s of summary) {
+      const mark = s.status === 'ok' ? '✓' : '✗';
+      process.stderr.write(`  ${mark} ${s.formalName}: ${s.detail}\n`);
+    }
+    process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
+  } finally {
+    closeDb(db);
+  }
 }
 
 async function runBulkDownload(args: CliArgs): Promise<void> {

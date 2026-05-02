@@ -7,6 +7,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-02
+
+**v0.3.0 リリース直後に発覚した法基通 bulk DL 完走バグの patch リリース**。
+
+### Fixed
+
+- **`extractClauseNumber` regex 拡張**: 「途中セグメントに `のN` が付く」 clause 番号
+  形式（法基通 第3節の2 配下: `1-3の2-1` `1-3の2-2` ...）を正しく抽出できなかった問題を修正
+  - 旧 regex は末尾の `(?:の[0-9０-９]+)?` しか許可せず、`1-3の2-1` を **`1-3の2` で
+    打ち切り** → 4 件すべて同じ clause 番号 → UNIQUE INDEX 違反 → bulk DL 早期停止
+  - 新 regex は **各セグメントに `(の[0-9０-９]+)?` を許可**: `[0-9０-９]+(?:の[0-9０-９]+)?(?:[-－][0-9０-９]+(?:の[0-9０-９]+)?)+`
+  - 副次的に既存の noPrefixMatch (`1の2-1` 形式) も同 regex に統合され、判定パスが 1 つ減った
+- **bulk-downloader を fail-soft に強化**: 想定外の例外（SQLite 制約違反 / JSON エラー等）
+  でも `throw` せず警告ログだけ残して次の節に進む
+  - 旧: `NtaFetchError` / `TsutatsuParseError` 以外は throw → 1 件のバグで数百節が無駄
+  - 新: すべての例外を `logger.warn` で済ませ、`sectionsFailed` カウントだけ進める
+
+### Added (テスト)
+
+- `tsutatsu-parser.test.ts` に「途中セグメントの `のN`」回帰防止テストを追加
+
+### Symptoms (修正前の挙動)
+
+```
+$ sqlite3 cache.db "SELECT formal_name, COUNT(*) FROM clause c JOIN tsutatsu t..."
+所得税基本通達|537
+法人税基本通達|30   ← 250+ あるべき
+消費税法基本通達|551
+相続税法基本通達|432
+```
+
+法基通の bulk DL は第1章 第3節の2 (5 番目の節) で UNIQUE 違反 → throw → 強制終了し、
+第1章の 4 sections / 30 clauses しか入らない状態だった。
+
+### Migration
+
+修正後は `--bulk-download --tsutatsu=法人税基本通達 --refresh` で法基通だけ再 DL すれば
+全 250+ sections / 数千 clauses が入る想定。
+
+```bash
+node ./dist/index.js --bulk-download --tsutatsu=法人税基本通達 --refresh
+```
+
+または `--bulk-download-all --refresh` で全通達クリア & 再 DL。
+
+## [0.3.0] - 2026-05-02
+
+🎉 **Phase 2 正式完了** — 4 通達の bulk DL + ローカル SQLite FTS5 検索 + DB-first/live
+fallback + Normalize-everywhere + 改正検知 + write-through cache が揃い、設計通り
+すべての項目が実装された。
+
+### Added (Phase 2e — Phase 2 仕上げ)
+
+- **`--bulk-download-all` CLI フラグ**: 登録済み通達 4 通（消基通 / 所基通 / 法基通 / 相基通）
+  を順次 bulk DL。1 通達が失敗しても次に進む fail-soft 設計
+- **Write-through cache** (`writeBackLiveSection`): `getTsutatsu` のライブ fallback 経路で
+  取得した clauses を DB に書き戻し、次回以降は DB lookup でヒット。投入時に Normalize-everywhere を適用、best effort（失敗しても応答に影響なし）
+- **改正検知** (`findStaleSections` + `--refresh-stale`):
+  - section テーブルに `content_hash` カラム追加（SHA-1）。スキーマ v1 → v2
+  - `findStaleSections(db, daysOld, formalName?)` で N 日以上古い section を列挙
+  - CLI: `--refresh-stale=<日数>` で dry-run、`--refresh-stale=<日数> --apply` で実際に再 DL
+- **テスト追加**:
+  - `db-stale.test.ts`: 改正検知ロジック（古い順ソート / formalName 絞り込み）
+  - `db-writeback.test.ts`: write-through cache（重複再投入 / 全角正規化 / 失敗時 0 返却）
+  - `cli.test.ts`: parseArgs の網羅テスト（新フラグ込み）
+
+### Changed
+
+- **DB schema v2**: `section.content_hash TEXT NULL` 追加（v1 から自動マイグレーション =
+  既存ローカル DB は `--refresh` で再構築推奨）
+- **bulk-downloader / writeBackLiveSection で content_hash を保存**:
+  clauses の (clauseNumber + title + fullText) を normalize 後に SHA-1 計算
+
+### Verified (Phase 2 全体)
+
+| 機能 | 状態 |
+|---|---|
+| 4 通達 bulk DL（消基通 / 所基通 / 法基通 / 相基通） | ✅ |
+| TOC parser × 4（shohi / shotoku / hojin / sozoku） | ✅ |
+| section parser 互換（4 通達 + 共通通達 + ナカグロ複数条） | ✅ |
+| FTS5 trigram 全文検索 (`nta_search_tsutatsu`) | ✅ |
+| clause→URL lookup (UNIQUE INDEX) | ✅ |
+| DB-first + live fallback (`nta_get_tsutatsu`) | ✅ |
+| Normalize-everywhere（DB 投入 + 検索クエリ） | ✅ |
+| Write-through cache | ✅ |
+| 改正検知 + `--refresh-stale` | ✅ |
+| 4 通達一括 `--bulk-download-all` | ✅ |
+| XDG_CACHE_HOME 配下の DB | ✅ |
+| 起動時の自動 schema migration（v1 → v2） | ✅ |
+
+### Migration Notes (v0.3.0-alpha.x → v0.3.0)
+
+既に bulk DL 済みの DB は `--refresh` で再構築するのが安全:
+
+```bash
+houki-nta-mcp --bulk-download-all --refresh
+```
+
+理由:
+- v0.3.0-alpha.5 以前の DB は normalize 適用前の clause_number / fullText を持つ
+- v0.3.0-alpha.6 以降は section.content_hash カラムが追加されているが、旧 DB では NULL
+- 改正検知 (`--refresh-stale`) は content_hash が埋まっている前提
+
+### Notes
+
+- **Phase 2 は完了**。次回フェーズの選択肢:
+  - QA / TaxAnswer の bulk DL（Phase 1e のライブ取得を SQLite 化）
+  - PDF コンテンツ対応（事務運営指針 / 質疑応答事例の PDF 添付ファイル）
+  - DB snapshot 配布パッケージ `@shuji-bonji/houki-nta-snapshot`
+
 ## [0.3.0-alpha.6] - 2026-05-01
 
 **Phase 2d-5 alpha リリース**。**相続税法基本通達（相基通）** に対応し、4 つの基本通達

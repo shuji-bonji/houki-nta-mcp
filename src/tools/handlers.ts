@@ -27,6 +27,7 @@ import {
   searchClauseFts,
 } from '../services/db-search.js';
 import type { ClauseRow } from '../services/db-search.js';
+import { writeBackLiveSection } from '../services/bulk-downloader.js';
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
 import { parseQaJirei } from '../services/qa-parser.js';
 import { parseTaxAnswer } from '../services/tax-answer-parser.js';
@@ -250,6 +251,31 @@ export async function getTsutatsu(
       url,
       available_clauses: section.clauses.map((c) => c.clauseNumber),
     };
+  }
+
+  // Write-through cache: ライブ取得した section の clauses 一式を DB に書き戻す。
+  // 次回以降の同 section に対する get/search が DB lookup でヒットする。
+  // best effort で動作するため、失敗してもこの応答経路には影響しない。
+  try {
+    const writeBackDb = openDb(options.dbPath);
+    try {
+      writeBackLiveSection(writeBackDb, {
+        formalName: resolved.formal,
+        abbr: resolved.abbr,
+        rootUrl,
+        chapterNumber: parsed.chapter,
+        sectionNumber: parsed.section,
+        sectionUrl: section.sourceUrl,
+        fetchedAt: section.fetchedAt,
+        sectionTitle: section.sectionTitle,
+        chapterTitle: section.chapterTitle,
+        clauses: section.clauses,
+      });
+    } finally {
+      closeDb(writeBackDb);
+    }
+  } catch {
+    // best effort: write-through cache 失敗は無視（応答に影響なし）
   }
 
   if (args.format === 'json') {

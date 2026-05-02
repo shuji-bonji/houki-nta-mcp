@@ -230,3 +230,53 @@ export function listAvailableClauses(
     .all(formalName, limit) as Array<{ n: string }>;
   return rows.map((r) => r.n);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 改正検知 — Phase 2e で追加                                                  */
+/* -------------------------------------------------------------------------- */
+
+export interface StaleSection {
+  formalName: string;
+  abbr: string;
+  rootUrl: string;
+  chapterNumber: number;
+  sectionNumber: number;
+  url: string | null;
+  fetchedAt: string;
+}
+
+/**
+ * `fetched_at` が指定日数より古い section を列挙する。
+ *
+ * @param olderThanDays 何日以上古い section を返すか（例: 30 で 1 ヶ月以上）
+ * @param formalName 特定通達に絞る（未指定なら全通達横断）
+ */
+export function findStaleSections(
+  db: DatabaseT.Database,
+  olderThanDays: number,
+  formalName?: string
+): StaleSection[] {
+  // SQLite の datetime() で N 日前を計算し、それより古い fetched_at を抽出
+  const params: Array<string | number> = [olderThanDays];
+  let where = `s.fetched_at < datetime('now', '-' || ? || ' days')`;
+  if (formalName) {
+    where += ` AND t.formal_name = ?`;
+    params.push(formalName);
+  }
+  const rows = db
+    .prepare(
+      `SELECT
+         t.formal_name AS formalName,
+         t.abbr AS abbr,
+         t.source_root_url AS rootUrl,
+         s.chapter_number AS chapterNumber,
+         s.section_number AS sectionNumber,
+         s.url AS url,
+         s.fetched_at AS fetchedAt
+       FROM section s JOIN tsutatsu t ON t.id = s.tsutatsu_id
+       WHERE ${where}
+       ORDER BY s.fetched_at ASC, t.formal_name, s.chapter_number, s.section_number`
+    )
+    .all(...params) as StaleSection[];
+  return rows;
+}
