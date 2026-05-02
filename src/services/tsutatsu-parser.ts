@@ -23,6 +23,7 @@ import type {
   TsutatsuParagraph,
   TsutatsuSection,
 } from '../types/tsutatsu.js';
+import { normalizeClauseNumber as normalizeClauseNumberShared } from './text-normalize.js';
 
 /* -------------------------------------------------------------------------- */
 /* public API                                                                 */
@@ -275,51 +276,68 @@ function classifyIndent($el: cheerio.Cheerio<Element>): ParagraphIndent | null {
 }
 
 /**
- * `1－4－13の2 本文…` の形から clauseNumber と本文を切り出す。
+ * 通達本文の先頭から clauseNumber と本文を切り出す。
  *
- * 全角ハイフン `－` (U+FF0D) はパース後 ASCII `-` に正規化する。
+ * 文字レベルの正規化（全角→半角ハイフン・全角数字→半角・全角チルダ→ASCII）は
+ * `services/text-normalize.ts` の `normalizeClauseNumber` に集約済み。
+ * ここでは「どんな clause 番号パターンを認識するか」だけを定義する。
  *
- * 対応形式（所基通の実調査結果より）:
+ * 対応形式（実調査結果より）:
  *  - 消基通: `1-4-1` / `1－4－13の2` / `11-5-7`（章-節-条 3 階層）
- *  - 所基通: `2-1` / `2-4の2` / `2-4の3`（条-項 2 階層）
- *  - 所基通: `23-1` / `24-6の2` / `90-2` / `161-1の2` / `161-1の3`（複数バリエーション）
- *  - 所基通源泉: `183～193共-1` / `204～206共-2`（複数条の共通通達。`～` は U+301C / U+FF5E、`共` を含む）
+ *  - 所基通: `2-1` / `2-4の2` / `2-4の3`（条-項 2 階層）/ `23-1` / `24-6の2` / `90-2` / `161-1の2`
+ *  - 所基通源泉: `183～193共-1` / `204～206共-2`（チルダ複数条共通。`～` は U+301C / U+FF5E）
+ *  - 相基通: `1の3・1の4共-1` / `2・2の2共-1`（中黒 `・` 区切りの複数条共通）/ `1の2-1` / `3-1`
  */
 export function extractClauseNumber(
   rawText: string
 ): { clauseNumber: string; body: string } | null {
   const trimmed = rawText.replace(/^\s+/, '');
 
-  // 「183～193共－1」形式（複数条共通通達）の検出を先に試みる。
-  // ～ には U+301C, U+30FC, U+FF5E のいずれも入りうる（HTML エンコードのゆらぎを許容）
-  // `s` フラグ: <br>→改行 含みの本文末尾まで取り込めるよう dotall にする。
+  // 1) 中黒区切りの複数条共通通達 (相基通): `1の3・1の4共-1` / `2・2の2共-1`
+  //    各「条」セグメントは `\d+(の\d+)?` 形式で、`・` で 2 つ以上連結し、最後に `共-N(の M)?`
+  const sozokuKyoMatch = trimmed.match(
+    /^([0-9０-９]+(?:の[0-9０-９]+)?(?:・[0-9０-９]+(?:の[0-9０-９]+)?)+共[-－][0-9０-９]+(?:の[0-9０-９]+)?)([\s　]*)(.*)$/s
+  );
+  if (sozokuKyoMatch) {
+    return {
+      clauseNumber: normalizeClauseNumberShared(sozokuKyoMatch[1]),
+      body: sozokuKyoMatch[3].trim(),
+    };
+  }
+
+  // 2) チルダ区切りの複数条共通通達 (所基通源泉): `183～193共-1` / `204～206共-2`
   const kyoMatch = trimmed.match(
     /^([0-9０-９]+[〜ー～～][0-9０-９]+共[-－][0-9０-９]+(?:の[0-9０-９]+)?)([\s　]*)(.*)$/s
   );
   if (kyoMatch) {
     return {
-      clauseNumber: normalizeClauseNumber(kyoMatch[1]),
+      clauseNumber: normalizeClauseNumberShared(kyoMatch[1]),
       body: kyoMatch[3].trim(),
     };
   }
 
-  // 通常形式: "1－1－1" / "1－4－13の2" / "23-1" / "2-4の2"
+  // 3) 「の付き」階層番号 (相基通): `1の2-1` / `1の3-2の3`
+  //    通常形式の前に試す（通常形式の正規表現と被るが、こちらはハイフン手前に「のN」を許容）
+  const noPrefixMatch = trimmed.match(
+    /^([0-9０-９]+の[0-9０-９]+(?:[-－][0-9０-９]+(?:の[0-9０-９]+)?)+)([\s　]*)(.*)$/s
+  );
+  if (noPrefixMatch) {
+    return {
+      clauseNumber: normalizeClauseNumberShared(noPrefixMatch[1]),
+      body: noPrefixMatch[3].trim(),
+    };
+  }
+
+  // 4) 通常形式: "1－1－1" / "1－4－13の2" / "23-1" / "2-4の2" / "3-1"
   const match = trimmed.match(
     /^([0-9０-９]+(?:[-－][0-9０-９]+)+(?:の[0-9０-９]+)?)([\s　]*)(.*)$/s
   );
   if (!match) return null;
 
   return {
-    clauseNumber: normalizeClauseNumber(match[1]),
+    clauseNumber: normalizeClauseNumberShared(match[1]),
     body: match[3].trim(),
   };
-}
-
-/** 全角ハイフン → ASCII、全角数字 → 半角数字に正規化。`～` `共` はそのまま残す */
-function normalizeClauseNumber(s: string): string {
-  return s
-    .replace(/－/g, '-')
-    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
 }
 
 /** 全角／半角空白の連続をスペース 1 つに、改行はトリム。前後 trim 済み */

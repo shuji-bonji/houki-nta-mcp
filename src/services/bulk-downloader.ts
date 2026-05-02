@@ -17,9 +17,11 @@ import { TSUTATSU_TOC_STYLES, TSUTATSU_URL_ROOTS } from '../constants.js';
 import { logger } from '../utils/logger.js';
 import { fetchNtaPage, NtaFetchError } from './nta-scraper.js';
 import { parseTsutatsuSection, TsutatsuParseError } from './tsutatsu-parser.js';
+import { normalizeJpText } from './text-normalize.js';
 import { parseTsutatsuToc } from './tsutatsu-toc-parser.js';
 import { parseTsutatsuTocShotoku } from './tsutatsu-toc-parser-shotoku.js';
 import { parseTsutatsuTocHojin } from './tsutatsu-toc-parser-hojin.js';
+import { parseTsutatsuTocSozoku } from './tsutatsu-toc-parser-sozoku.js';
 
 /** bulk DL 進捗イベント */
 export interface BulkDownloadProgress {
@@ -87,7 +89,9 @@ export async function bulkDownloadTsutatsu(
       ? parseTsutatsuTocShotoku(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt)
       : tocStyle === 'hojin'
         ? parseTsutatsuTocHojin(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt)
-        : parseTsutatsuToc(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt);
+        : tocStyle === 'sozoku'
+          ? parseTsutatsuTocSozoku(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt)
+          : parseTsutatsuToc(tocFetched.html, tocFetched.sourceUrl, tocFetched.fetchedAt);
 
   // 2. tsutatsu / chapter / section の登録
   const insertTsutatsu = db.prepare(
@@ -172,18 +176,27 @@ export async function bulkDownloadTsutatsu(
         fetched.fetchedAt
       );
 
-      // clause レコード（FTS は trigger で自動更新）
+      // clause レコード（FTS は trigger で自動更新）。
+      // title / full_text / paragraphs に **normalizeJpText** を適用し、
+      // 検索側との「Normalize-everywhere」整合を取る（全角ハイフン・全角チルダ・
+      // 全角数字・全角スペースを ASCII 化）。中黒 `・` 等は意味のある文字として残す。
       const insertManyClauses = db.transaction(() => {
         for (const c of sec.clauses) {
+          const normalizedTitle = normalizeJpText(c.title);
+          const normalizedFullText = normalizeJpText(c.fullText);
+          const normalizedParagraphs = c.paragraphs.map((p) => ({
+            indent: p.indent,
+            text: normalizeJpText(p.text),
+          }));
           insertClause.run(
             tsutatsuId,
             c.clauseNumber,
             fetched.sourceUrl,
             t.chapter,
             t.section,
-            c.title,
-            c.fullText,
-            JSON.stringify(c.paragraphs)
+            normalizedTitle,
+            normalizedFullText,
+            JSON.stringify(normalizedParagraphs)
           );
         }
       });

@@ -32,18 +32,19 @@ describe('extractClauseNumber — 所基通の追加バリエーション', () =
     });
   });
 
-  it('複数条共通通達の clause 番号を抽出する: 183～193共-1', () => {
+  it('複数条共通通達の clause 番号を抽出する: 183~193共-1', () => {
     const r = extractClauseNumber('183～193共-1　支給総額が確定している給与等を…');
     expect(r).not.toBeNull();
-    expect(r!.clauseNumber).toBe('183～193共-1');
+    // 全角チルダ `～` も ASCII チルダ `~` に正規化される (Normalize-everywhere)
+    expect(r!.clauseNumber).toBe('183~193共-1');
     expect(r!.body).toContain('支給総額が確定している給与等');
   });
 
   it('複数条共通通達 + 全角ハイフン: 183～193共－1', () => {
     const r = extractClauseNumber('183～193共－1　test body');
     expect(r).not.toBeNull();
-    // 全角ハイフンは ASCII に正規化される
-    expect(r!.clauseNumber).toBe('183～193共-1');
+    // 全角ハイフンは ASCII に、全角チルダも ASCII に正規化される
+    expect(r!.clauseNumber).toBe('183~193共-1');
   });
 
   it('clause 番号が無いテキストは null を返す', () => {
@@ -99,16 +100,17 @@ describe('parseTsutatsuSection — 所基通 fixtures', () => {
     expect(sec.clauses.find((c) => c.clauseNumber === '161-1の3')).toBeDefined();
   });
 
-  it('30/01.htm: 第6編第3章 給与所得源泉 — 「183～193共-1」形式を 7 件抽出する', () => {
+  it('30/01.htm: 第6編第3章 給与所得源泉 — 「183~193共-1」形式を 7 件抽出する', () => {
     const html = loadFixture('www.nta.go.jp_law_tsutatsu_kihon_shotoku_30_01.htm');
     const sec = parseTsutatsuSection(html, 'https://example.com/30_01');
 
     expect(sec.clauses.length).toBe(7);
-    expect(sec.clauses[0].clauseNumber).toBe('183～193共-1');
+    // 全角チルダ `～` は ASCII `~` に正規化される (Normalize-everywhere)
+    expect(sec.clauses[0].clauseNumber).toBe('183~193共-1');
     expect(sec.clauses[0].title).toContain('支給総額が確定');
-    // すべての clause が「183～193共-」プレフィックスを持つ
+    // すべての clause が「183~193共-」プレフィックスを持つ
     for (const c of sec.clauses) {
-      expect(c.clauseNumber).toMatch(/^183[～〜]193共-\d+/);
+      expect(c.clauseNumber).toMatch(/^183~193共-\d+/);
     }
   });
 });

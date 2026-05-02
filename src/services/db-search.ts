@@ -9,6 +9,8 @@
 
 import type DatabaseT from 'better-sqlite3';
 
+import { normalizeClauseNumber, normalizeSearchQuery } from './text-normalize.js';
+
 /** 検索ヒット 1 件 */
 export interface ClauseSearchHit {
   /** 通達 formal 名。例: "消費税法基本通達" */
@@ -80,22 +82,26 @@ export function searchClauseFts(
 /**
  * FTS5 の MATCH に渡す前に query を整形する。
  *
- * - 改行・特殊文字を除去
+ * - **`normalizeSearchQuery`** で全角ハイフン・全角チルダ・全角数字・全角スペースを
+ *   ASCII 化して、bulk-downloader で投入時に同じ正規化を通した DB と整合させる
+ *   （Normalize-everywhere）
+ * - 改行・FTS5 メタ文字を除去
  * - 完全に空 / 短すぎる場合は空文字を返す（呼び出し側で空配列を返す）
  * - trigram tokenizer は文字列を 3-gram に分解するので、フレーズ検索は `"..."` でラップ
  */
 export function sanitizeFtsQuery(raw: string): string {
   if (!raw) return '';
-  // 制御文字・FTS5 メタ文字をスペース化
+  // 1) 全角→半角の正規化（DB 投入時と同じルール）
+  const normalized = normalizeSearchQuery(raw);
+  // 2) 制御文字・FTS5 メタ文字をスペース化
   // FTS5 のメタ: " * : ( )
-  const cleaned = raw
+  const cleaned = normalized
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/["*:()]/g, ' ')
     .trim();
   if (cleaned.length < 2) return '';
-  // 単一トークンは「フレーズ検索」として扱うとマッチが安定する
-  // 半角/全角空白で複数語があれば AND 検索
-  const tokens = cleaned.split(/[\s　]+/).filter((t) => t.length >= 1);
+  // 3) 半角空白で複数語があれば AND 検索（normalizeSearchQuery 適用後は半角化済み）
+  const tokens = cleaned.split(/\s+/).filter((t) => t.length >= 1);
   if (tokens.length === 0) return '';
   return tokens.map((t) => `"${t}"`).join(' AND ');
 }
@@ -175,7 +181,10 @@ export function getClauseFromDb(
     WHERE t.formal_name = ? AND c.clause_number = ?
     LIMIT 1
   `;
-  const row = db.prepare(sql).get(formalName, clauseNumber) as
+  // ユーザー入力の clauseNumber も Normalize-everywhere で DB と整合させる。
+  // 例: "1－4－13の2"（全角ハイフン）→ "1-4-13の2"（DB 内の正規化済み形式）
+  const normalizedClauseNumber = normalizeClauseNumber(clauseNumber);
+  const row = db.prepare(sql).get(formalName, normalizedClauseNumber) as
     | (Omit<ClauseRow, 'paragraphs'> & { paragraphsJson: string })
     | undefined;
   if (!row) return null;

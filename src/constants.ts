@@ -51,6 +51,7 @@ export const TSUTATSU_URL_ROOTS: Readonly<Record<string, string>> = {
   消費税法基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/',
   所得税基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/shotoku/',
   法人税基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/hojin/',
+  相続税法基本通達: 'https://www.nta.go.jp/law/tsutatsu/kihon/sisan/sozoku2/',
 } as const;
 
 /**
@@ -63,11 +64,12 @@ export const TSUTATSU_URL_ROOTS: Readonly<Record<string, string>> = {
  *
  * 未登録の formal_name はデフォルトで 'shohi' として扱う（後方互換）。
  */
-export type TsutatsuTocStyle = 'shohi' | 'shotoku' | 'hojin';
+export type TsutatsuTocStyle = 'shohi' | 'shotoku' | 'hojin' | 'sozoku';
 export const TSUTATSU_TOC_STYLES: Readonly<Record<string, TsutatsuTocStyle>> = {
   消費税法基本通達: 'shohi',
   所得税基本通達: 'shotoku',
   法人税基本通達: 'hojin',
+  相続税法基本通達: 'sozoku',
 } as const;
 
 /**

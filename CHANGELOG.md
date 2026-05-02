@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0-alpha.6] - 2026-05-01
+
+**Phase 2d-5 alpha リリース**。**相続税法基本通達（相基通）** に対応し、4 つの基本通達
+（消基通 / 所基通 / 法基通 / 相基通）すべてで bulk DL + 検索が可能に。同時に **正規化
+レイヤー (`services/text-normalize.ts`) を新設** し、DB 投入と検索クエリの両方で
+同じ正規化を通す **Normalize-everywhere パターン** を確立した。
+
+### Added (Phase 2d-5)
+
+- **`src/services/text-normalize.ts`** — 全角ハイフン / 全角チルダ / 全角数字 /
+  全角スペースを ASCII 化する正規化ヘルパー集。
+  - `normalizeJpText(s)`: 本文・タイトル用の基本正規化（中黒 `・` 等は残す）
+  - `normalizeClauseNumber(s)`: clause 番号用（内部空白も除去）
+  - `normalizeSearchQuery(s)`: 検索クエリ用（連続空白を 1 つに圧縮）
+- **`src/services/tsutatsu-toc-parser-sozoku.ts`** — 相基通 TOC parser:
+  - 相基通は **1 つの HTM ファイルに複数 clause が anchor 付きで同居** する構造
+  - 各 anchor を剥がして unique HTM ファイル単位で section を登録（合計 33 ファイル）
+  - 章ヘッダ `<p align="center"><strong>第N章</strong></p>` から章を切り出し
+  - 節ヘッダ `<p align="center"><strong>第N節</strong></p>` と
+    条グループ `<p><strong>第K条((関係))</strong></p>` を section.title に複合
+- **`TSUTATSU_URL_ROOTS` に相基通追加**:
+  `相続税法基本通達 → https://www.nta.go.jp/law/tsutatsu/kihon/sisan/sozoku2/`
+  （旧 memory にあった `/sozoku/` ではなく `/sisan/sozoku2/` 配下が正しい）
+- **`TSUTATSU_TOC_STYLES` に `'sozoku'` 追加**: 4 通達対応 (`shohi`/`shotoku`/`hojin`/`sozoku`)
+- **`scripts/fetch-fixtures-sozoku.mjs`** / **`scripts/probe-toc-sozoku.mjs`**:
+  相基通用 fixture 取得 + probe スクリプト
+
+### Changed (Phase 2d-5)
+
+- **`extractClauseNumber` を相基通の clause 形式に拡張**:
+  - **ナカグロ複数条共通通達**: `1の3・1の4共-1` / `2・2の2共-1` を新規対応
+  - **「の付き」階層番号** (相基通でも頻出): `1の2-1` / `23の2-3` を独立判定
+  - 既存の通常形式（`1-4-13の2` / `183~193共-1`）は維持
+  - 文字レベル正規化を `normalizeClauseNumber` に集約（パターン認識と正規化を分離）
+- **`bulk-downloader` を 4 通達対応に拡張**:
+  - `TSUTATSU_TOC_STYLES` で 4 つの parser を切替
+  - **clause 投入時に `normalizeJpText` を適用**（title / full_text / paragraphs_json）
+- **`db-search.sanitizeFtsQuery` を Normalize-everywhere 対応に**:
+  - 検索クエリ受信時に `normalizeSearchQuery` を通してから FTS5 に渡す
+  - これにより、ユーザーが半角・全角どちらで検索しても DB と整合
+- **`db-search.getClauseFromDb` を入力正規化対応に**:
+  - 入力 clauseNumber を `normalizeClauseNumber` で DB 形式に揃えてから lookup
+
+### Verified (実 fixture での動作確認)
+
+| 通達 / Fixture | clauses | 形式 |
+|---|---|---|
+| 相基通 TOC | 7 章 / 33 unique HTM ファイル | flat 構造 |
+| 相基通 01/00.htm | 1 | `1の2-1` (の付き 2 階層) |
+| 相基通 01/01.htm | 12 | `1の3・1の4共-1` 〜 (ナカグロ複数条共通) |
+| 相基通 03/01.htm | 13 | `23-1` / `23の2-1` / `24-1` 等が 1 ファイルに同居 |
+| 相基通 04/01.htm | 24 | `27-1` 〜 |
+
+正規化適用後、消基通 / 所基通 / 法基通の既存テストもすべて pass（regression なし）。
+
+### Notes
+
+- 相基通の bulk DL: rate-limit 1 req/sec で 33 ファイル → 約 35 秒
+- 4 通達の bulk DL を一括する CLI 側拡張は v0.3.0-alpha.7 に持ち越し
+  （現在は通達ごとに `--bulk-download --tsutatsu <name>` を打つ必要あり）
+
+### Memory / Documentation
+
+- 通達 TOC スタイル一覧の memory に相基通を追加（4 通達分網羅）
+- Normalize-everywhere パターンを `services/text-normalize.ts` の docstring に明記
+
 ## [0.3.0-alpha.5] - 2026-05-01
 
 **Phase 2d-4 alpha リリース**。**法人税基本通達（法基通）** の bulk DL を可能にする
