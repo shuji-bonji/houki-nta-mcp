@@ -86,3 +86,21 @@ export interface GetKaiseiTsutatsuArgs {
   /** 出力形式 */
   format?: OutputFormat;
 }
+
+/** 事務運営指針検索引数 (Phase 3b alpha.2) */
+export interface SearchJimuUneiArgs {
+  /** 検索キーワード */
+  keyword: string;
+  /** 税目で絞り込み。'shotoku' / 'hojin' / 'sozoku' / 'shohi' 等 */
+  taxonomy?: string;
+  /** 取得件数 */
+  limit?: number;
+}
+
+/** 事務運営指針取得引数 (Phase 3b alpha.2) */
+export interface GetJimuUneiArgs {
+  /** 文書 ID。例: 'shotoku/shinkoku/170331' / 'sozoku/170111_1' */
+  docId: string;
+  /** 出力形式 */
+  format?: OutputFormat;
+}

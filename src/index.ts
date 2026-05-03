@@ -73,7 +73,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 3b alpha: 改正通達 bulk DL + FTS5 / 9 ツール構成)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 3b alpha.2: 改正通達 + 事務運営指針 / 11 ツール構成)`
   );
 }
 

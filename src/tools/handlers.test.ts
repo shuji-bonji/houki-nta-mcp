@@ -602,6 +602,9 @@ describe('toolHandlers map', () => {
         // Phase 3b (v0.4.0-alpha.1) で追加
         'nta_search_kaisei_tsutatsu',
         'nta_get_kaisei_tsutatsu',
+        // Phase 3b (v0.4.0-alpha.2) で追加
+        'nta_search_jimu_unei',
+        'nta_get_jimu_unei',
         'resolve_abbreviation',
       ].sort()
     );

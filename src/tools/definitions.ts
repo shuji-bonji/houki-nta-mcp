@@ -220,6 +220,52 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: 'nta_search_jimu_unei',
+    description:
+      '事務運営指針（jimu-unei）を FTS5 でキーワード検索する。事前に `--bulk-download-jimu-unei` で DB 投入が必要。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        keyword: {
+          type: 'string',
+          description: '検索キーワード。例: "書面添付", "重加算税"',
+        },
+        taxonomy: {
+          type: 'string',
+          description: '税目で絞り込み。"shotoku" / "hojin" / "sozoku" / "shohi" 等',
+        },
+        limit: {
+          type: 'number',
+          description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
+          default: LIMITS.searchDefault,
+        },
+      },
+      required: ['keyword'],
+    },
+  },
+  {
+    name: 'nta_get_jimu_unei',
+    description:
+      '事務運営指針の本文を docId で取得する（DB 経由）。本文 + 添付 PDF URL（pdf-reader-mcp で読み取り推奨）を返す。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        docId: {
+          type: 'string',
+          description:
+            '文書 ID。例: "shotoku/shinkoku/170331" / "sozoku/170111_1"。`nta_search_jimu_unei` 結果や DB hint で取得',
+        },
+        format: {
+          type: 'string',
+          enum: [...OUTPUT_FORMATS],
+          description: '出力形式',
+          default: 'markdown',
+        },
+      },
+      required: ['docId'],
+    },
+  },
+  {
     name: 'resolve_abbreviation',
     description:
       '略称・通称から houki-abbreviations 経由でエントリを解決する。houki-nta-mcp 管轄外（法令系等）の場合は「他 MCP に誘導」のヒントを返す。',
