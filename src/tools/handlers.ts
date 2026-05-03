@@ -543,6 +543,8 @@ import type {
   SearchKaiseiTsutatsuArgs,
   GetJimuUneiArgs,
   SearchJimuUneiArgs,
+  GetBunshokaitouArgs,
+  SearchBunshokaitouArgs,
 } from '../types/index.js';
 
 /**
@@ -779,6 +781,82 @@ function renderDocumentMarkdown(
   return lines.join('\n');
 }
 
+/* -------------------------------------------------------------------------- */
+/* Phase 3b alpha.3: 文書回答事例ハンドラ                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 文書回答事例の FTS5 検索。事前に `--bulk-download-bunshokaitou` で DB 投入が必要。
+ */
+export async function handleNtaSearchBunshokaitou(
+  args: SearchBunshokaitouArgs,
+  options: { dbPath?: string } = {}
+) {
+  const limit = args.limit ?? 10;
+  const db = openDb(options.dbPath);
+  try {
+    const opts: { docType: 'bunshokaitou'; limit: number; taxonomy?: string } = {
+      docType: 'bunshokaitou',
+      limit,
+    };
+    if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
+    const hits = searchDocumentFts(db, args.keyword, opts);
+    if (hits.length === 0) {
+      return {
+        results: [],
+        keyword: args.keyword,
+        hint: '該当なし。`--bulk-download-bunshokaitou` で DB 投入済みか確認してください',
+        legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+      };
+    }
+    return {
+      keyword: args.keyword,
+      results: hits.map((h) => ({
+        docType: h.docType,
+        docId: h.docId,
+        taxonomy: h.taxonomy,
+        title: h.title,
+        issuedAt: h.issuedAt,
+        sourceUrl: h.sourceUrl,
+        snippet: h.snippet,
+      })),
+      legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+    };
+  } finally {
+    closeDb(db);
+  }
+}
+
+/**
+ * 文書回答事例を docId で取得する（DB 経由）。
+ */
+export async function handleNtaGetBunshokaitou(
+  args: GetBunshokaitouArgs,
+  options: { dbPath?: string } = {}
+) {
+  const db = openDb(options.dbPath);
+  try {
+    const doc = getDocumentFromDb(db, 'bunshokaitou', args.docId);
+    if (!doc) {
+      return {
+        error: `文書回答事例 docId="${args.docId}" は DB に未投入です`,
+        hint: '`houki-nta-mcp --bulk-download-bunshokaitou` で投入してください（全税目で約 30 分）',
+        available_doc_ids: listAvailableDocIds(db, 'bunshokaitou', 30),
+      };
+    }
+    if (args.format === 'json') {
+      return {
+        document: doc,
+        legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+        source: 'db' as const,
+      };
+    }
+    return renderDocumentMarkdown(doc, '文書回答事例');
+  } finally {
+    closeDb(db);
+  }
+}
+
 /**
  * Tool handlers map
  */
@@ -794,5 +872,7 @@ export const toolHandlers: Record<string, (args: any) => Promise<unknown>> = {
   nta_get_kaisei_tsutatsu: handleNtaGetKaiseiTsutatsu,
   nta_search_jimu_unei: handleNtaSearchJimuUnei,
   nta_get_jimu_unei: handleNtaGetJimuUnei,
+  nta_search_bunshokaitou: handleNtaSearchBunshokaitou,
+  nta_get_bunshokaitou: handleNtaGetBunshokaitou,
   resolve_abbreviation: handleResolveAbbreviation,
 };

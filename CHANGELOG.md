@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0-alpha.3] - 2026-05-03
+
+**Phase 3b 第 3 段** — 文書回答事例 (bunshokaitou) の bulk DL + FTS5 検索に対応。
+これで Phase 3b の 3 種別（改正通達 / 事務運営指針 / 文書回答事例）すべてが揃い、
+v0.4.0 正式リリースの準備が整った。
+
+### Added (Phase 3b alpha.3)
+
+- **新規ツール 2 件**:
+  - `nta_search_bunshokaitou` — 文書回答事例 FTS5 検索（taxonomy / limit 絞り込み対応）
+  - `nta_get_bunshokaitou` — docId で文書回答事例 1 件取得（本文 + 添付 PDF URL）
+- **新規 parser** `services/bunshokaitou-parser.ts`:
+  - 3 階層索引対応（メイン索引 → 税目別索引 → 個別事例）
+  - 本庁系 (`/law/bunshokaito/...`) と国税局系 (`/about/organization/{国税局}/bunshokaito/...`) の 2 系統 URL を統一的に扱う
+  - doc_id は本庁系 `'shotoku/250416'`、国税局系 `'tokyo/shotoku/260218'` で UNIQUE 性確保
+  - `issuer` は URL から「国税庁本庁 / 東京国税局 / 大阪国税局 …」を自動推定（12 国税局・事務所をマッピング）
+- **`services/bunshokaitou-bulk-downloader.ts`** + CLI フラグ:
+  - `--bulk-download-bunshokaitou`: 全 11 税目を 3 階層で順次 DL（rate-limit 1 req/sec、約 30 分超）
+  - `--bunsho-taxonomy=shotoku,hojin`: 税目絞り込みオプション（運用調整用）
+  - `perTaxonomyLimit` オプション（テスト用）
+
+### Changed
+
+- `tools/definitions.ts`: 13 ツール構成に拡張（既存 11 + bunshokaitou 2）
+- 起動ログ更新
+
+### Verified (実 fixture での動作確認)
+
+| 項目                              | 結果                                                            |
+| --------------------------------- | --------------------------------------------------------------- |
+| メイン索引 → 税目別索引 URL 抽出  | 11 税目                                                         |
+| 所得税 02.htm → 個別事例 URL 抽出 | 230+ 件（本庁系 + 国税局系両方）                                |
+| 本庁系 (250416) パース            | docId='shotoku/250416' / issuer='国税庁' / 〔照会〕〔回答〕本文 |
+| 国税局系 (260218 東京) パース     | docId='tokyo/shotoku/260218' / issuer='東京国税局'              |
+
+### Notes
+
+- `taxonomy` は税目フォルダ。所得税 = `shotoku`、源泉 = `gensen`、譲渡・山林 = `joto-sanrin` 等
+- 法的位置付け: 文書回答事例は国税庁の参考解説資料、税務署員にも法的拘束力なし（`NTA_GENERAL_INFO_LEGAL_STATUS`）
+- 全税目 bulk DL は 30 分超なので、用途に応じて `--bunsho-taxonomy=shotoku` のように絞り込み推奨
+
 ## [0.4.0-alpha.2] - 2026-05-02
 
 **Phase 3b 第 2 段** — 事務運営指針 (jimu-unei) の bulk DL + FTS5 検索に対応。

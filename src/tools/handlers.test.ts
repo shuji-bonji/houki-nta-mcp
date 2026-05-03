@@ -605,6 +605,9 @@ describe('toolHandlers map', () => {
         // Phase 3b (v0.4.0-alpha.2) で追加
         'nta_search_jimu_unei',
         'nta_get_jimu_unei',
+        // Phase 3b (v0.4.0-alpha.3) で追加
+        'nta_search_bunshokaitou',
+        'nta_get_bunshokaitou',
         'resolve_abbreviation',
       ].sort()
     );

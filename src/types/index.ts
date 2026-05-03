@@ -104,3 +104,21 @@ export interface GetJimuUneiArgs {
   /** 出力形式 */
   format?: OutputFormat;
 }
+
+/** 文書回答事例検索引数 (Phase 3b alpha.3) */
+export interface SearchBunshokaitouArgs {
+  /** 検索キーワード */
+  keyword: string;
+  /** 税目で絞り込み。'shotoku' / 'hojin' / 'sozoku' / 'gensen' / 'joto-sanrin' 等 */
+  taxonomy?: string;
+  /** 取得件数 */
+  limit?: number;
+}
+
+/** 文書回答事例取得引数 (Phase 3b alpha.3) */
+export interface GetBunshokaitouArgs {
+  /** 文書 ID。例: 'shotoku/250416' / 'tokyo/shotoku/260218' */
+  docId: string;
+  /** 出力形式 */
+  format?: OutputFormat;
+}

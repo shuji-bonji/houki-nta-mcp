@@ -8,34 +8,35 @@
 
 法律本文は houki-hub family の別 MCP（[`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp)）が担当します。
 
-## 状態: v0.4.0-alpha.2 — Phase 2 完了 + Phase 3b 第 1/2 段（改正通達 + 事務運営指針）
+## 状態: v0.4.0-alpha.3 — Phase 2 完了 + Phase 3b 第 1〜3 段（3 種別すべて対応）
 
 **Phase 2 完了**: 4 つの基本通達（消基通 / 所基通 / 法基通 / 相基通）の bulk DL +
 ローカル SQLite (FTS5) 全文検索 + DB-first / live fallback + 改正検知 + Normalize-everywhere
 を実装。`nta_get_tsutatsu` / `nta_search_tsutatsu` が本格稼働します。
 
-**Phase 3b 第 1/2 段 (v0.4.0-alpha.2)**: 改正通達（一部改正通達）+ 事務運営指針の bulk DL +
-FTS5 検索に対応。文書回答事例は Phase 3b 第 3 段（v0.4.0-alpha.3）で対応予定。
+**Phase 3b 全段完了 (v0.4.0-alpha.3)**: 改正通達 + 事務運営指針 + 文書回答事例の bulk DL +
+FTS5 検索に対応。これで通達周辺の主要文書がすべて横断検索可能になりました。
+v0.4.0 正式リリース準備中。
 
 実装ロードマップは [`docs/DESIGN.md`](docs/DESIGN.md) を参照。
 
 ## 提供ツール（v0.4.0-alpha.1 時点）
 
-| Tool                         | 用途                                                   | 状態                         |
-| ---------------------------- | ------------------------------------------------------ | ---------------------------- |
-| `nta_get_tsutatsu`           | 通達本文を取得（DB-first → live fallback、4 通達対応） | ✅ v0.3.0                    |
-| `nta_search_tsutatsu`        | 通達を FTS5 全文検索                                   | ✅ v0.3.0                    |
-| `nta_get_tax_answer`         | タックスアンサー本文を取得                             | ✅ v0.2.0                    |
-| `nta_search_tax_answer`      | タックスアンサーをキーワード検索                       | 🚧 v0.4.x で対応予定         |
-| `nta_get_qa`                 | 質疑応答事例の本文を取得                               | ✅ v0.2.0                    |
-| `nta_search_qa`              | 質疑応答事例をキーワード検索                           | 🚧 v0.4.x で対応予定         |
-| `nta_get_kaisei_tsutatsu`    | 改正通達を docId で取得（本文 + 添付 PDF URL）         | ✅ v0.4.0-alpha.1            |
-| `nta_search_kaisei_tsutatsu` | 改正通達を FTS5 検索                                   | ✅ v0.4.0-alpha.1            |
-| `nta_get_jimu_unei`          | 事務運営指針を取得                                     | ✅ v0.4.0-alpha.2            |
-| `nta_search_jimu_unei`       | 事務運営指針を FTS5 検索                               | ✅ v0.4.0-alpha.2            |
-| `nta_get_bunshokaitou`       | 文書回答事例を取得                                     | 🚧 v0.4.0-alpha.3 で対応予定 |
-| `nta_search_bunshokaitou`    | 文書回答事例を FTS5 検索                               | 🚧 v0.4.0-alpha.3 で対応予定 |
-| `resolve_abbreviation`       | 略称→エントリ解決（houki-abbreviations 経由）          | ✅ v0.0.1                    |
+| Tool                         | 用途                                                   | 状態                 |
+| ---------------------------- | ------------------------------------------------------ | -------------------- |
+| `nta_get_tsutatsu`           | 通達本文を取得（DB-first → live fallback、4 通達対応） | ✅ v0.3.0            |
+| `nta_search_tsutatsu`        | 通達を FTS5 全文検索                                   | ✅ v0.3.0            |
+| `nta_get_tax_answer`         | タックスアンサー本文を取得                             | ✅ v0.2.0            |
+| `nta_search_tax_answer`      | タックスアンサーをキーワード検索                       | 🚧 v0.4.x で対応予定 |
+| `nta_get_qa`                 | 質疑応答事例の本文を取得                               | ✅ v0.2.0            |
+| `nta_search_qa`              | 質疑応答事例をキーワード検索                           | 🚧 v0.4.x で対応予定 |
+| `nta_get_kaisei_tsutatsu`    | 改正通達を docId で取得（本文 + 添付 PDF URL）         | ✅ v0.4.0-alpha.1    |
+| `nta_search_kaisei_tsutatsu` | 改正通達を FTS5 検索                                   | ✅ v0.4.0-alpha.1    |
+| `nta_get_jimu_unei`          | 事務運営指針を取得                                     | ✅ v0.4.0-alpha.2    |
+| `nta_search_jimu_unei`       | 事務運営指針を FTS5 検索                               | ✅ v0.4.0-alpha.2    |
+| `nta_get_bunshokaitou`       | 文書回答事例を取得                                     | ✅ v0.4.0-alpha.3    |
+| `nta_search_bunshokaitou`    | 文書回答事例を FTS5 検索                               | ✅ v0.4.0-alpha.3    |
+| `resolve_abbreviation`       | 略称→エントリ解決（houki-abbreviations 経由）          | ✅ v0.0.1            |
 
 ### 対応通達（4 種、bulk DL 済みなら DB lookup で即時応答）
 

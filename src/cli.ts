@@ -17,6 +17,7 @@ import { closeDb, defaultDbPath, openDb } from './db/index.js';
 import { bulkDownloadTsutatsu } from './services/bulk-downloader.js';
 import { bulkDownloadKaisei, KAISEI_INDEX_URLS } from './services/kaisei-bulk-downloader.js';
 import { bulkDownloadJimuUnei } from './services/jimu-unei-bulk-downloader.js';
+import { bulkDownloadBunshokaitou } from './services/bunshokaitou-bulk-downloader.js';
 import { findStaleSections } from './services/db-search.js';
 import { PACKAGE_INFO } from './config.js';
 import { TSUTATSU_URL_ROOTS } from './constants.js';
@@ -29,6 +30,10 @@ interface CliArgs {
   bulkDownloadKaisei: boolean;
   /** Phase 3b alpha.2: 事務運営指針 bulk DL */
   bulkDownloadJimuUnei: boolean;
+  /** Phase 3b alpha.3: 文書回答事例 bulk DL */
+  bulkDownloadBunshokaitou: boolean;
+  /** --bunsho-taxonomy=<csv> 文書回答事例 bulk DL の税目絞り込み */
+  bunshoTaxonomies: string[] | undefined;
   /** N 日より古い section を列挙（dry-run）。`--refresh-stale=<days>` */
   staleDays: number | undefined;
   /** stale section を実際に再 DL する（要 --refresh-stale） */
@@ -47,6 +52,8 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     bulkDownloadAll: false,
     bulkDownloadKaisei: false,
     bulkDownloadJimuUnei: false,
+    bulkDownloadBunshokaitou: false,
+    bunshoTaxonomies: undefined,
     staleDays: undefined,
     refreshStale: false,
     tsutatsu: '消費税法基本通達',
@@ -58,7 +65,14 @@ export function parseArgs(argv: readonly string[]): CliArgs {
   for (const a of argv) {
     if (a === '--bulk-download-kaisei') args.bulkDownloadKaisei = true;
     else if (a === '--bulk-download-jimu-unei') args.bulkDownloadJimuUnei = true;
-    else if (a === '--bulk-download-all') args.bulkDownloadAll = true;
+    else if (a === '--bulk-download-bunshokaitou') args.bulkDownloadBunshokaitou = true;
+    else if (a.startsWith('--bunsho-taxonomy=')) {
+      const csv = a.slice('--bunsho-taxonomy='.length);
+      args.bunshoTaxonomies = csv
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else if (a === '--bulk-download-all') args.bulkDownloadAll = true;
     else if (a === '--bulk-download') args.bulkDownload = true;
     else if (a === '--refresh') args.refresh = true;
     else if (a === '--apply') args.refreshStale = true;
@@ -82,6 +96,7 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
   houki-nta-mcp --bulk-download-all        登録済み通達を全て順次 bulk DL（消基通/所基通/法基通/相基通）
   houki-nta-mcp --bulk-download-kaisei     4 通達分の改正通達一覧を順次 bulk DL（document テーブルへ投入）
   houki-nta-mcp --bulk-download-jimu-unei  事務運営指針（jimu-unei）一覧を bulk DL（document テーブルへ投入）
+  houki-nta-mcp --bulk-download-bunshokaitou  文書回答事例（bunshokaitou）を bulk DL（全税目で 30 分超のため、--bunsho-taxonomy=shotoku,hojin で絞り込み推奨）
   houki-nta-mcp --refresh-stale=<日数>     N 日以上古い section を列挙（dry-run）
   houki-nta-mcp --refresh-stale=<日数> --apply  N 日以上古い section の通達を実際に再 DL
   houki-nta-mcp --version                  バージョンを表示
@@ -122,6 +137,10 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
     await runBulkDownloadJimuUnei(args);
     return true;
   }
+  if (args.bulkDownloadBunshokaitou) {
+    await runBulkDownloadBunshokaitou(args);
+    return true;
+  }
   if (args.staleDays !== undefined) {
     await runRefreshStale(args, args.staleDays);
     return true;
@@ -135,6 +154,35 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
     return true;
   }
   return false;
+}
+
+/**
+ * Phase 3b alpha.3: 文書回答事例を 3 階層 (メイン索引 → 税目別 → 個別) で bulk DL する。
+ */
+async function runBulkDownloadBunshokaitou(args: CliArgs): Promise<void> {
+  const dbPath = args.dbPath ?? defaultDbPath();
+  process.stderr.write(`[bulk-download-bunshokaitou] DB: ${dbPath}\n`);
+  if (args.bunshoTaxonomies?.length) {
+    process.stderr.write(
+      `[bulk-download-bunshokaitou] taxonomies 絞り込み: ${args.bunshoTaxonomies.join(', ')}\n`
+    );
+  }
+  const db = openDb(dbPath);
+  try {
+    const result = await bulkDownloadBunshokaitou(db, {
+      taxonomies: args.bunshoTaxonomies,
+      onProgress: (p) => {
+        if (p.current && p.total) {
+          process.stderr.write(`  ${p.message}\n`);
+        } else {
+          process.stderr.write(`[${p.phase}] ${p.message}\n`);
+        }
+      },
+    });
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  } finally {
+    closeDb(db);
+  }
 }
 
 /**
