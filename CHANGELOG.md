@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-03
+
+🎉 **Phase 3b 正式完了** — 通達本体（4 種）+ 改正通達 + 事務運営指針 + 文書回答事例 の
+**4 大コンテンツがすべて bulk DL + FTS5 検索可能** に。13 ツール構成で士業ユースケースの
+実用性が大幅に向上した。
+
+### Added (v0.4.0 仕上げ)
+
+- **`--bulk-download-everything` CLI フラグ**: 4 種別すべてを順次 bulk DL する統合フラグ
+  - 通達本体 → 改正通達 → 事務運営指針 → 文書回答事例 を 1 コマンドで実行
+  - fail-soft（各種別が失敗しても次に進む）
+  - `--bunsho-taxonomy=shotoku,hojin` で文書回答事例の税目絞り込み可
+
+### Phase 3b の振り返り（v0.4.0-alpha.1 〜 v0.4.0）
+
+| バージョン     | 追加対象     | 主要発見・実装                                                                   |
+| -------------- | ------------ | -------------------------------------------------------------------------------- |
+| v0.4.0-alpha.1 | 改正通達     | document テーブル + 共通スキーマ、元号→ISO日付変換、添付 PDF サイズ抽出          |
+| v0.4.0-alpha.2 | 事務運営指針 | URL フォルダから発出日推定、kaisei 系を索引から自動除外、共通 Markdown レンダラ  |
+| v0.4.0-alpha.3 | 文書回答事例 | 3 階層索引パース、本庁系 + 国税局系 2 系統 URL 統一、12 国税局・事務所マッピング |
+| **v0.4.0**     | 統合         | `--bulk-download-everything` で 4 種別一括                                       |
+
+### Verified (4 種別の実走確認)
+
+| コンテンツ                             | 件数             | 投入時間                   | DB テーブル             |
+| -------------------------------------- | ---------------- | -------------------------- | ----------------------- |
+| 通達本体 (消基通/所基通/法基通/相基通) | 約 2800 clauses  | 計 10-15 分                | clause + clause_fts     |
+| 改正通達                               | 約 100 docs      | 約 5-10 分                 | document + document_fts |
+| 事務運営指針                           | 32 docs          | 約 1 分                    | document + document_fts |
+| 文書回答事例                           | 数百〜2000+ docs | 約 30 分超（絞り込み推奨） | document + document_fts |
+
+### Tool 一覧（v0.4.0 確定版）
+
+通達系（FTS5 検索 + DB 取得）:
+
+- `nta_search_tsutatsu` / `nta_get_tsutatsu` — 4 通達横断
+- `nta_search_kaisei_tsutatsu` / `nta_get_kaisei_tsutatsu` — 改正通達
+- `nta_search_jimu_unei` / `nta_get_jimu_unei` — 事務運営指針
+- `nta_search_bunshokaitou` / `nta_get_bunshokaitou` — 文書回答事例
+
+タックスアンサー / 質疑応答事例（ライブ取得）:
+
+- `nta_get_tax_answer`
+- `nta_get_qa`
+
+ユーティリティ:
+
+- `resolve_abbreviation` — 略称解決（houki-abbreviations 経由）
+
+合計 13 ツール（うち未実装スタブ: `nta_search_tax_answer` / `nta_search_qa` は v0.5.x で対応予定）。
+
+### Migration Notes (v0.3.x → v0.4.0)
+
+**DB schema v2 → v3** で `document` テーブルが追加された。既存の v0.3.x で投入した
+DB は v0.4.0 起動時に自動マイグレーション (DROP & CREATE) されるため、通達本体を
+再投入する必要がある:
+
+```bash
+# 推奨: 4 種別を一括投入
+houki-nta-mcp --bulk-download-everything
+
+# または個別に
+houki-nta-mcp --bulk-download-all       # 通達本体（必須）
+houki-nta-mcp --bulk-download-kaisei    # 改正通達
+houki-nta-mcp --bulk-download-jimu-unei # 事務運営指針
+houki-nta-mcp --bulk-download-bunshokaitou --bunsho-taxonomy=shotoku  # 文書回答事例（時間短縮）
+```
+
+### Notes
+
+- **PDF コンテンツ**は `pdf-reader-mcp` への hint（URL + サイズ）として返すのみで、
+  本文取得は別 MCP に委譲する責務分離設計を維持
+- **法的位置付け**:
+  - 通達本体・改正通達・事務運営指針: 行政内部文書、税務署員拘束あり、納税者・裁判所への直接拘束力なし
+  - 文書回答事例: 国税庁の参考解説資料、税務署員にも法的拘束力なし
+  - すべて利用者の自己責任での参照を想定（`DISCLAIMER.md` 参照）
+
+### 次のフェーズ候補
+
+- **Phase 3c**: タックスアンサー / 質疑応答事例の bulk DL → `nta_search_tax_answer` / `nta_search_qa` 本実装
+- **Phase 4**: PDF コンテンツの活用（pdf-reader-mcp との連携深化）
+- **Phase 5**: houki-research-skill との orchestration（横断検索・citation 標準化）
+
 ## [0.4.0-alpha.3] - 2026-05-03
 
 **Phase 3b 第 3 段** — 文書回答事例 (bunshokaitou) の bulk DL + FTS5 検索に対応。

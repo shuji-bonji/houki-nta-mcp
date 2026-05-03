@@ -34,6 +34,8 @@ interface CliArgs {
   bulkDownloadBunshokaitou: boolean;
   /** --bunsho-taxonomy=<csv> 文書回答事例 bulk DL の税目絞り込み */
   bunshoTaxonomies: string[] | undefined;
+  /** v0.4.0: 通達本体 + 改正通達 + 事務運営指針 + 文書回答事例 を一括 bulk DL */
+  bulkDownloadEverything: boolean;
   /** N 日より古い section を列挙（dry-run）。`--refresh-stale=<days>` */
   staleDays: number | undefined;
   /** stale section を実際に再 DL する（要 --refresh-stale） */
@@ -54,6 +56,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     bulkDownloadJimuUnei: false,
     bulkDownloadBunshokaitou: false,
     bunshoTaxonomies: undefined,
+    bulkDownloadEverything: false,
     staleDays: undefined,
     refreshStale: false,
     tsutatsu: '消費税法基本通達',
@@ -63,7 +66,8 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     version: false,
   };
   for (const a of argv) {
-    if (a === '--bulk-download-kaisei') args.bulkDownloadKaisei = true;
+    if (a === '--bulk-download-everything') args.bulkDownloadEverything = true;
+    else if (a === '--bulk-download-kaisei') args.bulkDownloadKaisei = true;
     else if (a === '--bulk-download-jimu-unei') args.bulkDownloadJimuUnei = true;
     else if (a === '--bulk-download-bunshokaitou') args.bulkDownloadBunshokaitou = true;
     else if (a.startsWith('--bunsho-taxonomy=')) {
@@ -91,12 +95,13 @@ export function parseArgs(argv: readonly string[]): CliArgs {
 const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
 
 使い方:
-  houki-nta-mcp                            MCP サーバを起動（既定）
-  houki-nta-mcp --bulk-download            特定通達を bulk DL してローカル DB に投入
-  houki-nta-mcp --bulk-download-all        登録済み通達を全て順次 bulk DL（消基通/所基通/法基通/相基通）
-  houki-nta-mcp --bulk-download-kaisei     4 通達分の改正通達一覧を順次 bulk DL（document テーブルへ投入）
-  houki-nta-mcp --bulk-download-jimu-unei  事務運営指針（jimu-unei）一覧を bulk DL（document テーブルへ投入）
-  houki-nta-mcp --bulk-download-bunshokaitou  文書回答事例（bunshokaitou）を bulk DL（全税目で 30 分超のため、--bunsho-taxonomy=shotoku,hojin で絞り込み推奨）
+  houki-nta-mcp                              MCP サーバを起動（既定）
+  houki-nta-mcp --bulk-download-everything   通達本体 + 改正通達 + 事務運営指針 + 文書回答事例 を一括投入（推奨、約 50 分 / --bunsho-taxonomy で短縮可）
+  houki-nta-mcp --bulk-download              特定通達を bulk DL してローカル DB に投入
+  houki-nta-mcp --bulk-download-all          登録済み通達を全て順次 bulk DL（消基通/所基通/法基通/相基通）
+  houki-nta-mcp --bulk-download-kaisei       4 通達分の改正通達一覧を順次 bulk DL（document テーブルへ投入）
+  houki-nta-mcp --bulk-download-jimu-unei    事務運営指針（jimu-unei）一覧を bulk DL（document テーブルへ投入）
+  houki-nta-mcp --bulk-download-bunshokaitou 文書回答事例（bunshokaitou）を bulk DL（全税目で 30 分超のため、--bunsho-taxonomy=shotoku,hojin で絞り込み推奨）
   houki-nta-mcp --refresh-stale=<日数>     N 日以上古い section を列挙（dry-run）
   houki-nta-mcp --refresh-stale=<日数> --apply  N 日以上古い section の通達を実際に再 DL
   houki-nta-mcp --version                  バージョンを表示
@@ -129,6 +134,10 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
     process.stdout.write(`${PACKAGE_INFO.version}\n`);
     return true;
   }
+  if (args.bulkDownloadEverything) {
+    await runBulkDownloadEverything(args);
+    return true;
+  }
   if (args.bulkDownloadKaisei) {
     await runBulkDownloadKaisei(args);
     return true;
@@ -154,6 +163,72 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
     return true;
   }
   return false;
+}
+
+/**
+ * v0.4.0: すべての種別を一括 bulk DL（通達本体 → 改正通達 → 事務運営指針 → 文書回答事例）。
+ *
+ * 所要時間の目安:
+ *   - 通達本体 4 通達: 計 10-15 分
+ *   - 改正通達: 約 5-10 分
+ *   - 事務運営指針: 約 1 分
+ *   - 文書回答事例: 約 30 分超（`--bunsho-taxonomy` で絞り込み推奨）
+ *   合計: 約 50 分（絞り込まない場合）
+ */
+async function runBulkDownloadEverything(args: CliArgs): Promise<void> {
+  const dbPath = args.dbPath ?? defaultDbPath();
+  process.stderr.write(`[bulk-download-everything] DB: ${dbPath}\n`);
+  process.stderr.write(
+    `[bulk-download-everything] 順次実行: 通達本体 → 改正通達 → 事務運営指針 → 文書回答事例\n`
+  );
+  if (args.bunshoTaxonomies?.length) {
+    process.stderr.write(
+      `[bulk-download-everything] bunshokaitou は ${args.bunshoTaxonomies.join(', ')} に絞り込み\n`
+    );
+  } else {
+    process.stderr.write(
+      `[bulk-download-everything] bunshokaitou は全税目（30 分超）。短時間で済ませたい場合は --bunsho-taxonomy=shotoku 等で絞り込んでください\n`
+    );
+  }
+
+  // 4 種別を順番に実行（fail-soft、各種別が失敗しても次に進む）
+  process.stderr.write('\n[bulk-download-everything] (1/4) ===== 通達本体 =====\n');
+  try {
+    await runBulkDownloadAll(args);
+  } catch (err) {
+    process.stderr.write(
+      `[bulk-download-everything] (1/4) 通達本体 失敗: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+  }
+
+  process.stderr.write('\n[bulk-download-everything] (2/4) ===== 改正通達 =====\n');
+  try {
+    await runBulkDownloadKaisei(args);
+  } catch (err) {
+    process.stderr.write(
+      `[bulk-download-everything] (2/4) 改正通達 失敗: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+  }
+
+  process.stderr.write('\n[bulk-download-everything] (3/4) ===== 事務運営指針 =====\n');
+  try {
+    await runBulkDownloadJimuUnei(args);
+  } catch (err) {
+    process.stderr.write(
+      `[bulk-download-everything] (3/4) 事務運営指針 失敗: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+  }
+
+  process.stderr.write('\n[bulk-download-everything] (4/4) ===== 文書回答事例 =====\n');
+  try {
+    await runBulkDownloadBunshokaitou(args);
+  } catch (err) {
+    process.stderr.write(
+      `[bulk-download-everything] (4/4) 文書回答事例 失敗: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+  }
+
+  process.stderr.write('\n[bulk-download-everything] 全 4 種別の処理を完了しました\n');
 }
 
 /**
