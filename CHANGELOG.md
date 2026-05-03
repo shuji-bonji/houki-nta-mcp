@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0-alpha.1] - 2026-05-03
+
+**Phase 3c 第 1 段** — タックスアンサー / 質疑応答事例の bulk DL + FTS5 検索を本実装。
+これで `nta_search_*` 系の未実装スタブがすべて解消し、6 大コンテンツ（通達 / 改正通達 /
+事務運営指針 / 文書回答事例 / タックスアンサー / 質疑応答事例）すべてが検索可能に。
+
+### Added (Phase 3c)
+
+- **`services/tax-answer-bulk-downloader.ts`**: タックスアンサー bulk DL
+  - 索引 `/taxes/shiraberu/taxanswer/code/` から 850+ 件の個別 URL を抽出
+  - 既存 `parseTaxAnswer` parser を流用、`document` テーブル (doc_type='tax-answer') へ投入
+  - `--tax-answer-taxonomy=shotoku,shohi` で税目絞り込み可
+- **`services/qa-bulk-downloader.ts`**: 質疑応答事例 bulk DL
+  - 9 税目分の索引 `/law/shitsugi/{topic}/01.htm` から個別 URL を抽出（計 2000+ 件）
+  - 既存 `parseQaJirei` parser を流用、`document` テーブル (doc_type='qa-jirei') へ投入
+  - `--qa-topic=shohi,shotoku` で税目絞り込み可
+  - doc_id は `'shohi/02/19'` 形式（`{topic}/{category}/{id}`）
+- **CLI フラグ追加**:
+  - `--bulk-download-tax-answer` / `--tax-answer-taxonomy=<csv>`
+  - `--bulk-download-qa` / `--qa-topic=<csv>`
+- **`--bulk-download-everything` を 6 種別対応に拡張**:
+  - 旧: 4 種別（通達 / 改正 / 事務運営 / 文書回答）
+  - 新: 6 種別（+ タックスアンサー / 質疑応答事例）
+  - 全件投入で約 1.5〜2 時間（絞り込み推奨）
+
+### Changed
+
+- **`handleNtaSearchTaxAnswer` / `handleNtaSearchQa` を本実装**:
+  - 旧: NOT_IMPLEMENTED スタブ
+  - 新: FTS5 検索（doc_type で絞り込み） + 空 DB 時 hint 返却
+- **`DocType` 型を 5 種類に拡張**: `'kaisei' | 'jimu-unei' | 'bunshokaitou' | 'tax-answer' | 'qa-jirei'`
+- **CHANGELOG / README**: Phase 3c 反映、6 大コンテンツ統合
+
+### Verified
+
+- タックスアンサー索引パース: 850+ 件抽出 ✓
+- QA 税目別索引パース: 消費税 272 件 / 所得税 261 件 ✓
+- handler テスト: search_tax_answer / search_qa の空 DB ハンドリング更新
+
+### Notes
+
+- 全件投入は約 2 時間。実用上は **`--tax-answer-taxonomy=shohi,shotoku --qa-topic=shohi,shotoku`**
+  のように税目絞り込みで運用するのが現実的
+- 既存 `nta_get_tax_answer` / `nta_get_qa` はライブ取得経路として維持（互換性保持）
+- 法的位置付けはタックスアンサー・質疑応答事例ともに参考解説資料、税務署員にも法的拘束力なし
+
+### Phase 3c 残作業
+
+- v0.5.0 正式リリース: bulk DL 実走確認 + README 更新
+- v0.5.x: タックスアンサー / 質疑応答事例の DB lookup 経路を `nta_get_*` にも追加
+
 ## [0.4.0] - 2026-05-03
 
 🎉 **Phase 3b 正式完了** — 通達本体（4 種）+ 改正通達 + 事務運営指針 + 文書回答事例 の

@@ -44,11 +44,8 @@ import type {
   GetTaxAnswerArgs,
 } from '../types/index.js';
 
-const NOT_IMPLEMENTED = {
-  error: '未実装。後続フェーズで本実装予定。',
-  status: 'not_implemented',
-  see_also: 'https://github.com/shuji-bonji/houki-nta-mcp',
-};
+// NOT_IMPLEMENTED は v0.5.0-alpha.1 で全 search 系ハンドラが本実装になり、未使用に。
+// 将来また「未実装スタブ」を作る際は復活させる。
 
 /**
  * nta_search_tsutatsu — 通達検索（Phase 2c 本実装）
@@ -335,8 +332,40 @@ function renderDbHit(row: ClauseRow, format: GetTsutatsuArgs['format'], tsutatsu
  *
  * Phase 1e では検索インデックスを持たないため未実装。Phase 2 (FTS5) で対応。
  */
-export async function handleNtaSearchQa(_args: SearchQaArgs) {
-  return { ...NOT_IMPLEMENTED, tool: 'nta_search_qa' };
+export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: string } = {}) {
+  const limit = args.limit ?? 10;
+  const db = openDb(options.dbPath);
+  try {
+    const opts: { docType: 'qa-jirei'; limit: number; taxonomy?: string } = {
+      docType: 'qa-jirei',
+      limit,
+    };
+    if (args.domain) opts.taxonomy = args.domain;
+    const hits = searchDocumentFts(db, args.keyword, opts);
+    if (hits.length === 0) {
+      return {
+        results: [],
+        keyword: args.keyword,
+        hint: '該当なし。`--bulk-download-qa` で DB 投入済みか確認してください',
+        legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+      };
+    }
+    return {
+      keyword: args.keyword,
+      results: hits.map((h) => ({
+        docType: h.docType,
+        docId: h.docId,
+        taxonomy: h.taxonomy,
+        title: h.title,
+        sourceUrl: h.sourceUrl,
+        snippet: h.snippet,
+      })),
+      legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+    };
+  } finally {
+    closeDb(db);
+  }
+  // 旧スタブ参考: NOT_IMPLEMENTED;
 }
 
 /**
@@ -422,8 +451,41 @@ export async function getQa(args: GetQaArgs, options: { fetchImpl?: typeof fetch
  *
  * Phase 1e では検索インデックスを持たないため未実装。Phase 2 (FTS5) で対応。
  */
-export async function handleNtaSearchTaxAnswer(_args: SearchTaxAnswerArgs) {
-  return { ...NOT_IMPLEMENTED, tool: 'nta_search_tax_answer' };
+export async function handleNtaSearchTaxAnswer(
+  args: SearchTaxAnswerArgs,
+  options: { dbPath?: string } = {}
+) {
+  const limit = args.limit ?? 10;
+  const db = openDb(options.dbPath);
+  try {
+    const hits = searchDocumentFts(db, args.keyword, {
+      docType: 'tax-answer',
+      limit,
+    });
+    if (hits.length === 0) {
+      return {
+        results: [],
+        keyword: args.keyword,
+        hint: '該当なし。`--bulk-download-tax-answer` で DB 投入済みか確認してください',
+        legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+      };
+    }
+    return {
+      keyword: args.keyword,
+      results: hits.map((h) => ({
+        docType: h.docType,
+        docId: h.docId,
+        taxonomy: h.taxonomy,
+        title: h.title,
+        sourceUrl: h.sourceUrl,
+        snippet: h.snippet,
+      })),
+      legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+    };
+  } finally {
+    closeDb(db);
+  }
+  // 旧スタブ参考: NOT_IMPLEMENTED;
 }
 
 /**

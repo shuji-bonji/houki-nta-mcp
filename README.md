@@ -8,18 +8,22 @@
 
 法律本文は houki-hub family の別 MCP（[`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp)）が担当します。
 
-## 状態: v0.4.0 — Phase 2 + Phase 3b すべて完了 🎉
+## 状態: v0.5.0-alpha.1 — 6 大コンテンツすべて FTS5 検索可能 🎉
 
 **Phase 2**: 4 つの基本通達（消基通 / 所基通 / 法基通 / 相基通）の bulk DL +
 ローカル SQLite (FTS5) 全文検索 + DB-first / live fallback + 改正検知 + Normalize-everywhere。
 
-**Phase 3b**: 改正通達 + 事務運営指針 + 文書回答事例 を `document` テーブルで統一管理し、
-4 大コンテンツがすべて bulk DL + FTS5 検索可能に。13 ツール構成で士業ユースケースの
-横断的な情報取得が現実的になりました。
+**Phase 3b** (v0.4.0): 改正通達 + 事務運営指針 + 文書回答事例 を `document` テーブルで統一管理。
+
+**Phase 3c** (v0.5.0-alpha.1): タックスアンサー + 質疑応答事例の bulk DL + FTS5 検索を本実装。
+これで **`nta_search_*` 系のすべてが本実装** になり、未実装スタブが解消。13 ツールすべて稼働。
 
 ```bash
-# 4 種別を一括投入する統合 CLI（推奨）
-houki-nta-mcp --bulk-download-everything --bunsho-taxonomy=shotoku
+# 6 種別を一括投入する統合 CLI（推奨）
+houki-nta-mcp --bulk-download-everything \
+  --bunsho-taxonomy=shotoku \
+  --tax-answer-taxonomy=shotoku,shohi \
+  --qa-topic=shotoku,shohi
 ```
 
 実装ロードマップは [`docs/DESIGN.md`](docs/DESIGN.md) を参照。

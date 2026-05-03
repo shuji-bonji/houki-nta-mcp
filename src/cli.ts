@@ -18,6 +18,9 @@ import { bulkDownloadTsutatsu } from './services/bulk-downloader.js';
 import { bulkDownloadKaisei, KAISEI_INDEX_URLS } from './services/kaisei-bulk-downloader.js';
 import { bulkDownloadJimuUnei } from './services/jimu-unei-bulk-downloader.js';
 import { bulkDownloadBunshokaitou } from './services/bunshokaitou-bulk-downloader.js';
+import { bulkDownloadTaxAnswer } from './services/tax-answer-bulk-downloader.js';
+import { bulkDownloadQa } from './services/qa-bulk-downloader.js';
+import type { QaTopic } from './constants.js';
 import { findStaleSections } from './services/db-search.js';
 import { PACKAGE_INFO } from './config.js';
 import { TSUTATSU_URL_ROOTS } from './constants.js';
@@ -34,6 +37,14 @@ interface CliArgs {
   bulkDownloadBunshokaitou: boolean;
   /** --bunsho-taxonomy=<csv> 文書回答事例 bulk DL の税目絞り込み */
   bunshoTaxonomies: string[] | undefined;
+  /** Phase 3c: タックスアンサー bulk DL */
+  bulkDownloadTaxAnswer: boolean;
+  /** --tax-answer-taxonomy=<csv> タックスアンサー bulk DL の税目絞り込み */
+  taxAnswerTaxonomies: string[] | undefined;
+  /** Phase 3c: 質疑応答事例 bulk DL */
+  bulkDownloadQa: boolean;
+  /** --qa-topic=<csv> 質疑応答事例 bulk DL の税目絞り込み */
+  qaTopics: QaTopic[] | undefined;
   /** v0.4.0: 通達本体 + 改正通達 + 事務運営指針 + 文書回答事例 を一括 bulk DL */
   bulkDownloadEverything: boolean;
   /** N 日より古い section を列挙（dry-run）。`--refresh-stale=<days>` */
@@ -56,6 +67,10 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     bulkDownloadJimuUnei: false,
     bulkDownloadBunshokaitou: false,
     bunshoTaxonomies: undefined,
+    bulkDownloadTaxAnswer: false,
+    taxAnswerTaxonomies: undefined,
+    bulkDownloadQa: false,
+    qaTopics: undefined,
     bulkDownloadEverything: false,
     staleDays: undefined,
     refreshStale: false,
@@ -76,6 +91,20 @@ export function parseArgs(argv: readonly string[]): CliArgs {
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
+    } else if (a === '--bulk-download-tax-answer') args.bulkDownloadTaxAnswer = true;
+    else if (a.startsWith('--tax-answer-taxonomy=')) {
+      const csv = a.slice('--tax-answer-taxonomy='.length);
+      args.taxAnswerTaxonomies = csv
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else if (a === '--bulk-download-qa') args.bulkDownloadQa = true;
+    else if (a.startsWith('--qa-topic=')) {
+      const csv = a.slice('--qa-topic='.length);
+      args.qaTopics = csv
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean) as QaTopic[];
     } else if (a === '--bulk-download-all') args.bulkDownloadAll = true;
     else if (a === '--bulk-download') args.bulkDownload = true;
     else if (a === '--refresh') args.refresh = true;
@@ -102,6 +131,8 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
   houki-nta-mcp --bulk-download-kaisei       4 通達分の改正通達一覧を順次 bulk DL（document テーブルへ投入）
   houki-nta-mcp --bulk-download-jimu-unei    事務運営指針（jimu-unei）一覧を bulk DL（document テーブルへ投入）
   houki-nta-mcp --bulk-download-bunshokaitou 文書回答事例（bunshokaitou）を bulk DL（全税目で 30 分超のため、--bunsho-taxonomy=shotoku,hojin で絞り込み推奨）
+  houki-nta-mcp --bulk-download-tax-answer   タックスアンサー（taxanswer）を bulk DL（約 850 件 / 約 15 分。--tax-answer-taxonomy=shohi,shotoku で絞り込み可）
+  houki-nta-mcp --bulk-download-qa           質疑応答事例（shitsugi）を bulk DL（9 税目で計 2000+ 件、--qa-topic=shohi,shotoku で絞り込み推奨）
   houki-nta-mcp --refresh-stale=<日数>     N 日以上古い section を列挙（dry-run）
   houki-nta-mcp --refresh-stale=<日数> --apply  N 日以上古い section の通達を実際に再 DL
   houki-nta-mcp --version                  バージョンを表示
@@ -148,6 +179,14 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
   }
   if (args.bulkDownloadBunshokaitou) {
     await runBulkDownloadBunshokaitou(args);
+    return true;
+  }
+  if (args.bulkDownloadTaxAnswer) {
+    await runBulkDownloadTaxAnswer(args);
+    return true;
+  }
+  if (args.bulkDownloadQa) {
+    await runBulkDownloadQa(args);
     return true;
   }
   if (args.staleDays !== undefined) {
@@ -219,16 +258,80 @@ async function runBulkDownloadEverything(args: CliArgs): Promise<void> {
     );
   }
 
-  process.stderr.write('\n[bulk-download-everything] (4/4) ===== 文書回答事例 =====\n');
+  process.stderr.write('\n[bulk-download-everything] (4/6) ===== 文書回答事例 =====\n');
   try {
     await runBulkDownloadBunshokaitou(args);
   } catch (err) {
     process.stderr.write(
-      `[bulk-download-everything] (4/4) 文書回答事例 失敗: ${err instanceof Error ? err.message : String(err)}\n`
+      `[bulk-download-everything] (4/6) 文書回答事例 失敗: ${err instanceof Error ? err.message : String(err)}\n`
     );
   }
 
-  process.stderr.write('\n[bulk-download-everything] 全 4 種別の処理を完了しました\n');
+  process.stderr.write('\n[bulk-download-everything] (5/6) ===== タックスアンサー =====\n');
+  try {
+    await runBulkDownloadTaxAnswer(args);
+  } catch (err) {
+    process.stderr.write(
+      `[bulk-download-everything] (5/6) タックスアンサー 失敗: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+  }
+
+  process.stderr.write('\n[bulk-download-everything] (6/6) ===== 質疑応答事例 =====\n');
+  try {
+    await runBulkDownloadQa(args);
+  } catch (err) {
+    process.stderr.write(
+      `[bulk-download-everything] (6/6) 質疑応答事例 失敗: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+  }
+
+  process.stderr.write('\n[bulk-download-everything] 全 6 種別の処理を完了しました\n');
+}
+
+/** Phase 3c: タックスアンサーを bulk DL（索引 → 個別） */
+async function runBulkDownloadTaxAnswer(args: CliArgs): Promise<void> {
+  const dbPath = args.dbPath ?? defaultDbPath();
+  process.stderr.write(`[bulk-download-tax-answer] DB: ${dbPath}\n`);
+  if (args.taxAnswerTaxonomies?.length) {
+    process.stderr.write(
+      `[bulk-download-tax-answer] taxonomies: ${args.taxAnswerTaxonomies.join(', ')}\n`
+    );
+  }
+  const db = openDb(dbPath);
+  try {
+    const result = await bulkDownloadTaxAnswer(db, {
+      taxonomies: args.taxAnswerTaxonomies,
+      onProgress: (p) => {
+        if (p.current && p.total) process.stderr.write(`  ${p.message}\n`);
+        else process.stderr.write(`[${p.phase}] ${p.message}\n`);
+      },
+    });
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  } finally {
+    closeDb(db);
+  }
+}
+
+/** Phase 3c: 質疑応答事例を bulk DL（9 税目分） */
+async function runBulkDownloadQa(args: CliArgs): Promise<void> {
+  const dbPath = args.dbPath ?? defaultDbPath();
+  process.stderr.write(`[bulk-download-qa] DB: ${dbPath}\n`);
+  if (args.qaTopics?.length) {
+    process.stderr.write(`[bulk-download-qa] topics: ${args.qaTopics.join(', ')}\n`);
+  }
+  const db = openDb(dbPath);
+  try {
+    const result = await bulkDownloadQa(db, {
+      topics: args.qaTopics,
+      onProgress: (p) => {
+        if (p.current && p.total) process.stderr.write(`  ${p.message}\n`);
+        else process.stderr.write(`[${p.phase}] ${p.message}\n`);
+      },
+    });
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  } finally {
+    closeDb(db);
+  }
 }
 
 /**

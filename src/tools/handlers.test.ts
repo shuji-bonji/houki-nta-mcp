@@ -15,15 +15,27 @@ import {
   toolHandlers,
 } from './handlers.js';
 
-describe('未実装スタブ — Phase 2e 以降で対応予定の検索系', () => {
-  it('nta_search_qa', async () => {
-    const r = (await handleNtaSearchQa({ keyword: '社内会議' })) as { status?: string };
-    expect(r.status).toBe('not_implemented');
+describe('search 系 (Phase 3c で本実装)', () => {
+  // DB 空（in-memory）の場合は results=[] と hint を返す
+  it('nta_search_qa: 空 DB は results=[] + hint', async () => {
+    const r = (await handleNtaSearchQa({ keyword: '社内会議' }, { dbPath: ':memory:' })) as {
+      results?: unknown[];
+      hint?: string;
+    };
+    expect(r.results).toEqual([]);
+    expect(r.hint).toContain('--bulk-download-qa');
   });
 
-  it('nta_search_tax_answer', async () => {
-    const r = (await handleNtaSearchTaxAnswer({ keyword: '医療費控除' })) as { status?: string };
-    expect(r.status).toBe('not_implemented');
+  it('nta_search_tax_answer: 空 DB は results=[] + hint', async () => {
+    const r = (await handleNtaSearchTaxAnswer(
+      { keyword: '医療費控除' },
+      { dbPath: ':memory:' }
+    )) as {
+      results?: unknown[];
+      hint?: string;
+    };
+    expect(r.results).toEqual([]);
+    expect(r.hint).toContain('--bulk-download-tax-answer');
   });
 });
 

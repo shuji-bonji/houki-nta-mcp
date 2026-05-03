@@ -4,7 +4,7 @@
  * 改正通達 / 事務運営指針 / 文書回答事例の共通型。`doc_type` で種別を区別。
  */
 
-export type DocType = 'kaisei' | 'jimu-unei' | 'bunshokaitou';
+export type DocType = 'kaisei' | 'jimu-unei' | 'bunshokaitou' | 'tax-answer' | 'qa-jirei';
 
 /** PDF 添付の hint 情報。本文取得は pdf-reader-mcp に委譲 */
 export interface AttachedPdf {

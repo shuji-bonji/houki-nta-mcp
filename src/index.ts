@@ -73,7 +73,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 3b 完了: 通達 + 改正通達 + 事務運営指針 + 文書回答事例 / 13 ツール構成)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 3c alpha.1: 6 大コンテンツ全 search 本実装 / nta_search_tax_answer / nta_search_qa)`
   );
 }
 
