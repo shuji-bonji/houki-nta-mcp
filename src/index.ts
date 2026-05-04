@@ -73,7 +73,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 3c alpha.1: 6 大コンテンツ全 search 本実装 / nta_search_tax_answer / nta_search_qa)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 3c stable: 6 大コンテンツ全 FTS5 検索 / 13 tools)`
   );
 }
 

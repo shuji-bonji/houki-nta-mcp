@@ -1,8 +1,11 @@
 /**
- * MCP Tool Definitions — houki-nta-mcp Phase 0 (スタブ)
+ * MCP Tool Definitions — houki-nta-mcp
  *
- * Phase 1 で本実装。現状はツール定義のみ存在し、ハンドラは
- * 「未実装」エラーを返すスタブ実装になっている。
+ * 国税庁 6 大コンテンツ（基本通達 / 質疑応答事例 / タックスアンサー /
+ * 改正通達 / 事務運営指針 / 文書回答事例）の検索・取得ツール定義。
+ *
+ * - search 系: SQLite FTS5（trigram）の全文検索。事前 bulk DL（CLI: `--bulk-download-*`）が前提
+ * - get 系: DB lookup → 未投入時はライブ fetch（write-through cache）
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
@@ -11,7 +14,8 @@ import { DOMAINS, LIMITS, OUTPUT_FORMATS } from '../constants.js';
 export const tools: Tool[] = [
   {
     name: 'nta_search_tsutatsu',
-    description: '国税庁の通達（法令解釈通達・個別通達）をキーワード検索する。Phase 0 ではスタブ。',
+    description:
+      '国税庁の基本通達（消基通・所基通・法基通・相基通の 4 通達）を FTS5 でキーワード検索する。事前に `--bulk-download-all` で DB 投入が必要。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -42,7 +46,7 @@ export const tools: Tool[] = [
   {
     name: 'nta_get_tsutatsu',
     description:
-      '通達本文を取得する。略称（消基通・所基通・法基通 等）対応。条項指定可能。Phase 0 ではスタブ。',
+      '基本通達の本文を取得する。略称（消基通・所基通・法基通・相基通）対応、条項指定可能。DB 投入済（`--bulk-download-all`）の場合は DB から、未投入の場合はライブ fetch（結果は DB に書き戻し）。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -67,7 +71,8 @@ export const tools: Tool[] = [
   },
   {
     name: 'nta_search_qa',
-    description: '国税庁の質疑応答事例をキーワード検索する。Phase 0 ではスタブ。',
+    description:
+      '国税庁の質疑応答事例（9 税目: 所得税/源泉所得税/譲渡所得/相続税・贈与税/財産の評価/法人税/消費税/印紙税/法定調書）を FTS5 でキーワード検索する。事前に `--bulk-download-qa` で DB 投入が必要。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -133,7 +138,8 @@ export const tools: Tool[] = [
   },
   {
     name: 'nta_search_tax_answer',
-    description: 'タックスアンサー（一般納税者向け解説）をキーワード検索する。Phase 0 ではスタブ。',
+    description:
+      'タックスアンサー（一般納税者向け解説、約 750 件）を FTS5 でキーワード検索する。事前に `--bulk-download-tax-answer` で DB 投入が必要。',
     inputSchema: {
       type: 'object',
       properties: {

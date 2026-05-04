@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-04
+
+🎉 **Phase 3c 正式完了** — タックスアンサー / 質疑応答事例の bulk DL + FTS5 検索を本実装。
+これで `nta_search_*` 系の未実装スタブがすべて解消し、**6 大コンテンツ**（基本通達 / 改正通達 /
+事務運営指針 / 文書回答事例 / タックスアンサー / 質疑応答事例）すべてが FTS5 検索可能に。
+
+### Added (v0.5.0 仕上げ)
+
+- 実走確認: 全件 bulk DL のベンチマークを取得（fail rate 0% / 計 2,710 件 / 51 分）
+  - qa-jirei: 1,841 件（9 税目、35 分）
+  - tax-answer: 744 件（14 分）
+  - kaisei: 125 件（4 通達分、2.3 分）
+  - bunshokaitou: 152 件（既存）/ jimu-unei: 32 件（既存）
+- 全件 1.13 sec/doc で安定動作。HP 構造変更検知の **baseline** として記録。
+
+### Changed
+
+- **`tools/definitions.ts`** の description から「Phase 0 ではスタブ」表記を削除し、
+  各 search 系ツールの description を本実装の内容（FTS5 全文検索 + 事前 bulk DL 必要）に更新:
+  - `nta_search_tsutatsu`: 4 通達（消基通・所基通・法基通・相基通）を明示
+  - `nta_get_tsutatsu`: DB lookup → live fallback の挙動を明示
+  - `nta_search_qa`: 9 税目を明示
+  - `nta_search_tax_answer`: 約 750 件である旨を明示
+- ファイルヘッダコメントも 6 大コンテンツ前提に書き換え。
+
+### Notes
+
+- v0.5.0-alpha.1 で publish した実装と機能差分は description のみ（実装ロジックに変更なし）。
+- 次フェーズ予定: **Phase 4 (PDF コンテンツ活用 / pdf-reader-mcp 連携深化)** →
+  **resilience 設計 (HP 構造変更検知・通知・回復)** → 他 family MCP への横展開。
+
 ## [0.5.0-alpha.1] - 2026-05-03
 
 **Phase 3c 第 1 段** — タックスアンサー / 質疑応答事例の bulk DL + FTS5 検索を本実装。
