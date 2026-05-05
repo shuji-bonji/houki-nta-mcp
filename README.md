@@ -8,7 +8,7 @@
 
 法律本文は houki-hub family の別 MCP（[`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp)）が担当します。
 
-## 状態: v0.5.0 — 6 大コンテンツすべて FTS5 検索可能 🎉
+## 状態: v0.6.0 — Resilience 機能を実装、運用に耐える品質に 🛡️
 
 **Phase 2**: 4 つの基本通達（消基通 / 所基通 / 法基通 / 相基通）の bulk DL +
 ローカル SQLite (FTS5) 全文検索 + DB-first / live fallback + 改正検知 + Normalize-everywhere。
@@ -16,8 +16,12 @@
 **Phase 3b** (v0.4.0): 改正通達 + 事務運営指針 + 文書回答事例 を `document` テーブルで統一管理。
 
 **Phase 3c** (v0.5.0): タックスアンサー + 質疑応答事例の bulk DL + FTS5 検索を本実装。
-これで **`nta_search_*` 系のすべてが本実装** になり、未実装スタブが解消。13 ツールすべて稼働。
 全件 bulk DL は **2,710 件 / 51 分 / fail rate 0%** で安定動作（HP 構造変更検知の baseline として記録）。
+
+**Phase 5** (v0.6.0): Resilience 機能を本実装。HTML 構造変更を 4 パターン（新規 / 更新 / 削除 / 移動）で集計、
+二重 threshold で誤検知を抑制、`--health-check` CLI で 9 種別の代表 URL を canary 検証。
+レスポンスに `freshness` フィールドを付与し、利用者（LLM）が staleness を判定できるように。
+設計詳細: [docs/RESILIENCE.md](docs/RESILIENCE.md)
 
 ```bash
 # 6 種別を一括投入する統合 CLI（推奨）
@@ -29,7 +33,7 @@ houki-nta-mcp --bulk-download-everything \
 
 実装ロードマップは [`docs/DESIGN.md`](docs/DESIGN.md) を参照。
 
-## 提供ツール（v0.5.0 確定版 / 13 ツール）
+## 提供ツール（v0.6.0 確定版 / 13 ツール、search 系には `freshness` フィールド付き）
 
 | Tool                         | 用途                                                   | 状態      |
 | ---------------------------- | ------------------------------------------------------ | --------- |
@@ -126,9 +130,11 @@ houki-nta-mcp --refresh-stale=30 --apply
 | コンテンツ        | 件数の目安        | 投入時間                   |
 | ----------------- | ----------------- | -------------------------- |
 | 通達本体 (4 通達) | 約 2,800 clauses  | 10-15 分                   |
-| 改正通達          | 約 100 docs       | 5-10 分                    |
-| 事務運営指針      | 約 30 docs        | 約 1 分                    |
+| 改正通達          | 約 125 docs       | 5-10 分                    |
+| 事務運営指針      | 約 32 docs        | 約 1 分                    |
 | 文書回答事例      | 数百〜2,000+ docs | 約 30 分超（絞り込み推奨） |
+| タックスアンサー  | 約 750 docs       | 約 14 分                   |
+| 質疑応答事例      | 約 1,840 docs     | 約 35 分                   |
 
 `--bulk-download` を実行していなくても、消基通はライブ取得経路でフォールバック動作します
 （応答時間は ~700ms/件）。所基通・法基通・相基通および周辺コンテンツ（改正通達 / 事務運営指針 /
@@ -150,6 +156,56 @@ houki-nta-mcp --refresh-stale=30 --apply
 └──────────────────────────────────────────────────┘
 ```
 
+## 運用フロー（v0.6.0 Resilience）
+
+スクレイピング主体のため、国税庁 HP の構造変更で bulk DL や parse が静かに壊れるリスクがあります。
+v0.6.0 では検知・可視化を実装しました。実運用では以下を組み合わせて使ってください:
+
+```mermaid
+graph LR
+  M[月 1 回<br/>--bulk-download-everything]:::month --> Mb[4 パターン集計<br/>baseline 履歴追記]
+  W[週 1 回<br/>--health-check]:::week --> Wb[9 種別 canary fetch<br/>parser 互換性検証]
+  CI[CI weekly cron<br/>--health-check --strict]:::ci --> CIb[fail 時 GitHub Actions<br/>workflow が failure]
+
+  classDef month fill:#cce5ff,stroke:#0066cc
+  classDef week fill:#d4edda,stroke:#28a745
+  classDef ci fill:#fff3cd,stroke:#ffc107
+```
+
+| 頻度         | コマンド                                   | 用途                                               | 所要時間 |
+| ------------ | ------------------------------------------ | -------------------------------------------------- | -------- |
+| 月 1 回      | `houki-nta-mcp --bulk-download-everything` | 4 パターン集計 + baseline 永続化                   | 〜51 分  |
+| 週 1 回      | `houki-nta-mcp --health-check`             | 9 種別の代表 URL を canary fetch                   | 〜数十秒 |
+| 週 1 回 (CI) | GitHub Actions cron                        | `--health-check --strict` で workflow に fail 連動 | 〜1 分   |
+
+cron / launchd の設定例:
+
+```cron
+# 月初に bulk DL（毎月 1 日 03:00 JST）
+0 3 1 * *  /usr/local/bin/houki-nta-mcp --bulk-download-everything > ~/.cache/houki-nta-mcp/last-bulk.log 2>&1
+
+# 月曜に health-check（毎週月曜 09:00 JST）
+0 9 * * 1  /usr/local/bin/houki-nta-mcp --health-check >> ~/.cache/houki-nta-mcp/health.log 2>&1
+```
+
+レスポンスには `freshness` フィールドが付き、利用者（LLM）は `staleness` から再 bulk DL の必要性を判断できます:
+
+```json
+{
+  "results": [...],
+  "freshness": {
+    "oldest_fetched_at": "2026-04-15T08:00:00Z",
+    "newest_fetched_at": "2026-05-03T23:22:31Z",
+    "staleness": "stale",  // fresh < 1w / stale < 1m / outdated > 1m
+    "days_since_oldest": 19
+  }
+}
+```
+
+`outdated` 時は `warning` フィールドが付与され、再 bulk DL を促す案内が含まれます。
+
+設計詳細は [`docs/RESILIENCE.md`](docs/RESILIENCE.md) を参照。
+
 ## なぜ通達まで取得するのか
 
 法律本文だけでは判断できないケースが多数あります。例えば消費税の軽減税率:
@@ -169,7 +225,7 @@ houki-nta-mcp --refresh-stale=30 --apply
 | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------- |
 | [`@shuji-bonji/houki-abbreviations`](https://github.com/shuji-bonji/houki-abbreviations) | 略称辞書（共有ライブラリ）                                                                                                   | ✅ v0.2.0 |
 | [`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp)           | e-Gov 法令 API クライアント。法律・政令・省令・規則・告示の本文取得                                                          | ✅ v0.2.0 |
-| **`@shuji-bonji/houki-nta-mcp`**                                                         | **国税庁の通達・改正通達・事務運営指針・文書回答事例・Q&A・タックスアンサー（このリポジトリ）**                              | ✅ v0.4.0 |
+| **`@shuji-bonji/houki-nta-mcp`**                                                         | **国税庁の通達・改正通達・事務運営指針・文書回答事例・Q&A・タックスアンサー（このリポジトリ）**                              | ✅ v0.6.0 |
 | `@shuji-bonji/houki-mhlw-mcp`                                                            | 厚労省の通達・通知・指針                                                                                                     | 📅 計画中 |
 | `@shuji-bonji/houki-saiketsu-mcp`                                                        | **裁決全般**。初版は国税不服審判所 (kfs.go.jp、約 1,950 件)。将来的に公正取引委員会・特許庁審判部・各省庁不服審査会 等へ拡張 | 💭 構想中 |
 | `@shuji-bonji/houki-court-mcp`                                                           | **判例全般**。初版は民事判決オープンデータ API。将来的に courts.go.jp の全公開判例（最高裁・高裁・地裁）へ拡張               | 💭 構想中 |

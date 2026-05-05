@@ -28,6 +28,10 @@ import {
 } from '../services/db-search.js';
 import type { ClauseRow } from '../services/db-search.js';
 import { writeBackLiveSection } from '../services/bulk-downloader.js';
+import {
+  summarizeFreshnessFromDocument,
+  summarizeFreshnessFromSection,
+} from '../services/freshness.js';
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
 import { parseQaJirei } from '../services/qa-parser.js';
 import { parseTaxAnswer } from '../services/tax-answer-parser.js';
@@ -89,6 +93,8 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
       };
     }
 
+    // Phase 5 Resilience: section テーブルから freshness を取得（4 通達横断、tsutatsu 絞り込みなし）
+    const freshness = summarizeFreshnessFromSection(db, undefined, '`--bulk-download-all`');
     return {
       keyword,
       count: hits.length,
@@ -100,6 +106,7 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
         snippet: h.snippet,
         sourceUrl: h.sourceUrl,
       })),
+      ...(freshness ? { freshness } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   } finally {
@@ -350,6 +357,13 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
         legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       };
     }
+    const taxonomyFilter = args.domain ? [args.domain] : undefined;
+    const freshness = summarizeFreshnessFromDocument(
+      db,
+      'qa-jirei',
+      taxonomyFilter,
+      '`--bulk-download-qa`'
+    );
     return {
       keyword: args.keyword,
       results: hits.map((h) => ({
@@ -360,6 +374,7 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
         sourceUrl: h.sourceUrl,
         snippet: h.snippet,
       })),
+      ...(freshness ? { freshness } : {}),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   } finally {
@@ -470,6 +485,12 @@ export async function handleNtaSearchTaxAnswer(
         legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       };
     }
+    const freshness = summarizeFreshnessFromDocument(
+      db,
+      'tax-answer',
+      undefined,
+      '`--bulk-download-tax-answer`'
+    );
     return {
       keyword: args.keyword,
       results: hits.map((h) => ({
@@ -480,6 +501,7 @@ export async function handleNtaSearchTaxAnswer(
         sourceUrl: h.sourceUrl,
         snippet: h.snippet,
       })),
+      ...(freshness ? { freshness } : {}),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   } finally {
@@ -637,6 +659,13 @@ export async function handleNtaSearchKaiseiTsutatsu(
       };
     }
 
+    const taxonomyFilter = args.taxonomy !== undefined ? [args.taxonomy] : undefined;
+    const freshness = summarizeFreshnessFromDocument(
+      db,
+      'kaisei',
+      taxonomyFilter,
+      '`--bulk-download-kaisei`'
+    );
     return {
       keyword: args.keyword,
       results: hits.map((h) => ({
@@ -648,6 +677,7 @@ export async function handleNtaSearchKaiseiTsutatsu(
         sourceUrl: h.sourceUrl,
         snippet: h.snippet,
       })),
+      ...(freshness ? { freshness } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   } finally {
@@ -752,6 +782,13 @@ export async function handleNtaSearchJimuUnei(
       };
     }
 
+    const taxonomyFilter = args.taxonomy !== undefined ? [args.taxonomy] : undefined;
+    const freshness = summarizeFreshnessFromDocument(
+      db,
+      'jimu-unei',
+      taxonomyFilter,
+      '`--bulk-download-jimu-unei`'
+    );
     return {
       keyword: args.keyword,
       results: hits.map((h) => ({
@@ -763,6 +800,7 @@ export async function handleNtaSearchJimuUnei(
         sourceUrl: h.sourceUrl,
         snippet: h.snippet,
       })),
+      ...(freshness ? { freshness } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   } finally {
@@ -871,6 +909,13 @@ export async function handleNtaSearchBunshokaitou(
         legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       };
     }
+    const taxonomyFilter = args.taxonomy !== undefined ? [args.taxonomy] : undefined;
+    const freshness = summarizeFreshnessFromDocument(
+      db,
+      'bunshokaitou',
+      taxonomyFilter,
+      '`--bulk-download-bunshokaitou`'
+    );
     return {
       keyword: args.keyword,
       results: hits.map((h) => ({
@@ -882,6 +927,7 @@ export async function handleNtaSearchBunshokaitou(
         sourceUrl: h.sourceUrl,
         snippet: h.snippet,
       })),
+      ...(freshness ? { freshness } : {}),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   } finally {

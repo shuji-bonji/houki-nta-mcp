@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-04
+
+🛡️ **Phase 5 Resilience 完了** — スクレイピング主体の MCP が抱える「HP 構造変更で
+静かに壊れる」リスクに対し、検知・可視化を本格実装。これで運用フェーズに耐える品質に。
+
+### Added (v0.6.0 の柱)
+
+#### 検知層 (active)
+
+- **`services/health-store.ts`**: bulk DL 履歴を `~/.cache/houki-nta-mcp/baseline-{doc_type}.json`
+  へ永続化（直近 12 件ローテーション）。9 種別（document テーブル 5 + 基本通達 4 = 4 通達分離）。
+- **`services/health-thresholds.ts`**: 二重 threshold（`MIN_ABS` 種別別 + `MIN_RATE: 1%`）
+  - count drift（baseline 中央値から ±20%）+ 構造変質（updatedDocs > 50%）
+- **`services/bulk-aggregation.ts`**: bulk DL 前後の snapshot 差分から 4 パターン集計
+  - `newDocs` / `updatedDocs` / `orphanedDocs` / `movedDocs` を計測
+- **`services/db-snapshot.ts`**: document テーブル + clause テーブル両対応の snapshot ヘルパ
+- 各 bulk-downloader に集計を統合（qa / tax-answer / jimu-unei / bunshokaitou / tsutatsu × 4）
+- kaisei は CLI ラッパー (`runBulkDownloadKaisei`) で 4 通達分を 1 record として記録
+
+#### 可視化層 (passive)
+
+- **`services/freshness.ts`**: レスポンスに `freshness` フィールドを付与
+  - `staleness`: `fresh` (< 1 週間) / `stale` (< 1 ヶ月) / `outdated` (> 1 ヶ月)
+  - `oldest_fetched_at` / `newest_fetched_at` / `days_since_oldest`
+  - `outdated` 時は `warning` で再 bulk DL を案内
+- 6 つの `nta_search_*` ハンドラに統合（DB 1 行読むだけで < 1ms）
+
+#### CLI / CI
+
+- **`--health-check`** CLI: 9 種別（4 通達 + 5 document type）の代表 URL を canary fetch + parse 検証
+- **`--strict`** フラグ: fail があれば exit code 1（CI 用）
+- **`.github/workflows/canary.yml`** に `health-check` ジョブを追加（週次自動）
+
+### Changed
+
+- README に運用フロー（月次 bulk DL + 週次 canary）の cron 設定例を追加
+- BaselineDocType を 9 種類に拡張（基本通達は通達ごとに分離: HP 構造変更が通達単位で起きるため）
+
+### Documentation
+
+- **`docs/RESILIENCE.md`** (新規): 5 層フレームワーク（検知 / 可視化 / 通知 / 回復 / 代替源）と
+  v0.6.0 / v0.7+ のスコープ線引き
+
+### Notes
+
+- **partial run（taxonomy 絞り込み等）は baseline 永続化しない**: median 比較の意味が薄れるため
+- 通知層（GitHub Issues 自動作成 / Slack webhook）は v0.7+ で対応
+- 回復層（selector fallback / LLM-assisted parser）は v0.7+ で対応
+- 代替源層（e-Gov 法令 API との突合）は v0.8+ で対応
+
+### Verified
+
+- build / lint / format:check 全パス
+- 既存テスト 298 → 350+ 件（新規追加: health-store / thresholds / bulk-aggregation / db-snapshot）
+
 ## [0.5.0] - 2026-05-04
 
 🎉 **Phase 3c 正式完了** — タックスアンサー / 質疑応答事例の bulk DL + FTS5 検索を本実装。

@@ -16,10 +16,14 @@ import type DatabaseT from 'better-sqlite3';
 import { QA_TOPICS } from '../constants.js';
 import type { QaTopic } from '../constants.js';
 import { logger } from '../utils/logger.js';
+import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
+import { snapshotDocumentTable } from './db-snapshot.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { parseQaJirei } from './qa-parser.js';
 import { normalizeJpText } from './text-normalize.js';
 import type { NtaDocument } from '../types/document.js';
+import type { BulkRunRecord } from './health-store.js';
+import type { HealthEvaluation } from './health-thresholds.js';
 
 export interface BulkQaProgress {
   phase: 'topic-index' | 'doc' | 'done';
@@ -36,6 +40,10 @@ export interface BulkQaResult {
   startedAt: string;
   finishedAt: string;
   durationMs: number;
+  /** 4 パターン集計（全 9 topics の full run 時のみ）。Phase 5 Resilience */
+  aggregation?: BulkRunRecord;
+  /** baseline 比較の評価結果（aggregation がある時のみ）*/
+  health?: HealthEvaluation;
 }
 
 export interface BulkQaOptions {
@@ -46,6 +54,8 @@ export interface BulkQaOptions {
   onProgress?: (p: BulkQaProgress) => void;
   /** 1 税目あたりの上限（テスト用） */
   perTopicLimit?: number | undefined;
+  /** baseline 永続化のパス上書き（テスト用、Phase 5 Resilience）*/
+  baselinePath?: string;
 }
 
 interface QaIndexEntry {
@@ -100,6 +110,12 @@ export async function bulkDownloadQa(
 
   const startedAt = new Date().toISOString();
   const startMs = Date.now();
+
+  // Phase 5 Resilience: 全 9 topics + 上限なしの「full run」時のみ baseline を記録。
+  // partial run（特定 topic のみ / perTopicLimit あり）は median 比較が意味を持たないので
+  // baseline 永続化はスキップする。
+  const isFullRun = topics.length === QA_TOPICS.length && !options.perTopicLimit;
+  const beforeSnapshot = isFullRun ? snapshotDocumentTable(db, 'qa-jirei') : undefined;
 
   // 1. 各税目別索引から個別 URL を集める
   const targets: QaIndexEntry[] = [];
@@ -219,12 +235,29 @@ export async function bulkDownloadQa(
 
   const finishedAt = new Date().toISOString();
   const durationMs = Date.now() - startMs;
+
+  // Phase 5 Resilience: full run 時のみ集計 + baseline 永続化
+  let aggregation: BulkRunRecord | undefined;
+  let health: HealthEvaluation | undefined;
+  if (isFullRun && beforeSnapshot) {
+    const afterSnapshot = snapshotDocumentTable(db, 'qa-jirei');
+    aggregation = computeBulkAggregation({
+      before: beforeSnapshot,
+      after: afterSnapshot,
+      totalEntries: targets.length,
+      documentsFailed,
+      durationMs,
+      ranAt: finishedAt,
+    });
+    health = recordBulkRun('qa-jirei', aggregation, options.baselinePath);
+  }
+
   onProgress?.({
     phase: 'done',
     message: `完了: ${documentsFetched}/${targets.length} docs (${(durationMs / 1000).toFixed(1)}s)`,
   });
 
-  return {
+  const result: BulkQaResult = {
     totalEntries: targets.length,
     documentsFetched,
     documentsFailed,
@@ -233,6 +266,9 @@ export async function bulkDownloadQa(
     finishedAt,
     durationMs,
   };
+  if (aggregation) result.aggregation = aggregation;
+  if (health) result.health = health;
+  return result;
 }
 
 function computeHash(doc: NtaDocument): string {

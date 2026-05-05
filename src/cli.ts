@@ -22,6 +22,14 @@ import { bulkDownloadTaxAnswer } from './services/tax-answer-bulk-downloader.js'
 import { bulkDownloadQa } from './services/qa-bulk-downloader.js';
 import type { QaTopic } from './constants.js';
 import { findStaleSections } from './services/db-search.js';
+import {
+  computeBulkAggregation,
+  recordBulkRun,
+  type DocSnapshot,
+} from './services/bulk-aggregation.js';
+import { snapshotDocumentTable } from './services/db-snapshot.js';
+import { runHealthCheck } from './services/health-check.js';
+import { loadBaseline } from './services/health-store.js';
 import { PACKAGE_INFO } from './config.js';
 import { TSUTATSU_URL_ROOTS } from './constants.js';
 
@@ -51,6 +59,10 @@ interface CliArgs {
   staleDays: number | undefined;
   /** stale section を実際に再 DL する（要 --refresh-stale） */
   refreshStale: boolean;
+  /** Phase 5 Resilience: 6 種別の代表 URL を canary fetch + parse 検証 */
+  healthCheck: boolean;
+  /** --health-check 時に fail があれば exit code 非ゼロ（CI 用） */
+  strict: boolean;
   tsutatsu: string;
   dbPath: string | undefined;
   refresh: boolean;
@@ -74,6 +86,8 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     bulkDownloadEverything: false,
     staleDays: undefined,
     refreshStale: false,
+    healthCheck: false,
+    strict: false,
     tsutatsu: '消費税法基本通達',
     dbPath: undefined,
     refresh: false,
@@ -107,6 +121,8 @@ export function parseArgs(argv: readonly string[]): CliArgs {
         .filter(Boolean) as QaTopic[];
     } else if (a === '--bulk-download-all') args.bulkDownloadAll = true;
     else if (a === '--bulk-download') args.bulkDownload = true;
+    else if (a === '--health-check') args.healthCheck = true;
+    else if (a === '--strict') args.strict = true;
     else if (a === '--refresh') args.refresh = true;
     else if (a === '--apply') args.refreshStale = true;
     else if (a === '--help' || a === '-h') args.help = true;
@@ -135,6 +151,8 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
   houki-nta-mcp --bulk-download-qa           質疑応答事例（shitsugi）を bulk DL（9 税目で計 2000+ 件、--qa-topic=shohi,shotoku で絞り込み推奨）
   houki-nta-mcp --refresh-stale=<日数>     N 日以上古い section を列挙（dry-run）
   houki-nta-mcp --refresh-stale=<日数> --apply  N 日以上古い section の通達を実際に再 DL
+  houki-nta-mcp --health-check              6 大コンテンツ + 4 通達（計 9 種別）の代表 URL を canary fetch + parse 検証
+  houki-nta-mcp --health-check --strict     fail があれば exit code 1（CI 用）
   houki-nta-mcp --version                  バージョンを表示
   houki-nta-mcp --help                     このメッセージを表示
 
@@ -143,6 +161,7 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
   --db-path=<path>        DB ファイルパスを上書き（既定: \${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db）
   --refresh               既存 DB を消去して再 DL
   --apply                 --refresh-stale と組み合わせて実際の再 DL を実行
+  --strict                --health-check と組み合わせて、fail があれば exit code 1
 
 環境変数:
   HOUKI_NTA_DB_PATH   DB ファイルパス（--db-path と同等）
@@ -199,6 +218,10 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
   }
   if (args.bulkDownload) {
     await runBulkDownload(args);
+    return true;
+  }
+  if (args.healthCheck) {
+    await runHealthCheckCli(args);
     return true;
   }
   return false;
@@ -400,6 +423,12 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
 
   const db = openDb(dbPath);
   const summary: Array<{ formalName: string; status: 'ok' | 'error'; detail: string }> = [];
+  // Phase 5 Resilience: kaisei は 4 通達分を 1 baseline にまとめるため、ループ前後で snapshot
+  let totalEntriesAll = 0;
+  let documentsFailedAll = 0;
+  const startMsAll = Date.now();
+  const ranAtAll = new Date().toISOString();
+  const beforeSnapshot: Map<string, DocSnapshot> = snapshotDocumentTable(db, 'kaisei');
   try {
     for (const [formalName, indexUrl] of targets) {
       process.stderr.write(`\n[bulk-download-kaisei] ===== ${formalName} =====\n`);
@@ -414,6 +443,8 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
             }
           },
         });
+        totalEntriesAll += result.totalEntries;
+        documentsFailedAll += result.documentsFailed;
         summary.push({
           formalName,
           status: 'ok',
@@ -430,7 +461,26 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
       const mark = s.status === 'ok' ? '✓' : '✗';
       process.stderr.write(`  ${mark} ${s.formalName}: ${s.detail}\n`);
     }
-    process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
+
+    // Phase 5 Resilience: kaisei は CLI ラッパーで 1 baseline にまとめる
+    const afterSnapshot = snapshotDocumentTable(db, 'kaisei');
+    const aggregation = computeBulkAggregation({
+      before: beforeSnapshot,
+      after: afterSnapshot,
+      totalEntries: totalEntriesAll,
+      documentsFailed: documentsFailedAll,
+      durationMs: Date.now() - startMsAll,
+      ranAt: ranAtAll,
+    });
+    const evaluation = recordBulkRun('kaisei', aggregation);
+    if (evaluation.warn) {
+      process.stderr.write(`\n[bulk-download-kaisei] ⚠ health warning:\n`);
+      for (const r of evaluation.reasons) process.stderr.write(`  - ${r}\n`);
+    }
+
+    process.stdout.write(
+      JSON.stringify({ summary, aggregation, health: evaluation }, null, 2) + '\n'
+    );
   } finally {
     closeDb(db);
   }
@@ -563,6 +613,74 @@ async function runBulkDownload(args: CliArgs): Promise<void> {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   } finally {
     closeDb(db);
+  }
+}
+
+/**
+ * Phase 5 Resilience: --health-check CLI モード。
+ *
+ * 6 大コンテンツ + 4 通達 = 9 種別の代表 URL を canary fetch + parse 検証する。
+ * 結果を JSON で stdout に出力。`--strict` 指定時は fail があれば exit code 1。
+ *
+ * 加えて、各 baseline ファイルの「最終 bulk DL からの経過日数」も併記して
+ * 運用者が「再 bulk DL が必要か」を判断できるようにする。
+ */
+async function runHealthCheckCli(args: CliArgs): Promise<void> {
+  process.stderr.write(`[health-check] starting canary fetch for 9 targets...\n`);
+
+  const result = await runHealthCheck({
+    onProgress: (msg) => process.stderr.write(`  ${msg}\n`),
+  });
+
+  process.stderr.write(`\n[health-check] ===== サマリ =====\n`);
+  for (const r of result.results) {
+    const mark = r.status === 'ok' ? '✓' : '✗';
+    const errPart = r.error ? `  err: ${r.error}` : '';
+    process.stderr.write(
+      `  ${mark} ${r.doc_type.padEnd(18)} ${r.label}  (${r.fetchMs}ms)${errPart}\n`
+    );
+  }
+  process.stderr.write(
+    `\n[health-check] ${result.ok}/${result.results.length} OK (${(result.durationMs / 1000).toFixed(1)}s)\n`
+  );
+
+  // baseline staleness 情報も付ける
+  const baselineStaleness: Record<string, { lastRun: string | null; daysAgo: number | null }> = {};
+  const docTypes = [
+    'kaisei',
+    'jimu-unei',
+    'bunshokaitou',
+    'tax-answer',
+    'qa-jirei',
+    'tsutatsu-shohi',
+    'tsutatsu-shotoku',
+    'tsutatsu-hojin',
+    'tsutatsu-sozoku',
+  ] as const;
+  const now = Date.now();
+  for (const dt of docTypes) {
+    const baseline = loadBaseline(dt);
+    if (baseline.history.length === 0) {
+      baselineStaleness[dt] = { lastRun: null, daysAgo: null };
+    } else {
+      const last = baseline.history[baseline.history.length - 1];
+      const lastTs = last ? Date.parse(last.ranAt) : NaN;
+      const daysAgo = Number.isFinite(lastTs)
+        ? Math.floor((now - lastTs) / (1000 * 60 * 60 * 24))
+        : null;
+      baselineStaleness[dt] = {
+        lastRun: last?.ranAt ?? null,
+        daysAgo,
+      };
+    }
+  }
+
+  process.stdout.write(JSON.stringify({ ...result, baselineStaleness }, null, 2) + '\n');
+
+  // --strict 指定時かつ fail がある場合は exit code 1
+  if (args.strict && result.fail > 0) {
+    process.stderr.write(`\n[health-check] --strict: ${result.fail} canary failed → exit 1\n`);
+    process.exit(1);
   }
 }
 

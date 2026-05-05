@@ -14,10 +14,14 @@ import * as cheerio from 'cheerio';
 import type DatabaseT from 'better-sqlite3';
 
 import { logger } from '../utils/logger.js';
+import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
+import { snapshotDocumentTable } from './db-snapshot.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { parseTaxAnswer } from './tax-answer-parser.js';
 import { normalizeJpText } from './text-normalize.js';
 import type { NtaDocument, AttachedPdf } from '../types/document.js';
+import type { BulkRunRecord } from './health-store.js';
+import type { HealthEvaluation } from './health-thresholds.js';
 
 /** タックスアンサー索引 URL */
 export const TAX_ANSWER_INDEX_URL = 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/code/';
@@ -36,6 +40,10 @@ export interface BulkTaxAnswerResult {
   startedAt: string;
   finishedAt: string;
   durationMs: number;
+  /** 4 パターン集計（全件 full run 時のみ）。Phase 5 Resilience */
+  aggregation?: BulkRunRecord;
+  /** baseline 比較の評価結果（aggregation がある時のみ） */
+  health?: HealthEvaluation;
 }
 
 export interface BulkTaxAnswerOptions {
@@ -47,6 +55,8 @@ export interface BulkTaxAnswerOptions {
   onProgress?: (p: BulkTaxAnswerProgress) => void;
   /** 取得件数の上限（テスト用） */
   limit?: number | undefined;
+  /** baseline 永続化のパス上書き（テスト用、Phase 5 Resilience）*/
+  baselinePath?: string;
 }
 
 interface TaxAnswerIndexEntry {
@@ -100,6 +110,10 @@ export async function bulkDownloadTaxAnswer(
 
   const startedAt = new Date().toISOString();
   const startMs = Date.now();
+
+  // Phase 5 Resilience: 全件 + 上限なしの「full run」時のみ baseline を記録
+  const isFullRun = (!options.taxonomies || options.taxonomies.length === 0) && !options.limit;
+  const beforeSnapshot = isFullRun ? snapshotDocumentTable(db, 'tax-answer') : undefined;
 
   onProgress?.({ phase: 'index', message: `索引取得: ${indexUrl}` });
   const indexFetched = await fetchNtaPage(indexUrl, fetchImpl ? { fetchImpl } : {});
@@ -185,12 +199,29 @@ export async function bulkDownloadTaxAnswer(
 
   const finishedAt = new Date().toISOString();
   const durationMs = Date.now() - startMs;
+
+  // Phase 5 Resilience: full run 時のみ集計 + baseline 永続化
+  let aggregation: BulkRunRecord | undefined;
+  let health: HealthEvaluation | undefined;
+  if (isFullRun && beforeSnapshot) {
+    const afterSnapshot = snapshotDocumentTable(db, 'tax-answer');
+    aggregation = computeBulkAggregation({
+      before: beforeSnapshot,
+      after: afterSnapshot,
+      totalEntries: targets.length,
+      documentsFailed,
+      durationMs,
+      ranAt: finishedAt,
+    });
+    health = recordBulkRun('tax-answer', aggregation, options.baselinePath);
+  }
+
   onProgress?.({
     phase: 'done',
     message: `完了: ${documentsFetched}/${targets.length} docs (${(durationMs / 1000).toFixed(1)}s)`,
   });
 
-  return {
+  const result: BulkTaxAnswerResult = {
     totalEntries: targets.length,
     documentsFetched,
     documentsFailed,
@@ -198,6 +229,9 @@ export async function bulkDownloadTaxAnswer(
     finishedAt,
     durationMs,
   };
+  if (aggregation) result.aggregation = aggregation;
+  if (health) result.health = health;
+  return result;
 }
 
 /** `[令和7年4月1日現在法令等]` から ISO 8601 の発出日を取り出す（best effort） */

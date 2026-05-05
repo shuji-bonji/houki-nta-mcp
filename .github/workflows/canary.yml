@@ -6,6 +6,10 @@ name: Canary (NTA site integration)
 # - 週次（毎週月曜 10:00 JST = 01:00 UTC）に実行
 # - 失敗してもメインの CI は通る（必要に応じて issue 自動起票を後で追加）
 # - 手動実行も可能（workflow_dispatch）
+#
+# Phase 5 Resilience (v0.6.0): `--health-check --strict` ジョブを追加し、
+# 6 大コンテンツ + 4 通達 = 9 種別の代表 URL を canary fetch + parse 検証する。
+# 設計詳細: docs/RESILIENCE.md §5.6 / §5.7
 
 on:
   schedule:
@@ -28,3 +32,18 @@ jobs:
         env:
           INTEGRATION: '1'
         run: npm test
+
+  # Phase 5 Resilience: 9 種別の代表 URL を canary fetch + parse 検証
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - name: Run --health-check --strict
+        run: node ./dist/index.js --health-check --strict

@@ -17,9 +17,26 @@ import type DatabaseT from 'better-sqlite3';
 
 import { TSUTATSU_TOC_STYLES, TSUTATSU_URL_ROOTS } from '../constants.js';
 import { logger } from '../utils/logger.js';
+import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
+import { snapshotClauseTable } from './db-snapshot.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { parseTsutatsuSection } from './tsutatsu-parser.js';
 import { normalizeJpText } from './text-normalize.js';
+import type { BaselineDocType, BulkRunRecord } from './health-store.js';
+import type { HealthEvaluation } from './health-thresholds.js';
+
+/** 通達略称 → BaselineDocType / taxonomy の対応 */
+const ABBR_TO_TAXONOMY: Record<string, 'shohi' | 'shotoku' | 'hojin' | 'sozoku'> = {
+  消基通: 'shohi',
+  所基通: 'shotoku',
+  法基通: 'hojin',
+  相基通: 'sozoku',
+};
+
+function abbrToBaselineType(abbr: string): BaselineDocType | null {
+  const tax = ABBR_TO_TAXONOMY[abbr];
+  return tax ? (`tsutatsu-${tax}` as BaselineDocType) : null;
+}
 
 /**
  * section の content_hash を計算する。
@@ -65,6 +82,10 @@ export interface BulkDownloadResult {
   startedAt: string;
   finishedAt: string;
   durationMs: number;
+  /** 4 パターン集計（full run + 既知 abbr 時のみ）。Phase 5 Resilience */
+  aggregation?: BulkRunRecord;
+  /** baseline 比較の評価結果 */
+  health?: HealthEvaluation;
 }
 
 export interface BulkDownloadOptions {
@@ -80,6 +101,8 @@ export interface BulkDownloadOptions {
   onProgress?: (p: BulkDownloadProgress) => void;
   /** 取得対象を制限（テスト用）。指定章のみ DL */
   onlyChapter?: number;
+  /** baseline 永続化のパス上書き（テスト用、Phase 5 Resilience）*/
+  baselinePath?: string;
 }
 
 /**
@@ -102,6 +125,14 @@ export async function bulkDownloadTsutatsu(
   const tocUrl = `${rootUrl}01.htm`;
   const startedAt = new Date().toISOString();
   const startMs = Date.now();
+
+  // Phase 5 Resilience: 通達ごとに分離した baseline で記録（4 通達 = 4 ファイル）
+  // - onlyChapter（部分実行）の場合は baseline 永続化スキップ
+  // - 未知の abbr の場合も skip（敏感な誤検知を避ける）
+  const baselineDocType = abbrToBaselineType(abbr);
+  const isFullRun = onlyChapter === undefined && baselineDocType !== null;
+  const taxonomy = ABBR_TO_TAXONOMY[abbr];
+  const beforeSnapshot = isFullRun && taxonomy ? snapshotClauseTable(db, taxonomy) : undefined;
 
   // 1. TOC 取得（通達ごとに TOC HTML 構造が違うので parser を切り替え）
   onProgress?.({ phase: 'toc', message: `TOC 取得中: ${tocUrl}` });
@@ -244,12 +275,31 @@ export async function bulkDownloadTsutatsu(
 
   const finishedAt = new Date().toISOString();
   const durationMs = Date.now() - startMs;
+
+  // Phase 5 Resilience: full run + 既知 abbr 時のみ集計 + baseline 永続化
+  let aggregation: BulkRunRecord | undefined;
+  let health: HealthEvaluation | undefined;
+  if (isFullRun && taxonomy && baselineDocType && beforeSnapshot) {
+    const afterSnapshot = snapshotClauseTable(db, taxonomy);
+    // tsutatsu の場合、totalEntries は clauses 数、failed は section 数で代用
+    // (1 section の失敗は通常 N clauses 取得失敗に相当するが正確な count は出にくい)
+    aggregation = computeBulkAggregation({
+      before: beforeSnapshot,
+      after: afterSnapshot,
+      totalEntries: clausesCount + sectionsFailed, // 失敗推定も加える
+      documentsFailed: sectionsFailed,
+      durationMs,
+      ranAt: finishedAt,
+    });
+    health = recordBulkRun(baselineDocType, aggregation, options.baselinePath);
+  }
+
   onProgress?.({
     phase: 'done',
     message: `完了: ${sectionsFetched}/${total} 節, ${clausesCount} clauses (${(durationMs / 1000).toFixed(1)}s)`,
   });
 
-  return {
+  const result: BulkDownloadResult = {
     tsutatsuId,
     chapters: chaptersCount,
     sections: total,
@@ -260,6 +310,9 @@ export async function bulkDownloadTsutatsu(
     finishedAt,
     durationMs,
   };
+  if (aggregation) result.aggregation = aggregation;
+  if (health) result.health = health;
+  return result;
 }
 
 /* -------------------------------------------------------------------------- */

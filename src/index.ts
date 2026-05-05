@@ -73,7 +73,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 3c stable: 6 大コンテンツ全 FTS5 検索 / 13 tools)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 5: Resilience / 9 baselines / freshness in response / --health-check CLI)`
   );
 }
 
