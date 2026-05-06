@@ -68,7 +68,6 @@ jobs:
             exit 1
           fi
           echo "Version verified: $PACKAGE_VERSION"
-          echo "version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
 
           # prerelease 判定 (semver の "-" 以降があれば prerelease)
           # alpha/beta/rc など全て "next" タグで publish し、latest を汚さない方針。
@@ -88,21 +87,8 @@ jobs:
       - name: Publish to npm with provenance
         run: npm publish --provenance --access public --tag ${{ steps.meta.outputs.dist_tag }}
 
-      # stable リリース時、next タグを latest と同じバージョンに揃える。
-      #
-      # Why: alpha/beta が走っていない期間も `npm i @scope/pkg@next` を使うユーザーが
-      #      古いバージョンに固定されてしまうのを防ぐ。慣習的に next >= latest を保ちたい。
-      #
-      # 過去の事故: houki-nta-mcp v0.4.0 / v0.6.0 / v0.7.0 でこの揃え忘れを 3 回繰り返している
-      # （手動 `npm dist-tag add` は OIDC 環境ではローカルに token が無く E401 になるため、
-      #  release 直後に shuji さんが `npm login` してからコマンドを叩く運用になりがち）。
-      #
-      # CI 内なら publish 直後の OIDC セッションをそのまま流用できるので E401 を回避できる。
-      # prerelease (next タグでの publish) ではこの step はスキップする（既に next が新しい
-      # alpha を指しているため）。
-      - name: Sync next dist-tag to stable version
-        if: steps.meta.outputs.dist_tag == 'latest'
-        run: |
-          echo "Aligning next dist-tag -> ${{ steps.meta.outputs.version }}"
-          npm dist-tag add @shuji-bonji/houki-nta-mcp@${{ steps.meta.outputs.version }} next
-          npm dist-tag ls @shuji-bonji/houki-nta-mcp
+      # 注意: stable リリース時の `next` dist-tag 揃えは CI で自動化していない。
+      # npm Trusted Publishers (OIDC) は `npm publish` 専用で、`npm dist-tag add` は
+      # 認証スコープ外（v0.7.1 リリースで E401 が発生して確定）。
+      # 自動化には NPM_TOKEN secret 追加が必要だが、トークン管理を避ける方針で
+      # 手動運用にしている。手順は CONTRIBUTING.md を参照。

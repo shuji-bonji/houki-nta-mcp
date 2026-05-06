@@ -84,6 +84,47 @@ npm test            # vitest
 npm run build       # tsc
 ```
 
+## リリース手順（メンテナ向け）
+
+stable リリースは **GitHub Actions が自動 publish** しますが、`dist-tag` の `next`
+は手動で揃える必要があります（npm Trusted Publishers の OIDC は `npm publish`
+専用で `npm dist-tag` には使えないため）。
+
+### stable リリース (vX.Y.Z)
+
+```bash
+# 1. version bump + CHANGELOG / README / llms.txt 更新（PR でレビュー）
+# 2. tag を切って push
+git tag vX.Y.Z
+git push origin main --tags
+# → CI が自動で npm publish --tag latest を実行（OIDC）
+
+# 3. release が完了したら、手元で next タグを揃える
+npm dist-tag ls @shuji-bonji/houki-nta-mcp
+# → latest: X.Y.Z, next: 古いバージョン になっているはず
+
+npm dist-tag add @shuji-bonji/houki-nta-mcp@X.Y.Z next
+# E401 が出たら `npm login` してから再実行（OIDC ローカルセッション無効のため）
+
+npm dist-tag ls @shuji-bonji/houki-nta-mcp
+# → latest: X.Y.Z, next: X.Y.Z になっていれば OK
+```
+
+**なぜ next を揃えるのか**: alpha/beta が走っていない期間も
+`npm i @shuji-bonji/houki-nta-mcp@next` を使うユーザーが古いバージョンに
+固定されるのを防ぐ慣習（npm 自体・React・TypeScript・Vite 等もこの形）。
+次の prerelease を publish すれば `--tag next` で next が自動更新される。
+
+### prerelease リリース (vX.Y.Z-alpha.N)
+
+```bash
+# semver の "-" を含めると CI が自動で --tag next を選択
+git tag vX.Y.Z-alpha.0
+git push origin main --tags
+# → CI が npm publish --tag next で公開
+# next タグは自動で進むので、手動操作は不要
+```
+
 ## コーディング規約
 
 - TypeScript 5.x / ESM / Node.js >= 20

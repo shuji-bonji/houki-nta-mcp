@@ -177,20 +177,6 @@ cron 設定例:
 
 会計・経理・税務系プロダクトを開発する場合、**通達レベルまで参照しないと正しい判定ができない** ことが多く、houki-nta-mcp はその領域をカバーします。
 
-## houki-hub MCP family
-
-| パッケージ                                                                               | 役割                                                                                                                     | 状態      |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------- |
-| [`@shuji-bonji/houki-abbreviations`](https://github.com/shuji-bonji/houki-abbreviations) | 略称辞書（共有ライブラリ）                                                                                               | ✅ 公開済 |
-| [`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp)           | e-Gov 法令 API クライアント。法律・政令・省令・規則・告示の本文取得                                                      | ✅ 公開済 |
-| **`@shuji-bonji/houki-nta-mcp`**                                                         | **国税庁の通達・改正通達・事務運営指針・文書回答事例・Q&A・タックスアンサー（このリポジトリ）**                          | ✅ 公開済 |
-| `@shuji-bonji/houki-mhlw-mcp`                                                            | 厚労省の通達・通知・指針                                                                                                 | 📅 計画中 |
-| `@shuji-bonji/houki-saiketsu-mcp`                                                        | 裁決全般。初版は国税不服審判所 (kfs.go.jp、約 1,950 件)。将来的に公正取引委員会・特許庁審判部・各省庁不服審査会 等へ拡張 | 💭 構想中 |
-| `@shuji-bonji/houki-court-mcp`                                                           | 判例全般。初版は民事判決オープンデータ API。将来的に courts.go.jp の全公開判例（最高裁・高裁・地裁）へ拡張               | 💭 構想中 |
-| `@shuji-bonji/houki-hub`                                                                 | meta-package（一括 install）                                                                                             | 📅 計画中 |
-
-family 全体のドキュメントサイト（[houki-hub.mikuro.net](https://houki-hub.mikuro.net) / 構築中）で各 MCP の詳細を順次公開予定です。
-
 ## インストール
 
 ```json
@@ -267,5 +253,19 @@ npm test
 MIT — 個人利用・学習用途のフォーク・改変・再配布を自由に許可します。
 
 国税庁コンテンツの著作権は **国（国税庁）** にあり、再配布・改変は[政府標準利用規約（第 2.0 版）](https://cio.go.jp/policy-opendata)の範囲内で可能です。本 MCP は出典 URL を必ず付与する設計とし、利用者は元情報を確認できます。
+
+## houki-hub MCP family
+
+| パッケージ                                                                               | 役割                                                                                                                     | 状態      |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------- |
+| [`@shuji-bonji/houki-abbreviations`](https://github.com/shuji-bonji/houki-abbreviations) | 略称辞書（共有ライブラリ）                                                                                               | ✅ 公開済 |
+| [`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp)           | e-Gov 法令 API クライアント。法律・政令・省令・規則・告示の本文取得                                                      | ✅ 公開済 |
+| **`@shuji-bonji/houki-nta-mcp`**                                                         | **国税庁の通達・改正通達・事務運営指針・文書回答事例・Q&A・タックスアンサー（このリポジトリ）**                          | ✅ 公開済 |
+| `@shuji-bonji/houki-mhlw-mcp`                                                            | 厚労省の通達・通知・指針                                                                                                 | 📅 計画中 |
+| `@shuji-bonji/houki-saiketsu-mcp`                                                        | 裁決全般。初版は国税不服審判所 (kfs.go.jp、約 1,950 件)。将来的に公正取引委員会・特許庁審判部・各省庁不服審査会 等へ拡張 | 💭 構想中 |
+| `@shuji-bonji/houki-court-mcp`                                                           | 判例全般。初版は民事判決オープンデータ API。将来的に courts.go.jp の全公開判例（最高裁・高裁・地裁）へ拡張               | 💭 構想中 |
+| `@shuji-bonji/houki-hub`                                                                 | meta-package（一括 install）                                                                                             | 📅 計画中 |
+
+family 全体のドキュメントサイト（[houki-hub.mikuro.net](https://houki-hub.mikuro.net) / 構築中）で各 MCP の詳細を順次公開予定です。
 
 ただし、**業としての使用（税理士法 52 条が定める独占業務）** については想定外であり、作者は一切の責任を負いません。[`DISCLAIMER.md`](DISCLAIMER.md) を必ずご確認ください。
