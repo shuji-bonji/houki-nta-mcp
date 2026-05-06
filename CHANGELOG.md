@@ -7,39 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
+## [0.7.0] - 2026-05-06
 
-- **Phase 4-1-3**: `AttachedPdf` 型に `kind?: PdfKind` を追加し、4 種別の bulk-downloader
-  （kaisei / jimu-unei / bunshokaitou / tax-answer）で `extractPdfKind()` を呼び出して
-  添付 PDF メタに kind を埋め込むようにした。
-  - `src/types/document.ts`: `AttachedPdf.kind` を optional として追加（後方互換）。v0.6.0
-    までに bulk DL されたレコード（`attached_pdfs_json` に kind を持たない）も読み込み可能。
-  - `src/services/kaisei-parser.ts` / `jimu-unei-parser.ts` / `bunshokaitou-parser.ts`:
-    `extractAttachedPdfs()` 内で `extractPdfKind(title)` を呼ぶように更新。これらの parser を
-    使う bulk-downloader は自動的に kind 付きで保存される。
-  - `src/services/tax-answer-bulk-downloader.ts`: 内部の `extractPdfs()` でも同様に kind を
-    付与。
-  - parser テストに kind の検証を追加（kaisei: `attachment` 期待、jimu-unei: 全件 kind 付き）。
-  - DB スキーマ変更なし（`attached_pdfs_json` は JSON 文字列なので kind を含む JSON を
-    そのまま書き込める）。
-  - 詳細: [docs/PHASE4-PDF.md §4.1](docs/PHASE4-PDF.md)
+📑 **Phase 4-1 PDF kind classification 完了** — 添付 PDF をタイトルから 6 種別
+（新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）に自動分類し、
+LLM が「どの PDF を最優先で読むべきか」を構造化メタデータで判断できるようにした。
+PDF 本文取得は引き続き [pdf-reader-mcp](https://www.npmjs.com/package/@shuji-bonji/pdf-reader-mcp) に完全委譲（責務分離）。
 
-- **Phase 4-1-4**: 改正通達 / 事務運営指針 / 文書回答事例の Markdown 出力に kind ラベル付き表と
-  pdf-reader-mcp 呼び出し例を追加。LLM が「どの PDF を最優先で読むべきか」を判断しやすくなる。
-  - `src/services/pdf-meta.ts`: `renderAttachedPdfsMarkdown(pdfs)` ヘルパを新設。
-    - 添付 PDF を kind 優先度（`comparison` → `attachment` → `qa-pdf` → `related` → `notice` → `unknown`）
-      で安定ソートして表に描画。
-    - 表は `種別 / タイトル / サイズ / URL` の 4 列で、kind ごとの絵文字（🔄📎❓📚📢📄）と日本語ラベル
-      （新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）を表示。
-    - 表のあとに `### pdf-reader-mcp 呼び出し例` JSON ブロックを出し、最優先の PDF を `read_text`
-      呼び出しの形で例示。
-    - kind 未指定（v0.6.0 以前のレコード）は `unknown` 扱いで描画し、ソートでは末尾。
-  - `src/tools/handlers.ts`: `renderKaiseiMarkdown` / `renderDocumentMarkdown` の旧「箇条書き
-    + 短い案内文」を新ヘルパに差し替え。
-  - `src/services/pdf-meta.test.ts`: `renderAttachedPdfsMarkdown` の 7 ケース追加
-    （空配列 / 1 件 comparison / kind 優先度ソート / kind 未指定 / size 無し / パイプ
-    エスケープ / 件数表示）。
-  - 詳細: [docs/PHASE4-PDF.md §5.2](docs/PHASE4-PDF.md)
+### Added (v0.7.0 の柱)
+
+#### kind 推定エンジン (Phase 4-1-1, 既存 commit `aa117e0`)
+
+- **`src/services/pdf-meta.ts`**: `extractPdfKind(title): PdfKind` を新設。
+  - 6 種別の優先順正規表現 (`comparison` → `qa-pdf` → `attachment` → `notice` → `related`)
+  - 全角・半角ゆらぎに強い積極的正規化（全角英字 / `＆` / 空白除去）
+  - `PDF_KIND_EMOJI` / `PDF_KIND_LABEL` / `ALL_PDF_KINDS` を併せてエクスポート
+- 45 ケースの分類テストで主要パターンをカバー
+
+#### bulk-downloader 統合 (Phase 4-1-3)
+
+- **`src/types/document.ts`**: `AttachedPdf.kind?: PdfKind` を optional 追加。
+  v0.6.0 までに bulk DL されたレコード（`attached_pdfs_json` に kind を持たない）も
+  そのまま読み込み可能（後方互換）。
+- **`src/services/kaisei-parser.ts` / `jimu-unei-parser.ts` / `bunshokaitou-parser.ts`**:
+  `extractAttachedPdfs()` 内で `extractPdfKind(title)` を呼ぶよう更新。これらの parser を
+  使う bulk-downloader は自動的に kind 付きで保存される。
+- **`src/services/tax-answer-bulk-downloader.ts`**: 内部の `extractPdfs()` でも同様に kind を付与。
+- DB スキーマ変更なし（`attached_pdfs_json` JSON 文字列に kind を含める形）。マイグレーション不要。
+
+#### Markdown 出力 (Phase 4-1-4)
+
+- **`src/services/pdf-meta.ts`**: `renderAttachedPdfsMarkdown(pdfs)` ヘルパを新設。
+  - 添付 PDF を kind 優先度（`comparison` → `attachment` → `qa-pdf` → `related` → `notice` → `unknown`）
+    で安定ソートして描画
+  - `種別 / タイトル / サイズ / URL` の 4 列表で kind 絵文字（🔄📎❓📚📢📄）と日本語ラベルを表示
+  - 末尾に `### pdf-reader-mcp 呼び出し例` JSON ブロックを出し、最優先 PDF を `read_text`
+    呼び出しの形で例示
+- **`src/tools/handlers.ts`**: `renderKaiseiMarkdown` / `renderDocumentMarkdown`
+  （改正通達 / 事務運営指針 / 文書回答事例）を新ヘルパに差し替え。
+
+### Tests
+
+- 既存: 348 → **357** (+9: parser kind 検証 2 + renderAttachedPdfsMarkdown 7)
+- すべて DB スキーマ変更なしで通過
+
+### 関連ドキュメント
+
+- [docs/PHASE4-PDF.md](docs/PHASE4-PDF.md) — Phase 4 全体ロードマップ
+- 残: Phase 4-2 (`has_pdf` フィルタ + `nta_inspect_pdf_meta` 新 tool) は v0.7.x で別波
 
 ## [0.6.0] - 2026-05-04
 
