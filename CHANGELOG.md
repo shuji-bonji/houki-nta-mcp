@@ -24,6 +24,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     そのまま書き込める）。
   - 詳細: [docs/PHASE4-PDF.md §4.1](docs/PHASE4-PDF.md)
 
+- **Phase 4-1-4**: 改正通達 / 事務運営指針 / 文書回答事例の Markdown 出力に kind ラベル付き表と
+  pdf-reader-mcp 呼び出し例を追加。LLM が「どの PDF を最優先で読むべきか」を判断しやすくなる。
+  - `src/services/pdf-meta.ts`: `renderAttachedPdfsMarkdown(pdfs)` ヘルパを新設。
+    - 添付 PDF を kind 優先度（`comparison` → `attachment` → `qa-pdf` → `related` → `notice` → `unknown`）
+      で安定ソートして表に描画。
+    - 表は `種別 / タイトル / サイズ / URL` の 4 列で、kind ごとの絵文字（🔄📎❓📚📢📄）と日本語ラベル
+      （新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）を表示。
+    - 表のあとに `### pdf-reader-mcp 呼び出し例` JSON ブロックを出し、最優先の PDF を `read_text`
+      呼び出しの形で例示。
+    - kind 未指定（v0.6.0 以前のレコード）は `unknown` 扱いで描画し、ソートでは末尾。
+  - `src/tools/handlers.ts`: `renderKaiseiMarkdown` / `renderDocumentMarkdown` の旧「箇条書き
+    + 短い案内文」を新ヘルパに差し替え。
+  - `src/services/pdf-meta.test.ts`: `renderAttachedPdfsMarkdown` の 7 ケース追加
+    （空配列 / 1 件 comparison / kind 優先度ソート / kind 未指定 / size 無し / パイプ
+    エスケープ / 件数表示）。
+  - 詳細: [docs/PHASE4-PDF.md §5.2](docs/PHASE4-PDF.md)
+
 ## [0.6.0] - 2026-05-04
 
 🛡️ **Phase 5 Resilience 完了** — スクレイピング主体の MCP が抱える「HP 構造変更で

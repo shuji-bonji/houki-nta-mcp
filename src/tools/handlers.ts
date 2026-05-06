@@ -35,6 +35,7 @@ import {
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
 import { parseQaJirei } from '../services/qa-parser.js';
 import { parseTaxAnswer } from '../services/tax-answer-parser.js';
+import { renderAttachedPdfsMarkdown } from '../services/pdf-meta.js';
 import { renderQaMarkdown, renderTaxAnswerMarkdown } from '../services/tax-answer-render.js';
 import { parseTsutatsuSection, TsutatsuParseError } from '../services/tsutatsu-parser.js';
 import { renderClauseMarkdown } from '../services/tsutatsu-render.js';
@@ -717,7 +718,7 @@ export async function handleNtaGetKaiseiTsutatsu(
   }
 }
 
-/** 改正通達の Markdown レンダラ。本文 + 添付 PDF を箇条書きで列挙 */
+/** 改正通達の Markdown レンダラ。本文 + 添付 PDF を kind ラベル付き表で列挙 */
 function renderKaiseiMarkdown(doc: import('../types/document.js').NtaDocument): string {
   const lines: string[] = [];
   lines.push(`# ${doc.title}`);
@@ -737,12 +738,7 @@ function renderKaiseiMarkdown(doc: import('../types/document.js').NtaDocument): 
   lines.push(doc.fullText);
   if (doc.attachedPdfs.length > 0) {
     lines.push('');
-    lines.push('## 添付 PDF');
-    lines.push('> PDF 本文は `pdf-reader-mcp` で取得してください。');
-    for (const p of doc.attachedPdfs) {
-      const sz = p.sizeKb ? ` (${p.sizeKb}KB)` : '';
-      lines.push(`- [${p.title}${sz}](${p.url})`);
-    }
+    lines.push(...renderAttachedPdfsMarkdown(doc.attachedPdfs));
   }
   lines.push('');
   lines.push('---');
@@ -866,12 +862,7 @@ function renderDocumentMarkdown(
   lines.push(doc.fullText);
   if (doc.attachedPdfs.length > 0) {
     lines.push('');
-    lines.push('## 添付 PDF');
-    lines.push('> PDF 本文は `pdf-reader-mcp` で取得してください。');
-    for (const p of doc.attachedPdfs) {
-      const sz = p.sizeKb ? ` (${p.sizeKb}KB)` : '';
-      lines.push(`- [${p.title}${sz}](${p.url})`);
-    }
+    lines.push(...renderAttachedPdfsMarkdown(doc.attachedPdfs));
   }
   lines.push('');
   lines.push('---');

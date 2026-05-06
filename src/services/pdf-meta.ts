@@ -119,3 +119,105 @@ export const ALL_PDF_KINDS: readonly PdfKind[] = [
   'notice',
   'unknown',
 ];
+
+/**
+ * Markdown 出力で kind 順にソートする際の優先度。小さいほど先に並ぶ。
+ *
+ * LLM の判断材料として「改正点を知りたい時に最優先で読む」`comparison` を最上位、
+ * 「一般的には読まない」`notice` を最下位に配置。`unknown` は最後（情報なし）。
+ */
+const KIND_PRIORITY: Record<PdfKind, number> = {
+  comparison: 0,
+  attachment: 1,
+  'qa-pdf': 2,
+  related: 3,
+  notice: 4,
+  unknown: 5,
+};
+
+/**
+ * pdf-reader-mcp 呼び出しの一言コメント（kind ごと）。
+ * 「呼び出し例」JSON の前に `// ...` 形式で添える。
+ */
+const KIND_CALL_HINT: Record<PdfKind, string> = {
+  comparison: '// 新旧対照表を読む（改正点を知りたい時に最優先）',
+  attachment: '// 別紙・別表を読む（通達本文の参照先）',
+  'qa-pdf': '// Q&A PDF を読む',
+  related: '// 参考資料を読む',
+  notice: '// 通知・連絡を読む',
+  unknown: '// この PDF を読む',
+};
+
+/**
+ * Markdown のテーブルセル内で `|` をエスケープする。
+ * パイプ文字がそのままだとテーブルの列区切りと衝突するため。
+ */
+function escapeMdTableCell(s: string): string {
+  return s.replace(/\|/g, '\\|');
+}
+
+/** 軽量な AttachedPdf 型（循環依存を避けるためここでローカル定義） */
+interface AttachedPdfLike {
+  title: string;
+  url: string;
+  sizeKb?: number;
+  kind?: PdfKind;
+}
+
+/**
+ * 添付 PDF を Phase 4-1 (v0.7.0) フォーマットの Markdown 行列に整形する。
+ *
+ * 出力構造:
+ *   - `## 添付 PDF (N 件)` ヘッダ
+ *   - pdf-reader-mcp 案内
+ *   - 種別 / タイトル / サイズ / URL の表（kind 優先度でソート）
+ *   - `### pdf-reader-mcp 呼び出し例` JSON ブロック（先頭 PDF）
+ *
+ * `pdfs` が空のときは空配列を返す。kind が undefined の PDF（v0.6.0 以前のレコード）
+ * は `unknown` 扱いで描画する。
+ *
+ * 詳細仕様: docs/PHASE4-PDF.md §5.2
+ */
+export function renderAttachedPdfsMarkdown(pdfs: ReadonlyArray<AttachedPdfLike>): string[] {
+  if (pdfs.length === 0) return [];
+
+  // kind 優先度で安定ソート（同 kind 内は元の出現順を維持）
+  const sorted = pdfs
+    .map((pdf, idx) => ({ pdf, idx }))
+    .sort((a, b) => {
+      const pa = KIND_PRIORITY[a.pdf.kind ?? 'unknown'];
+      const pb = KIND_PRIORITY[b.pdf.kind ?? 'unknown'];
+      return pa !== pb ? pa - pb : a.idx - b.idx;
+    })
+    .map((x) => x.pdf);
+
+  const lines: string[] = [];
+  lines.push(`## 添付 PDF (${pdfs.length} 件)`);
+  lines.push('');
+  lines.push('> PDF 本文は `pdf-reader-mcp` の `read_text` で取得してください。');
+  lines.push('');
+  lines.push('| 種別 | タイトル | サイズ | URL |');
+  lines.push('| --- | --- | --- | --- |');
+  for (const pdf of sorted) {
+    const kind = pdf.kind ?? 'unknown';
+    const emoji = PDF_KIND_EMOJI[kind];
+    const label = PDF_KIND_LABEL[kind];
+    const size = pdf.sizeKb ? `${pdf.sizeKb}KB` : '—';
+    lines.push(
+      `| ${emoji} ${label} | ${escapeMdTableCell(pdf.title)} | ${size} | [link](${pdf.url}) |`
+    );
+  }
+
+  // 呼び出し例: 最優先の PDF（ソート後の先頭）を代表例として提示
+  const primary = sorted[0];
+  const primaryKind = primary.kind ?? 'unknown';
+  lines.push('');
+  lines.push('### pdf-reader-mcp 呼び出し例');
+  lines.push('');
+  lines.push('```json');
+  lines.push(KIND_CALL_HINT[primaryKind]);
+  lines.push(`{ "tool": "read_text", "url": "${primary.url}" }`);
+  lines.push('```');
+
+  return lines;
+}

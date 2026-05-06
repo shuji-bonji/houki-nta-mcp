@@ -5,6 +5,7 @@ import {
   extractPdfKind,
   PDF_KIND_EMOJI,
   PDF_KIND_LABEL,
+  renderAttachedPdfsMarkdown,
   type PdfKind,
 } from './pdf-meta.js';
 
@@ -149,5 +150,76 @@ describe('ALL_PDF_KINDS', () => {
   it('TypeScript の型と整合する', () => {
     const k: PdfKind = ALL_PDF_KINDS[0];
     expect(k).toBe('comparison');
+  });
+});
+
+describe('renderAttachedPdfsMarkdown', () => {
+  it('空配列なら空配列を返す', () => {
+    expect(renderAttachedPdfsMarkdown([])).toEqual([]);
+  });
+
+  it('1 件の comparison: ヘッダ + 表 + 呼び出し例を返す', () => {
+    const out = renderAttachedPdfsMarkdown([
+      { title: '新旧対照表', url: 'https://x/a.pdf', sizeKb: 470, kind: 'comparison' },
+    ]);
+    const md = out.join('\n');
+    expect(md).toContain('## 添付 PDF (1 件)');
+    expect(md).toContain('`pdf-reader-mcp` の `read_text`');
+    expect(md).toContain('| 種別 | タイトル | サイズ | URL |');
+    expect(md).toContain('🔄 新旧対照表');
+    expect(md).toContain('470KB');
+    expect(md).toContain('[link](https://x/a.pdf)');
+    expect(md).toContain('### pdf-reader-mcp 呼び出し例');
+    expect(md).toContain('```json');
+    expect(md).toContain('// 新旧対照表を読む');
+    expect(md).toContain('"url": "https://x/a.pdf"');
+  });
+
+  it('kind 優先度でソートされる: comparison → attachment → unknown', () => {
+    const out = renderAttachedPdfsMarkdown([
+      { title: '別紙', url: 'https://x/b.pdf', kind: 'attachment' },
+      { title: 'その他', url: 'https://x/c.pdf', kind: 'unknown' },
+      { title: '新旧対照表', url: 'https://x/a.pdf', kind: 'comparison' },
+    ]);
+    const md = out.join('\n');
+    // 表の中で comparison が一番先に登場、unknown が一番後
+    const compIdx = md.indexOf('🔄 新旧対照表');
+    const attIdx = md.indexOf('📎 別紙');
+    const unkIdx = md.indexOf('📄 その他');
+    expect(compIdx).toBeGreaterThan(0);
+    expect(compIdx).toBeLessThan(attIdx);
+    expect(attIdx).toBeLessThan(unkIdx);
+    // 呼び出し例は先頭（comparison）の URL
+    expect(md).toContain('"url": "https://x/a.pdf"');
+  });
+
+  it('kind 未指定（v0.6.0 以前のレコード）は unknown として描画される', () => {
+    const out = renderAttachedPdfsMarkdown([{ title: '何か', url: 'https://x/q.pdf' }]);
+    const md = out.join('\n');
+    expect(md).toContain('📄 その他');
+    expect(md).toContain('// この PDF を読む');
+  });
+
+  it('sizeKb が無い場合はダッシュ表記', () => {
+    const out = renderAttachedPdfsMarkdown([
+      { title: '別紙', url: 'https://x/n.pdf', kind: 'attachment' },
+    ]);
+    expect(out.join('\n')).toMatch(/\|\s*—\s*\|/);
+  });
+
+  it('タイトル内のパイプ文字はエスケープされる', () => {
+    const out = renderAttachedPdfsMarkdown([
+      { title: 'A|B', url: 'https://x/p.pdf', kind: 'attachment' },
+    ]);
+    expect(out.join('\n')).toContain('A\\|B');
+  });
+
+  it('件数表示が正しい', () => {
+    const pdfs = Array.from({ length: 5 }, (_, i) => ({
+      title: `別紙${i}`,
+      url: `https://x/${i}.pdf`,
+      kind: 'attachment' as PdfKind,
+    }));
+    expect(renderAttachedPdfsMarkdown(pdfs)[0]).toBe('## 添付 PDF (5 件)');
   });
 });
