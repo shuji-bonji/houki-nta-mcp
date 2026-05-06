@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-05-07
+
+📚 **ドキュメント patch** — v0.7.2 リリース後に houki-egov-mcp + pdf-reader-mcp と
+併用したいユーザー向けの統合利用ガイドを追記。コードや MCP の挙動には変更なし。
+
+### Added
+
+- **新規 [`docs/HOUKI-FAMILY-INTEGRATION.md`](docs/HOUKI-FAMILY-INTEGRATION.md)**:
+  houki-egov-mcp + pdf-reader-mcp + houki-abbreviations と併用するときの
+  **install → Claude Desktop / Claude Code 設定 → 実例 4 ユースケース** を一から
+  順に書き下ろした統合利用ガイド (~ 380 行)。各ユースケースに sequenceDiagram
+  付きで MCP 呼び出し順を可視化。トラブルシューティング 5 件と業法独占への
+  配慮セクションも収録。
+
+### Changed
+
+- **README.md**: 統合ガイドへの誘導を 3 箇所に追加 (冒頭の概要直下 / ドキュメント
+  セクション最上段 / family セクション末尾)。
+- **README.md**: ドキュメントセクションに `docs/PHASE4-PDF.md` と
+  `docs/PHASE4-PDF-FIXTURES.md` へのリンクを追加。
+
 ## [0.7.2] - 2026-05-06
 
 🤝 **Phase 4-3 後の self-feedback** — `pdf-reader-mcp@0.3.0` で `extract_tables`

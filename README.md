@@ -8,6 +8,10 @@
 
 法律本文（法・政令・省令）は別 MCP の [`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp) が担当します。
 
+> **🔗 4 つを併用したい方へ** — `houki-egov-mcp` (法令本文) と `pdf-reader-mcp` (添付 PDF 抽出) と組み合わせた **install → 設定 → 実例 4 ユースケース** をまとめた統合ガイドを用意しています。
+>
+> 👉 **[docs/HOUKI-FAMILY-INTEGRATION.md](docs/HOUKI-FAMILY-INTEGRATION.md)**
+
 ## 主な機能
 
 - **6 大コンテンツに対応**: 基本通達 4 種 + 改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例
@@ -265,10 +269,13 @@ npm test
 
 ## ドキュメント
 
+- 🌐 **[`docs/HOUKI-FAMILY-INTEGRATION.md`](docs/HOUKI-FAMILY-INTEGRATION.md) — houki-hub family 4 つを連携した統合利用ガイド (Claude Desktop / Claude Code 向け install→設定→実例 4 ユースケース)**
 - [`docs/DESIGN.md`](docs/DESIGN.md) — 設計原則・houki-hub family 内の位置付け・ツール設計
 - [`docs/DATABASE.md`](docs/DATABASE.md) — SQLite + FTS5 スキーマ・テーブル仕様・マイグレーション履歴
 - [`docs/DATA-SOURCES.md`](docs/DATA-SOURCES.md) — 国税庁公開コンテンツの URL 構造・スクレイピング方針・ライセンス
 - [`docs/RESILIENCE.md`](docs/RESILIENCE.md) — HP 構造変更検知の 5 層フレームワーク・運用フロー
+- [`docs/PHASE4-PDF.md`](docs/PHASE4-PDF.md) — Phase 4: PDF メタデータ強化と pdf-reader-mcp 連携の責務分離
+- [`docs/PHASE4-PDF-FIXTURES.md`](docs/PHASE4-PDF-FIXTURES.md) — kind 別代表 PDF カタログ + Phase 4-3 実機テスト結果
 - [`llms.txt`](llms.txt) — LLM 向け summary（family routing / setup / legal positioning）
 - [`DISCLAIMER.md`](DISCLAIMER.md) — 通達の法的位置付け・利用範囲
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — 貢献方法
@@ -299,5 +306,7 @@ MIT — 個人利用・学習用途のフォーク・改変・再配布を自由
 | `@shuji-bonji/houki-hub`                                                                 | meta-package（一括 install）                                                                                             | 📅 計画中 |
 
 family 全体のドキュメントサイト（[houki-hub.mikuro.net](https://houki-hub.mikuro.net) / 構築中）で各 MCP の詳細を順次公開予定です。
+
+> 💡 houki-nta-mcp 単体ではなく **`houki-egov-mcp` + `pdf-reader-mcp` と連携させて使う方法** は [`docs/HOUKI-FAMILY-INTEGRATION.md`](docs/HOUKI-FAMILY-INTEGRATION.md) にまとめてあります。Claude Desktop / Claude Code の設定例から、新旧対照表 PDF を `extract_tables` で表構造のまま抽出する実例まで、一から順に追えるガイドです。
 
 ただし、**業としての使用（税理士法 52 条が定める独占業務）** については想定外であり、作者は一切の責任を負いません。[`DISCLAIMER.md`](DISCLAIMER.md) を必ずご確認ください。
