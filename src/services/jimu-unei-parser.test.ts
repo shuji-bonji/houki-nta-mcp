@@ -70,6 +70,13 @@ describe('parseJimuUneiPage — 平成17年所得税 (170331)', () => {
     expect(doc.attachedPdfs[0].url).toMatch(/\.pdf$/);
     expect(doc.attachedPdfs[0].sizeKb).toBeGreaterThan(0);
   });
+
+  it('Phase 4-1-3: すべての添付 PDF に kind フィールドが付く', () => {
+    // kind は extractPdfKind の結果（unknown も含めて全件 set されている）
+    for (const pdf of doc.attachedPdfs) {
+      expect(pdf.kind).toBeDefined();
+    }
+  });
 });
 
 describe('parseJimuUneiPage — 相続税 (170111_1) 末尾サフィックス付き', () => {

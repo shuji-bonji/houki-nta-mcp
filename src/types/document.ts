@@ -2,11 +2,23 @@
  * Phase 3b: document テーブル系の型定義。
  *
  * 改正通達 / 事務運営指針 / 文書回答事例の共通型。`doc_type` で種別を区別。
+ *
+ * Phase 4-1-3 (v0.7.0): AttachedPdf に kind を追加。後方互換のため optional。
  */
+
+import type { PdfKind } from '../services/pdf-meta.js';
 
 export type DocType = 'kaisei' | 'jimu-unei' | 'bunshokaitou' | 'tax-answer' | 'qa-jirei';
 
-/** PDF 添付の hint 情報。本文取得は pdf-reader-mcp に委譲 */
+/**
+ * PDF 添付の hint 情報。本文取得は pdf-reader-mcp に委譲。
+ *
+ * `kind` は Phase 4-1 (v0.7.0) で追加された分類フィールド。タイトルから
+ * `extractPdfKind()` で自動推定する。後方互換のため optional とし、kind
+ * が無い古いレコード（v0.6.0 までの bulk DL 結果）も無修正で読める。
+ *
+ * @see {@link ../services/pdf-meta.ts}
+ */
 export interface AttachedPdf {
   /** リンクテキスト。例: '別紙（PDF/470KB）' */
   title: string;
@@ -14,6 +26,11 @@ export interface AttachedPdf {
   url: string;
   /** タイトルから推測したファイルサイズ KB（取得できれば） */
   sizeKb?: number;
+  /**
+   * タイトルから自動分類した PDF 種別 (Phase 4-1, v0.7.0+)。
+   * v0.6.0 以前に bulk DL されたレコードでは undefined になりうる。
+   */
+  kind?: PdfKind;
 }
 
 /** 改正通達 / 事務運営指針 / 文書回答事例の共通レコード */

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Phase 4-1-3**: `AttachedPdf` 型に `kind?: PdfKind` を追加し、4 種別の bulk-downloader
+  （kaisei / jimu-unei / bunshokaitou / tax-answer）で `extractPdfKind()` を呼び出して
+  添付 PDF メタに kind を埋め込むようにした。
+  - `src/types/document.ts`: `AttachedPdf.kind` を optional として追加（後方互換）。v0.6.0
+    までに bulk DL されたレコード（`attached_pdfs_json` に kind を持たない）も読み込み可能。
+  - `src/services/kaisei-parser.ts` / `jimu-unei-parser.ts` / `bunshokaitou-parser.ts`:
+    `extractAttachedPdfs()` 内で `extractPdfKind(title)` を呼ぶように更新。これらの parser を
+    使う bulk-downloader は自動的に kind 付きで保存される。
+  - `src/services/tax-answer-bulk-downloader.ts`: 内部の `extractPdfs()` でも同様に kind を
+    付与。
+  - parser テストに kind の検証を追加（kaisei: `attachment` 期待、jimu-unei: 全件 kind 付き）。
+  - DB スキーマ変更なし（`attached_pdfs_json` は JSON 文字列なので kind を含む JSON を
+    そのまま書き込める）。
+  - 詳細: [docs/PHASE4-PDF.md §4.1](docs/PHASE4-PDF.md)
+
 ## [0.6.0] - 2026-05-04
 
 🛡️ **Phase 5 Resilience 完了** — スクレイピング主体の MCP が抱える「HP 構造変更で

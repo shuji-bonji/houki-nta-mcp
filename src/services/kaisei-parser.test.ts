@@ -53,6 +53,11 @@ describe('parseKaiseiPage — 消基通 令和8年4月1日改正', () => {
     expect(pdf.title).toContain('別紙');
     expect(pdf.sizeKb).toBe(470);
   });
+
+  it('Phase 4-1-3: 添付 PDF にタイトルから推定された kind が付く', () => {
+    // 「別紙（PDF/470KB）」→ attachment
+    expect(doc.attachedPdfs[0].kind).toBe('attachment');
+  });
 });
 
 describe('parseKaiseiPage — エラー系', () => {

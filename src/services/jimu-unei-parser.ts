@@ -24,6 +24,7 @@ import { normalizeJpText } from './text-normalize.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 import { extractIssuedAt } from './kaisei-toc-parser.js';
 import { parsePdfSizeKb } from './kaisei-parser.js';
+import { extractPdfKind } from './pdf-meta.js';
 import type { AttachedPdf, NtaDocument, KaiseiIndexEntry } from '../types/document.js';
 
 /**
@@ -179,7 +180,13 @@ function extractAttachedPdfs(
     if (seen.has(abs)) return;
     seen.add(abs);
     const text = cleanText($(a).text());
-    pdfs.push({ title: text || 'PDF', url: abs, sizeKb: parsePdfSizeKb(text) });
+    const title = text || 'PDF';
+    pdfs.push({
+      title,
+      url: abs,
+      sizeKb: parsePdfSizeKb(text),
+      kind: extractPdfKind(title),
+    });
   });
   return pdfs;
 }

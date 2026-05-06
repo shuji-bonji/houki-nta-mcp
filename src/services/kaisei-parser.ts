@@ -24,6 +24,7 @@ import type { Element } from 'domhandler';
 import { normalizeJpText } from './text-normalize.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 import { extractIssuedAt } from './kaisei-toc-parser.js';
+import { extractPdfKind } from './pdf-meta.js';
 import type { AttachedPdf, NtaDocument } from '../types/document.js';
 
 /** 個別改正通達ページをパースして NtaDocument を返す。 */
@@ -115,10 +116,12 @@ function extractAttachedPdfs(
     if (seen.has(abs)) return;
     seen.add(abs);
     const text = cleanText($(a).text());
+    const title = text || 'PDF';
     pdfs.push({
-      title: text || 'PDF',
+      title,
       url: abs,
       sizeKb: parsePdfSizeKb(text),
+      kind: extractPdfKind(title),
     });
   });
   return pdfs;

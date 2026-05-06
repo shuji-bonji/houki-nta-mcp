@@ -18,6 +18,7 @@ import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotDocumentTable } from './db-snapshot.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { parseTaxAnswer } from './tax-answer-parser.js';
+import { extractPdfKind } from './pdf-meta.js';
 import { normalizeJpText } from './text-normalize.js';
 import type { NtaDocument, AttachedPdf } from '../types/document.js';
 import type { BulkRunRecord } from './health-store.js';
@@ -268,7 +269,8 @@ function extractPdfs(html: string, sourceUrl: string): AttachedPdf[] {
     }
     if (seen.has(abs)) return;
     seen.add(abs);
-    pdfs.push({ title: $(a).text().trim() || 'PDF', url: abs });
+    const title = $(a).text().trim() || 'PDF';
+    pdfs.push({ title, url: abs, kind: extractPdfKind(title) });
   });
   return pdfs;
 }
