@@ -11,31 +11,33 @@
 ## 主な機能
 
 - **6 大コンテンツに対応**: 基本通達 4 種 + 改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例
-- **13 ツール提供**: 取得（DB-first → live fallback） + FTS5 全文検索 + 略称解決
+- **14 ツール提供**: 取得（DB-first → live fallback） + FTS5 全文検索 + PDF メタ取得 + 略称解決
 - **高速応答**: bulk DL 済なら DB から即時応答（~10ms）。未投入なら live fetch（~700ms/件）でフォールバック
 - **正規化済み検索**: Normalize-everywhere 原則で全角・半角ゆらぎを吸収
 - **改正検知**: SHA-1 content_hash で個別文書の変化を検知、4 パターン集計（新規 / 更新 / 削除 / 移動）
 - **HP 構造変更耐性 (v0.6.0)**: 9 種別 baseline で履歴管理 + `--health-check` CLI で週次 canary 検証
 - **添付 PDF kind 分類 (v0.7.0)**: タイトルから 6 種別（新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）に自動分類。Markdown 出力は kind 優先度ソートの表 + `pdf-reader-mcp` 呼び出し例つき
+- **`hasPdf` 検索フィルタ + `nta_inspect_pdf_meta` (v0.7.1)**: PDF 付きの重要文書だけを抽出 / PDF メタだけを軽量に返す軽量 API を提供
 - **レスポンスに `freshness` 付き**: 利用者（LLM）が staleness を判定できる
 - **法的位置付けを明示**: 各レスポンスに `legal_status` フィールド（通達 = 税務署員のみ拘束、QA = 参考情報、等）
 
-## 提供ツール（13 ツール）
+## 提供ツール（14 ツール）
 
 | Tool                         | 用途                                                   |
 | ---------------------------- | ------------------------------------------------------ |
 | `nta_get_tsutatsu`           | 通達本文を取得（DB-first → live fallback、4 通達対応） |
 | `nta_search_tsutatsu`        | 通達を FTS5 全文検索（`freshness` 付き）               |
 | `nta_get_kaisei_tsutatsu`    | 改正通達を docId で取得（本文 + kind 分類付き PDF 表） |
-| `nta_search_kaisei_tsutatsu` | 改正通達を FTS5 検索（`freshness` 付き）               |
+| `nta_search_kaisei_tsutatsu` | 改正通達を FTS5 検索（`hasPdf` フィルタ・`freshness`）  |
 | `nta_get_jimu_unei`          | 事務運営指針を取得                                     |
-| `nta_search_jimu_unei`       | 事務運営指針を FTS5 検索（`freshness` 付き）           |
+| `nta_search_jimu_unei`       | 事務運営指針を FTS5 検索（`hasPdf` フィルタ・`freshness`） |
 | `nta_get_bunshokaitou`       | 文書回答事例を取得                                     |
-| `nta_search_bunshokaitou`    | 文書回答事例を FTS5 検索（`freshness` 付き）           |
+| `nta_search_bunshokaitou`    | 文書回答事例を FTS5 検索（`hasPdf` フィルタ・`freshness`） |
 | `nta_get_tax_answer`         | タックスアンサー本文を取得                             |
-| `nta_search_tax_answer`      | タックスアンサーを FTS5 全文検索（`freshness` 付き）   |
+| `nta_search_tax_answer`      | タックスアンサーを FTS5 全文検索（`hasPdf` フィルタ・`freshness`） |
 | `nta_get_qa`                 | 質疑応答事例の本文を取得                               |
 | `nta_search_qa`              | 質疑応答事例を FTS5 全文検索（`freshness` 付き）       |
+| `nta_inspect_pdf_meta`       | 指定文書の添付 PDF メタ + `pdf-reader-mcp` 呼び出し例だけを返す軽量 API (v0.7.1) |
 | `resolve_abbreviation`       | 略称→エントリ解決（houki-abbreviations 経由）          |
 
 ### 対応通達（4 種）

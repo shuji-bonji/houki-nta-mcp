@@ -254,6 +254,16 @@ export interface SearchDocumentOptions {
   taxonomy?: string;
   /** 取得件数。default 10、最大 50 */
   limit?: number;
+  /**
+   * Phase 4-2 (v0.7.1): 添付 PDF を持つ文書だけに絞る。
+   *
+   * - `true`: `attached_pdfs_json` が `'[]'` 以外（PDF 1 件以上）の文書だけ返す
+   * - `false`: PDF を持たない文書だけ返す
+   * - `undefined`: フィルタしない（既定）
+   *
+   * 改正点・別表・Q&A など PDF 添付が必須の重要文書だけを抽出したいときに使う。
+   */
+  hasPdf?: boolean;
 }
 
 /**
@@ -277,6 +287,13 @@ export function searchDocumentFts(
   if (options.taxonomy) {
     where += ` AND d.taxonomy = ?`;
     params.push(options.taxonomy);
+  }
+  if (options.hasPdf === true) {
+    // PDF を持つ文書だけ。NULL / '[]' / '' は全て除外
+    where += ` AND d.attached_pdfs_json IS NOT NULL AND d.attached_pdfs_json != '[]' AND d.attached_pdfs_json != ''`;
+  } else if (options.hasPdf === false) {
+    // PDF を持たない文書だけ
+    where += ` AND (d.attached_pdfs_json IS NULL OR d.attached_pdfs_json = '[]' OR d.attached_pdfs_json = '')`;
   }
   params.push(limit);
 

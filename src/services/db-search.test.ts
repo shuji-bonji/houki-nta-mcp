@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import type DatabaseT from 'better-sqlite3';
 
 import { initSchema } from '../db/schema.js';
-import { hasAnyClause, sanitizeFtsQuery, searchClauseFts } from './db-search.js';
+import { hasAnyClause, sanitizeFtsQuery, searchClauseFts, searchDocumentFts } from './db-search.js';
 
 /* テスト用ヘルパ: tsutatsu と clause を 1 件ずつ INSERT */
 function seed(
@@ -183,5 +183,110 @@ describe('hasAnyClause / searchClauseFts', () => {
     ]);
     expect(searchClauseFts(db, '')).toEqual([]);
     expect(searchClauseFts(db, ' ')).toEqual([]);
+  });
+});
+
+/* ヘルパ: document テーブルへ 1 件 INSERT */
+function seedDoc(
+  db: DatabaseT.Database,
+  args: {
+    docType: string;
+    docId: string;
+    title: string;
+    fullText: string;
+    sourceUrl?: string;
+    attachedPdfsJson?: string;
+    taxonomy?: string;
+  }
+): void {
+  db.prepare(
+    `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    args.docType,
+    args.docId,
+    args.taxonomy ?? 'shohi',
+    args.title,
+    args.sourceUrl ?? `https://x/${args.docId}`,
+    '2026-05-06T00:00:00Z',
+    args.fullText,
+    args.attachedPdfsJson ?? '[]',
+    `hash-${args.docId}`
+  );
+}
+
+describe('searchDocumentFts — Phase 4-2: hasPdf フィルタ', () => {
+  let db: DatabaseT.Database;
+  beforeEach(() => {
+    db = new Database(':memory:');
+    initSchema(db);
+
+    // PDF 付き 2 件 + PDF 無し 2 件 を投入（同じ keyword でヒット）
+    seedDoc(db, {
+      docType: 'kaisei',
+      docId: 'with-pdf-1',
+      title: 'インボイス改正',
+      fullText: 'インボイス制度の経過措置',
+      attachedPdfsJson: JSON.stringify([
+        { title: '新旧対照表', url: 'https://x/a.pdf', kind: 'comparison' },
+      ]),
+    });
+    seedDoc(db, {
+      docType: 'kaisei',
+      docId: 'with-pdf-2',
+      title: 'インボイス Q&A',
+      fullText: 'インボイス制度の Q&A',
+      attachedPdfsJson: JSON.stringify([{ title: 'Q&A', url: 'https://x/b.pdf', kind: 'qa-pdf' }]),
+    });
+    seedDoc(db, {
+      docType: 'kaisei',
+      docId: 'no-pdf-1',
+      title: 'インボイス通知',
+      fullText: 'インボイス制度の通知',
+      attachedPdfsJson: '[]',
+    });
+    seedDoc(db, {
+      docType: 'kaisei',
+      docId: 'no-pdf-2',
+      title: 'インボイス補足',
+      fullText: 'インボイス制度の補足',
+      attachedPdfsJson: '[]',
+    });
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('hasPdf 未指定: PDF 有無に関わらず全件返す', () => {
+    const hits = searchDocumentFts(db, 'インボイス', { docType: 'kaisei' });
+    expect(hits.length).toBe(4);
+  });
+
+  it('hasPdf=true: PDF を持つ文書だけ返す', () => {
+    const hits = searchDocumentFts(db, 'インボイス', { docType: 'kaisei', hasPdf: true });
+    expect(hits.length).toBe(2);
+    expect(hits.map((h) => h.docId).sort()).toEqual(['with-pdf-1', 'with-pdf-2']);
+  });
+
+  it('hasPdf=false: PDF を持たない文書だけ返す', () => {
+    const hits = searchDocumentFts(db, 'インボイス', { docType: 'kaisei', hasPdf: false });
+    expect(hits.length).toBe(2);
+    expect(hits.map((h) => h.docId).sort()).toEqual(['no-pdf-1', 'no-pdf-2']);
+  });
+
+  it('空文字列の attached_pdfs_json も hasPdf=false 側に含まれる', () => {
+    // NOTE: 現スキーマでは attached_pdfs_json は NOT NULL なので NULL は INSERT 不可。
+    //       しかし SQL 側では IS NOT NULL チェックも入れている（将来スキーマ変更されても
+    //       hasPdf=true で nullable な値が紛れ込まないよう保険）。
+    //       ここでは空文字列という別の「PDF 無し」表現も拾えるかを検証。
+    seedDoc(db, {
+      docType: 'kaisei',
+      docId: 'empty-str-pdf',
+      title: 'インボイス追加',
+      fullText: 'インボイス制度の追加',
+      attachedPdfsJson: '',
+    });
+    const hits = searchDocumentFts(db, 'インボイス', { docType: 'kaisei', hasPdf: false });
+    expect(hits.map((h) => h.docId)).toContain('empty-str-pdf');
   });
 });

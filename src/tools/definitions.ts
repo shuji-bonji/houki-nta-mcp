@@ -90,6 +90,11 @@ export const tools: Tool[] = [
           description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
           default: LIMITS.searchDefault,
         },
+        hasPdf: {
+          type: 'boolean',
+          description:
+            '添付 PDF の有無で絞り込む（true=PDF 付き / false=PDF 無し / 未指定=絞らない）。質疑応答事例は現状すべて HTML のみで PDF を持たないため true 指定時は空配列になる',
+        },
       },
       required: ['keyword'],
     },
@@ -152,6 +157,11 @@ export const tools: Tool[] = [
           description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
           default: LIMITS.searchDefault,
         },
+        hasPdf: {
+          type: 'boolean',
+          description:
+            '添付 PDF の有無で絞り込む（true=PDF 付き / false=PDF 無し / 未指定=絞らない）。様式・別表系の説明など PDF 添付がある重要トピックを抽出したい時に true を指定',
+        },
       },
       required: ['keyword'],
     },
@@ -199,6 +209,11 @@ export const tools: Tool[] = [
           description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
           default: LIMITS.searchDefault,
         },
+        hasPdf: {
+          type: 'boolean',
+          description:
+            '添付 PDF の有無で絞り込む（true=PDF 付き / false=PDF 無し / 未指定=絞らない）。改正通達は新旧対照表 PDF を持つことが多く、改正点だけ知りたい時は true 推奨',
+        },
       },
       required: ['keyword'],
     },
@@ -244,6 +259,11 @@ export const tools: Tool[] = [
           type: 'number',
           description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
           default: LIMITS.searchDefault,
+        },
+        hasPdf: {
+          type: 'boolean',
+          description:
+            '添付 PDF の有無で絞り込む（true=PDF 付き / false=PDF 無し / 未指定=絞らない）。別紙・別表 PDF を伴う指針だけを抽出したい時に true を指定',
         },
       },
       required: ['keyword'],
@@ -292,6 +312,11 @@ export const tools: Tool[] = [
           description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
           default: LIMITS.searchDefault,
         },
+        hasPdf: {
+          type: 'boolean',
+          description:
+            '添付 PDF の有無で絞り込む（true=PDF 付き / false=PDF 無し / 未指定=絞らない）。回答書本文 PDF を持つ事例だけを抽出したい時に true を指定',
+        },
       },
       required: ['keyword'],
     },
@@ -315,6 +340,28 @@ export const tools: Tool[] = [
         },
       },
       required: ['docId'],
+    },
+  },
+  {
+    name: 'nta_inspect_pdf_meta',
+    description:
+      '指定した文書の添付 PDF メタ一覧（kind / size / URL）と pdf-reader-mcp 呼び出し例だけを返す軽量 API。本文は含まない。`nta_get_*` で全文を取得すると重い場合や、PDF だけを確認したい時に使う。Phase 4-2 (v0.7.1) で追加。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        docType: {
+          type: 'string',
+          enum: ['kaisei', 'jimu-unei', 'bunshokaitou', 'tax-answer'],
+          description:
+            '文書種別。改正通達 (kaisei) / 事務運営指針 (jimu-unei) / 文書回答事例 (bunshokaitou) / タックスアンサー (tax-answer)。質疑応答事例 (qa-jirei) は PDF を持たないため対象外',
+        },
+        docId: {
+          type: 'string',
+          description:
+            '文書 ID。各 docType の `nta_search_*` 結果や `nta_get_*` のレスポンスから得られる',
+        },
+      },
+      required: ['docType', 'docId'],
     },
   },
   {

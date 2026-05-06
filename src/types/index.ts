@@ -39,6 +39,12 @@ export interface SearchQaArgs {
   domain?: Domain;
   /** 取得件数 */
   limit?: number;
+  /**
+   * Phase 4-2 (v0.7.1): 添付 PDF を持つ事例だけに絞る。
+   * 現状の質疑応答事例は HTML のみで PDF は持たないため `true` 指定時は空配列になる
+   * （将来データソースが拡張された時のための一貫したインタフェース）。
+   */
+  hasPdf?: boolean;
 }
 
 /** 質疑応答事例取得引数 */
@@ -67,6 +73,8 @@ export interface SearchTaxAnswerArgs {
   keyword: string;
   /** 取得件数 */
   limit?: number;
+  /** Phase 4-2 (v0.7.1): 添付 PDF を持つ文書だけに絞る */
+  hasPdf?: boolean;
 }
 
 /** 改正通達検索引数 (Phase 3b) */
@@ -77,6 +85,11 @@ export interface SearchKaiseiTsutatsuArgs {
   taxonomy?: string;
   /** 取得件数 */
   limit?: number;
+  /**
+   * Phase 4-2 (v0.7.1): 添付 PDF を持つ改正通達だけに絞る。
+   * 改正通達は新旧対照表 PDF を伴うことが多く、改正点だけ知りたい時に便利。
+   */
+  hasPdf?: boolean;
 }
 
 /** 改正通達取得引数 (Phase 3b) */
@@ -95,6 +108,8 @@ export interface SearchJimuUneiArgs {
   taxonomy?: string;
   /** 取得件数 */
   limit?: number;
+  /** Phase 4-2 (v0.7.1): 添付 PDF を持つ事務運営指針だけに絞る */
+  hasPdf?: boolean;
 }
 
 /** 事務運営指針取得引数 (Phase 3b alpha.2) */
@@ -113,6 +128,8 @@ export interface SearchBunshokaitouArgs {
   taxonomy?: string;
   /** 取得件数 */
   limit?: number;
+  /** Phase 4-2 (v0.7.1): 添付 PDF を持つ事例だけに絞る */
+  hasPdf?: boolean;
 }
 
 /** 文書回答事例取得引数 (Phase 3b alpha.3) */
@@ -121,4 +138,17 @@ export interface GetBunshokaitouArgs {
   docId: string;
   /** 出力形式 */
   format?: OutputFormat;
+}
+
+/**
+ * PDF メタ取得引数 (Phase 4-2, v0.7.1)
+ *
+ * `nta_inspect_pdf_meta` 用。本文は含めずに添付 PDF メタだけを返す軽量 API。
+ * 質疑応答事例 (qa-jirei) は PDF を持たないため対象外。
+ */
+export interface InspectPdfMetaArgs {
+  /** 文書種別。kaisei / jimu-unei / bunshokaitou / tax-answer のいずれか */
+  docType: 'kaisei' | 'jimu-unei' | 'bunshokaitou' | 'tax-answer';
+  /** 文書 ID。各 docType の get/search 系 tool の結果から取得 */
+  docId: string;
 }

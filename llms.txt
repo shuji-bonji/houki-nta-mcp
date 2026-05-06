@@ -56,15 +56,15 @@ houki-nta-mcp --bulk-download-qa           # 質疑応答事例
 
 各 tool レスポンスには `legal_status: { binds_citizens, binds_courts, binds_tax_office, note }` が付く。**「税務署はこう運用しているが、納税者・裁判所には拘束力がない」** ことを明示する設計。
 
-## Tools (13 tools, v0.7.0 時点)
+## Tools (14 tools, v0.7.1 時点)
 
 ### 検索系（FTS5 全文検索、bulk DL 前提、レスポンスに `freshness` フィールド付き）
 - `nta_search_tsutatsu`: 基本通達 4 種（消基通・所基通・法基通・相基通）を横断検索
-- `nta_search_kaisei_tsutatsu`: 改正通達を検索
-- `nta_search_jimu_unei`: 事務運営指針を検索
-- `nta_search_bunshokaitou`: 文書回答事例を検索
-- `nta_search_tax_answer`: タックスアンサー（約 750 件）を検索
-- `nta_search_qa`: 質疑応答事例（9 税目 / 約 1,840 件）を検索
+- `nta_search_kaisei_tsutatsu`: 改正通達を検索（**v0.7.1**: `hasPdf` で PDF 付き文書だけに絞り込み可）
+- `nta_search_jimu_unei`: 事務運営指針を検索（**v0.7.1**: `hasPdf` 対応）
+- `nta_search_bunshokaitou`: 文書回答事例を検索（**v0.7.1**: `hasPdf` 対応）
+- `nta_search_tax_answer`: タックスアンサー（約 750 件）を検索（**v0.7.1**: `hasPdf` 対応）
+- `nta_search_qa`: 質疑応答事例（9 税目 / 約 1,840 件）を検索（**v0.7.1**: `hasPdf` 対応、現状は HTML のみで PDF を持たない）
 
 ### 取得系（DB-first → live fallback）
 - `nta_get_tsutatsu`: 通達本文を略称＋条項で取得（Normalize-everywhere で全角・半角ゆらぎを吸収）
@@ -73,6 +73,9 @@ houki-nta-mcp --bulk-download-qa           # 質疑応答事例
 - `nta_get_bunshokaitou`: 文書回答事例を docId で取得（本庁系・国税局系の 2 系統）
 - `nta_get_tax_answer`: タックスアンサー番号（先頭桁で税目自動判定）
 - `nta_get_qa`: 質疑応答事例を topic/category/id で取得
+
+### PDF 軸 (Phase 4-2, v0.7.1)
+- `nta_inspect_pdf_meta`: docType + docId で指定文書の添付 PDF メタだけを返す軽量 API。本文を含まないので軽い。`reader_hints.examples` に pdf-reader-mcp の `read_text` 呼び出し例 JSON が入る
 
 ### 補助
 - `resolve_abbreviation`: 略称解決（`@shuji-bonji/houki-abbreviations` 経由、管轄外なら他 MCP に誘導 hint）

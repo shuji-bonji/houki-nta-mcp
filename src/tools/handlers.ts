@@ -47,6 +47,7 @@ import type {
   GetQaArgs,
   SearchTaxAnswerArgs,
   GetTaxAnswerArgs,
+  InspectPdfMetaArgs,
 } from '../types/index.js';
 
 // NOT_IMPLEMENTED は v0.5.0-alpha.1 で全 search 系ハンドラが本実装になり、未使用に。
@@ -344,11 +345,12 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
   const limit = args.limit ?? 10;
   const db = openDb(options.dbPath);
   try {
-    const opts: { docType: 'qa-jirei'; limit: number; taxonomy?: string } = {
+    const opts: { docType: 'qa-jirei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'qa-jirei',
       limit,
     };
     if (args.domain) opts.taxonomy = args.domain;
+    if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const hits = searchDocumentFts(db, args.keyword, opts);
     if (hits.length === 0) {
       return {
@@ -474,10 +476,12 @@ export async function handleNtaSearchTaxAnswer(
   const limit = args.limit ?? 10;
   const db = openDb(options.dbPath);
   try {
-    const hits = searchDocumentFts(db, args.keyword, {
+    const opts: { docType: 'tax-answer'; limit: number; hasPdf?: boolean } = {
       docType: 'tax-answer',
       limit,
-    });
+    };
+    if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
+    const hits = searchDocumentFts(db, args.keyword, opts);
     if (hits.length === 0) {
       return {
         results: [],
@@ -642,11 +646,12 @@ export async function handleNtaSearchKaiseiTsutatsu(
   const limit = args.limit ?? 10;
   const db = openDb(options.dbPath);
   try {
-    const opts: { docType: 'kaisei'; limit: number; taxonomy?: string } = {
+    const opts: { docType: 'kaisei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'kaisei',
       limit,
     };
     if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
+    if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const hits = searchDocumentFts(db, args.keyword, opts);
 
     if (hits.length === 0) {
@@ -762,11 +767,12 @@ export async function handleNtaSearchJimuUnei(
   const limit = args.limit ?? 10;
   const db = openDb(options.dbPath);
   try {
-    const opts: { docType: 'jimu-unei'; limit: number; taxonomy?: string } = {
+    const opts: { docType: 'jimu-unei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'jimu-unei',
       limit,
     };
     if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
+    if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const hits = searchDocumentFts(db, args.keyword, opts);
 
     if (hits.length === 0) {
@@ -886,11 +892,12 @@ export async function handleNtaSearchBunshokaitou(
   const limit = args.limit ?? 10;
   const db = openDb(options.dbPath);
   try {
-    const opts: { docType: 'bunshokaitou'; limit: number; taxonomy?: string } = {
+    const opts: { docType: 'bunshokaitou'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'bunshokaitou',
       limit,
     };
     if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
+    if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const hits = searchDocumentFts(db, args.keyword, opts);
     if (hits.length === 0) {
       return {
@@ -956,6 +963,75 @@ export async function handleNtaGetBunshokaitou(
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* Phase 4-2 (v0.7.1): nta_inspect_pdf_meta — PDF メタだけを返す軽量 API       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 指定文書の添付 PDF メタ一覧 + pdf-reader-mcp 呼び出し例だけを返す。
+ * 本文は含まないので軽量。`nta_get_*` で全文取得すると重い場合に便利。
+ *
+ * 質疑応答事例 (qa-jirei) は PDF を持たないため対象外（tool definition で enum 制限済）。
+ */
+export async function handleNtaInspectPdfMeta(
+  args: InspectPdfMetaArgs,
+  options: { dbPath?: string } = {}
+) {
+  const db = openDb(options.dbPath);
+  try {
+    const doc = getDocumentFromDb(db, args.docType, args.docId);
+    if (!doc) {
+      return {
+        error: `${args.docType} の docId="${args.docId}" は DB に未登録です`,
+        hint:
+          `\`--bulk-download-${args.docType === 'tax-answer' ? 'tax-answer' : args.docType}\`` +
+          ' で投入済みか確認してください。docId が正しいかも `nta_search_*` で検証可能',
+      };
+    }
+
+    // kind 優先度（Phase 4-1 と同じ並び順）
+    const kindOrder: Record<string, number> = {
+      comparison: 0,
+      attachment: 1,
+      'qa-pdf': 2,
+      related: 3,
+      notice: 4,
+      unknown: 5,
+    };
+    const sorted = [...doc.attachedPdfs].sort(
+      (a, b) => (kindOrder[a.kind ?? 'unknown'] ?? 5) - (kindOrder[b.kind ?? 'unknown'] ?? 5)
+    );
+
+    // pdf-reader-mcp 呼び出し例（先頭 PDF を代表として）
+    const examples = sorted.length
+      ? [
+          {
+            kind: sorted[0].kind ?? 'unknown',
+            tool: 'read_text',
+            args: { url: sorted[0].url },
+          },
+        ]
+      : [];
+
+    return {
+      docType: doc.docType,
+      docId: doc.docId,
+      title: doc.title,
+      sourceUrl: doc.sourceUrl,
+      attachedPdfs: sorted,
+      reader_hints: {
+        tool: '@shuji-bonji/pdf-reader-mcp',
+        primary_action: 'read_text',
+        note: '本文取得は pdf-reader-mcp に委譲（責務分離）。examples を参考に呼び出してください',
+        examples,
+      },
+      legal_status: TSUTATSU_LEGAL_STATUS,
+    };
+  } finally {
+    closeDb(db);
+  }
+}
+
 /**
  * Tool handlers map
  */
@@ -973,5 +1049,6 @@ export const toolHandlers: Record<string, (args: any) => Promise<unknown>> = {
   nta_get_jimu_unei: handleNtaGetJimuUnei,
   nta_search_bunshokaitou: handleNtaSearchBunshokaitou,
   nta_get_bunshokaitou: handleNtaGetBunshokaitou,
+  nta_inspect_pdf_meta: handleNtaInspectPdfMeta,
   resolve_abbreviation: handleResolveAbbreviation,
 };

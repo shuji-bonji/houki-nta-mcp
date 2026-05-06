@@ -7,6 +7,7 @@ import {
   handleNtaSearchTsutatsu,
   handleNtaSearchQa,
   handleNtaSearchTaxAnswer,
+  handleNtaInspectPdfMeta,
   handleResolveAbbreviation,
   getTsutatsu,
   getTaxAnswer,
@@ -620,8 +621,78 @@ describe('toolHandlers map', () => {
         // Phase 3b (v0.4.0-alpha.3) で追加
         'nta_search_bunshokaitou',
         'nta_get_bunshokaitou',
+        // Phase 4-2 (v0.7.1) で追加
+        'nta_inspect_pdf_meta',
         'resolve_abbreviation',
       ].sort()
     );
+  });
+});
+
+describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1)', () => {
+  it('DB 未投入の docId はエラー + hint', async () => {
+    const r = (await handleNtaInspectPdfMeta(
+      { docType: 'kaisei', docId: 'unknown-doc-id' },
+      { dbPath: ':memory:' }
+    )) as { error?: string; hint?: string };
+    expect(r.error).toContain('DB に未登録');
+    expect(r.hint).toContain('--bulk-download');
+  });
+
+  it('PDF 付き文書: kind 優先度ソート + reader_hints を返す', async () => {
+    // in-file seed のために temp DB を使う
+    const Database = (await import('better-sqlite3')).default;
+    const tmpFile = `/tmp/inspect-pdf-meta-test-${Date.now()}.db`;
+    const seedDb = new Database(tmpFile);
+    const { initSchema } = await import('../db/schema.js');
+    initSchema(seedDb);
+
+    seedDb
+      .prepare(
+        `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        'kaisei',
+        'sample-001',
+        'shohi',
+        'インボイス改正',
+        'https://x/index.htm',
+        '2026-05-06T00:00:00Z',
+        '本文',
+        JSON.stringify([
+          { title: '別紙', url: 'https://x/b.pdf', sizeKb: 120, kind: 'attachment' },
+          {
+            title: '新旧対照表',
+            url: 'https://x/a.pdf',
+            sizeKb: 470,
+            kind: 'comparison',
+          },
+        ]),
+        'h1'
+      );
+    seedDb.close();
+
+    const r = (await handleNtaInspectPdfMeta(
+      { docType: 'kaisei', docId: 'sample-001' },
+      { dbPath: tmpFile }
+    )) as {
+      docType: string;
+      docId: string;
+      title: string;
+      attachedPdfs: Array<{ kind?: string; url: string }>;
+      reader_hints: { tool: string; primary_action: string; examples: unknown[] };
+    };
+
+    expect(r.docType).toBe('kaisei');
+    expect(r.docId).toBe('sample-001');
+    expect(r.title).toBe('インボイス改正');
+    // comparison が attachment より先
+    expect(r.attachedPdfs[0].kind).toBe('comparison');
+    expect(r.attachedPdfs[1].kind).toBe('attachment');
+    // 呼び出し例は先頭 (comparison) の URL
+    expect(r.reader_hints.tool).toContain('pdf-reader-mcp');
+    expect(r.reader_hints.primary_action).toBe('read_text');
+    expect(r.reader_hints.examples).toHaveLength(1);
   });
 });

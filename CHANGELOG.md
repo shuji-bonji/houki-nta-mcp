@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-06
+
+🔍 **Phase 4-2 PDF メタ二の波** — Phase 4-1 で構造化した kind 分類を、
+検索フィルタと専用 tool 経由で活用できるようにした。「PDF が付く重要文書だけ」
+「PDF メタだけ軽量に」という新しいアクセスパターンが追加される。
+
+### Added (v0.7.1 の柱)
+
+#### `hasPdf` 検索フィルタ (Phase 4-2 #6)
+
+- **`src/services/db-search.ts`**: `SearchDocumentOptions.hasPdf?: boolean` を追加。
+  - `true`: `attached_pdfs_json` が `'[]'` / NULL / 空文字以外 = PDF 1 件以上の文書だけ
+  - `false`: PDF を持たない文書だけ
+  - `undefined`: フィルタしない（既定）
+- **`src/tools/handlers.ts`**: 5 つの search ハンドラ
+  （`nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` / `nta_search_bunshokaitou`
+  / `nta_search_tax_answer` / `nta_search_qa`）に `hasPdf` 引数を追加。
+- **`src/tools/definitions.ts`**: 同じく 5 ハンドラの inputSchema に `hasPdf: boolean` を追加。
+- **`src/types/index.ts`**: 5 つの SearchArgs 型に `hasPdf?: boolean` を追加。
+- DB スキーマ変更なし。FTS5 インデックスにも触らない（WHERE 句で後段絞り込み）。
+
+#### `nta_inspect_pdf_meta` 新規 tool (Phase 4-2 #7)
+
+- 添付 PDF メタ一覧 + `pdf-reader-mcp` 呼び出し例だけを返す軽量 API。本文を含まないので軽い。
+- 入力: `docType` (`kaisei` / `jimu-unei` / `bunshokaitou` / `tax-answer`) + `docId`
+- 出力: `attachedPdfs` (kind 優先度ソート済) + `reader_hints.examples` (`read_text` 呼び出し例)
+- 質疑応答事例 (qa-jirei) は PDF を持たないため対象外（enum で制限）。
+- 14 ツール体制に拡張（v0.7.0 までの 13 ツール → 14 ツール）。
+
+#### Phase 4-3 への橋渡し (#8)
+
+- **`docs/PHASE4-PDF-FIXTURES.md`** 新設: 6 kind 別の代表 PDF カタログ。`pdf-reader-mcp` 実機テスト
+  （Phase 4-3）の投入サンプルおよび `extractPdfKind` の精度検証用。
+
+#### CI 改善 (bonus)
+
+- **`.github/workflows/publish.yml`**: stable リリース時に `npm dist-tag add ... next` を自動実行する step を追加。
+  v0.4.0 / v0.6.0 / v0.7.0 で 3 回繰り返した「next タグの揃え忘れ」を恒久対策。
+  OIDC セッションを publish 直後にそのまま流用するので E401 を回避できる。
+
+### Tests
+
+- 既存 357 → **+10** (db-search の hasPdf 4 + handlers nta_inspect_pdf_meta 2)
+
+### 関連ドキュメント
+
+- [docs/PHASE4-PDF.md](docs/PHASE4-PDF.md) — Phase 4 全体ロードマップ
+- [docs/PHASE4-PDF-FIXTURES.md](docs/PHASE4-PDF-FIXTURES.md) — 6 kind 別の代表 PDF カタログ
+- 残: Phase 4-3 (`pdf-reader-mcp` 実機テスト + 取得不可パターン issue 化) は別セッション
+
 ## [0.7.0] - 2026-05-06
 
 📑 **Phase 4-1 PDF kind classification 完了** — 添付 PDF をタイトルから 6 種別

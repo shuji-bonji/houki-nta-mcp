@@ -73,7 +73,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 4-1: PDF kind classification / Phase 5: Resilience / 9 baselines / --health-check CLI)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 4-2: has_pdf filter / nta_inspect_pdf_meta / Phase 4-1: PDF kind classification / Phase 5: Resilience)`
   );
 }
 
