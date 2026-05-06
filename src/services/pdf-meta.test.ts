@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ALL_PDF_KINDS,
+  buildReaderHintExamples,
   extractPdfKind,
+  fillMissingKinds,
   PDF_KIND_EMOJI,
   PDF_KIND_LABEL,
   renderAttachedPdfsMarkdown,
@@ -17,6 +19,10 @@ describe('extractPdfKind', () => {
       ['消費税法基本通達 新旧対照表'],
       ['対比表'],
       ['新旧対比表'],
+      // 「対照」と「対応」の両表記を吸収する（v0.7.2 で追加）。
+      // 例: 国税庁 kaisei /shohi/kaisei/pdf/b0025003-111.pdf
+      ['新旧対応表'],
+      ['【参考】令和８年11月１日から適用される「消費税法基本通達（第８章）」の構成及び新旧対応表'],
     ])('classifies "%s" as comparison', (title) => {
       expect(extractPdfKind(title)).toBe('comparison');
     });
@@ -221,5 +227,126 @@ describe('renderAttachedPdfsMarkdown', () => {
       kind: 'attachment' as PdfKind,
     }));
     expect(renderAttachedPdfsMarkdown(pdfs)[0]).toBe('## 添付 PDF (5 件)');
+  });
+
+  it('comparison PDF は extract_tables 呼び出し例を出力する (v0.7.2)', () => {
+    const out = renderAttachedPdfsMarkdown([
+      { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
+    ]);
+    const md = out.join('\n');
+    expect(md).toContain('"tool": "extract_tables"');
+    expect(md).toContain('"url": "https://x/c.pdf"');
+  });
+
+  it('attachment PDF も extract_tables を推奨する (v0.7.2)', () => {
+    const out = renderAttachedPdfsMarkdown([
+      { title: '別紙1', url: 'https://x/a.pdf', kind: 'attachment' },
+    ]);
+    expect(out.join('\n')).toContain('"tool": "extract_tables"');
+  });
+
+  it('qa-pdf / related / notice / unknown は read_text を出す (v0.7.2)', () => {
+    for (const kind of ['qa-pdf', 'related', 'notice', 'unknown'] as const) {
+      const out = renderAttachedPdfsMarkdown([{ title: kind, url: `https://x/${kind}.pdf`, kind }]);
+      const md = out.join('\n');
+      expect(md).toContain('"tool": "read_text"');
+      expect(md).not.toContain('"tool": "extract_tables"');
+    }
+  });
+
+  it('複数 kind が混在すると kind 別に複数の呼び出し例を出す (v0.7.2)', () => {
+    const out = renderAttachedPdfsMarkdown([
+      { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
+      { title: '別紙', url: 'https://x/a.pdf', kind: 'attachment' },
+      { title: '参考', url: 'https://x/r.pdf', kind: 'related' },
+    ]);
+    const md = out.join('\n');
+    // comparison / attachment は extract_tables、related は read_text
+    expect(md.match(/"tool": "extract_tables"/g) ?? []).toHaveLength(2);
+    expect(md.match(/"tool": "read_text"/g) ?? []).toHaveLength(1);
+    // comparison が先頭
+    expect(md.indexOf('https://x/c.pdf')).toBeLessThan(md.indexOf('https://x/a.pdf'));
+    expect(md.indexOf('https://x/a.pdf')).toBeLessThan(md.indexOf('https://x/r.pdf'));
+  });
+});
+
+describe('buildReaderHintExamples (v0.7.2)', () => {
+  it('空配列なら空配列を返す', () => {
+    expect(buildReaderHintExamples([])).toEqual([]);
+  });
+
+  it('comparison / attachment は extract_tables、それ以外は read_text', () => {
+    const examples = buildReaderHintExamples([
+      { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
+      { title: '別紙', url: 'https://x/a.pdf', kind: 'attachment' },
+      { title: 'Q&A', url: 'https://x/q.pdf', kind: 'qa-pdf' },
+      { title: '参考', url: 'https://x/r.pdf', kind: 'related' },
+      { title: '通知', url: 'https://x/n.pdf', kind: 'notice' },
+    ]);
+    expect(examples.map((e) => e.tool)).toEqual([
+      'extract_tables', // comparison
+      'extract_tables', // attachment
+      'read_text', // qa-pdf
+      'read_text', // related
+      'read_text', // notice
+    ]);
+  });
+
+  it('kind 未指定の PDF はタイトルから動的に推定される', () => {
+    // kind フィールドなしの input
+    const examples = buildReaderHintExamples([
+      { title: '新旧対応表（PDF/399KB）', url: 'https://x/c.pdf' },
+    ]);
+    expect(examples).toHaveLength(1);
+    expect(examples[0].kind).toBe('comparison');
+    expect(examples[0].tool).toBe('extract_tables');
+  });
+
+  it('同 kind 内では最初に出現した PDF が代表例になる', () => {
+    const examples = buildReaderHintExamples([
+      { title: '別紙1', url: 'https://x/a1.pdf', kind: 'attachment' },
+      { title: '別紙2', url: 'https://x/a2.pdf', kind: 'attachment' },
+    ]);
+    expect(examples).toHaveLength(1);
+    expect(examples[0].args.url).toBe('https://x/a1.pdf');
+  });
+
+  it('出力は kind 優先度順 (comparison が先頭)', () => {
+    const examples = buildReaderHintExamples([
+      { title: '通知', url: 'https://x/n.pdf', kind: 'notice' },
+      { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
+      { title: '別紙', url: 'https://x/a.pdf', kind: 'attachment' },
+    ]);
+    expect(examples.map((e) => e.kind)).toEqual(['comparison', 'attachment', 'notice']);
+  });
+});
+
+describe('fillMissingKinds (v0.7.2)', () => {
+  it('kind 未指定の PDF はタイトルから推定して補完する', () => {
+    const filled = fillMissingKinds([
+      { title: '新旧対応表', url: 'https://x/c.pdf' },
+      { title: '別紙1', url: 'https://x/a.pdf' },
+      { title: 'よくわからない資料', url: 'https://x/u.pdf' },
+    ]);
+    expect(filled[0].kind).toBe('comparison');
+    expect(filled[1].kind).toBe('attachment');
+    expect(filled[2].kind).toBe('unknown');
+  });
+
+  it('既に kind が設定されているレコードは触らない', () => {
+    const filled = fillMissingKinds([
+      // タイトルは notice にマッチしうるが、kind=related が既設定なら維持
+      { title: '通知', url: 'https://x/p.pdf', kind: 'related' },
+    ]);
+    expect(filled[0].kind).toBe('related');
+  });
+
+  it('入力配列はミューテートしない (純関数)', () => {
+    const input: { title: string; url: string; kind?: PdfKind }[] = [
+      { title: '新旧対照表', url: 'https://x/c.pdf' },
+    ];
+    const out = fillMissingKinds(input);
+    expect(input[0].kind).toBeUndefined();
+    expect(out[0].kind).toBe('comparison');
   });
 });

@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-06
+
+🤝 **Phase 4-3 後の self-feedback** — `pdf-reader-mcp@0.3.0` で `extract_tables`
+が利用可能になったのを機に、houki-nta-mcp 側の `reader_hints` を kind 別に
+仕立て直し、新旧対照表 / 別紙・別表は `extract_tables` を最優先で推奨する形に
+変更。あわせて Phase 4-3 で表面化した小さな取りこぼしを 4 件まとめて解消。
+
+### Added
+
+- **kind 別 `reader_hints.examples` (主軸 / Phase 4-3 self-feedback A2)**:
+  `nta_inspect_pdf_meta` のレスポンスで、含まれる kind ごとに 1 件ずつ
+  `pdf-reader-mcp` 呼び出し例を生成する。
+  - `comparison` (新旧対照表) と `attachment` (別紙・別表・様式) は
+    **`pdf-reader-mcp@0.3.0+` の `extract_tables`** を最優先で推奨し、
+    新旧対照表の改正後 / 改正前を表構造のまま分離抽出する流れに誘導。
+  - `qa-pdf` / `related` / `notice` / `unknown` は従来通り `read_text`。
+  - `reader_hints.primary_action` を kind 別の最頻 tool（`extract_tables` or
+    `read_text`）に応じて動的に切替。`min_pdf_reader_version: '0.3.0'` も併記。
+- **`buildReaderHintExamples()` ヘルパ**: `src/services/pdf-meta.ts` に追加。
+  `renderAttachedPdfsMarkdown` の Markdown 呼び出し例ブロックも kind 別の
+  複数行構成に置き換え。
+- **`fillMissingKinds()` ヘルパ (A1: kind 動的補完)**: v0.6.0 期に
+  `attached_pdfs_json` の `kind` 抜きで投入された DB レコードでも、応答時に
+  タイトルから `extractPdfKind` で動的補完されるようにした。bulk DL 再投入なしで
+  kind 別 `reader_hints` が機能する。
+
+### Fixed
+
+- **`extractPdfKind` の表記ゆれ対応 (A3)**: 国税庁 kaisei `/shohi/kaisei/pdf/b0025003-111.pdf`
+  のように **「新旧対**応**表」** という表記が使われる PDF が `comparison` ではなく
+  `related` (タイトル先頭の「【参考】」が `参考` パターンに当たるため) と誤分類
+  されていた問題を修正。`comparison` パターンを `/新旧対(照|応)表|対比表/` に拡張し、
+  「新旧対応表」「新旧対照表」「対比表」のいずれにもマッチするようにした。
+
+### Changed
+
+- **README (A4)**: 「投入済みかどうかを素早く確認する」セクションを追加し、
+  `sqlite3` ワンライナー + `doc_type` ↔ bulk DL コマンドの対応表を整理。
+  bunshokaitou / qa-jirei は taxonomy / topic で範囲を絞ることを推奨する導線を追加。
+- **README**: `nta_inspect_pdf_meta` の説明を「kind 別 / extract_tables 推奨」に更新。
+  pdf-reader-mcp 連携の節で v0.7.2 + pdf-reader-mcp v0.3.0 の組み合わせ動作を明示。
+- **`src/index.ts`**: 起動ログに Phase 4 self-feedback フェーズを追記。
+
+### Tests
+
+- `src/services/pdf-meta.test.ts`: `「新旧対応表」` の comparison 分類テスト、
+  `buildReaderHintExamples` の単体テスト、`fillMissingKinds` の単体テストを追加。
+- `src/tools/handlers.test.ts`: `nta_inspect_pdf_meta` のテストを v0.7.2 仕様に
+  更新（kind 別 examples の 2 件構成、`primary_action: 'extract_tables'`、
+  `min_pdf_reader_version: '0.3.0'`）+ kind 動的補完テストを追加。
+
 ## [0.7.1] - 2026-05-06
 
 🔍 **Phase 4-2 PDF メタ二の波** — Phase 4-1 で構造化した kind 分類を、

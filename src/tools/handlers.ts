@@ -35,7 +35,11 @@ import {
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
 import { parseQaJirei } from '../services/qa-parser.js';
 import { parseTaxAnswer } from '../services/tax-answer-parser.js';
-import { renderAttachedPdfsMarkdown } from '../services/pdf-meta.js';
+import {
+  buildReaderHintExamples,
+  fillMissingKinds,
+  renderAttachedPdfsMarkdown,
+} from '../services/pdf-meta.js';
 import { renderQaMarkdown, renderTaxAnswerMarkdown } from '../services/tax-answer-render.js';
 import { parseTsutatsuSection, TsutatsuParseError } from '../services/tsutatsu-parser.js';
 import { renderClauseMarkdown } from '../services/tsutatsu-render.js';
@@ -989,6 +993,9 @@ export async function handleNtaInspectPdfMeta(
       };
     }
 
+    // v0.7.2: kind 未設定（v0.6.0 期に投入された DB レコード）はタイトルから動的補完。
+    const filled = fillMissingKinds(doc.attachedPdfs);
+
     // kind 優先度（Phase 4-1 と同じ並び順）
     const kindOrder: Record<string, number> = {
       comparison: 0,
@@ -998,20 +1005,13 @@ export async function handleNtaInspectPdfMeta(
       notice: 4,
       unknown: 5,
     };
-    const sorted = [...doc.attachedPdfs].sort(
+    const sorted = [...filled].sort(
       (a, b) => (kindOrder[a.kind ?? 'unknown'] ?? 5) - (kindOrder[b.kind ?? 'unknown'] ?? 5)
     );
 
-    // pdf-reader-mcp 呼び出し例（先頭 PDF を代表として）
-    const examples = sorted.length
-      ? [
-          {
-            kind: sorted[0].kind ?? 'unknown',
-            tool: 'read_text',
-            args: { url: sorted[0].url },
-          },
-        ]
-      : [];
+    // v0.7.2: 含まれる kind ごとに代表例 1 件ずつを生成。
+    // comparison / attachment は pdf-reader-mcp v0.3.0+ の `extract_tables` を最優先推奨。
+    const examples = buildReaderHintExamples(sorted);
 
     return {
       docType: doc.docType,
@@ -1021,8 +1021,16 @@ export async function handleNtaInspectPdfMeta(
       attachedPdfs: sorted,
       reader_hints: {
         tool: '@shuji-bonji/pdf-reader-mcp',
-        primary_action: 'read_text',
-        note: '本文取得は pdf-reader-mcp に委譲（責務分離）。examples を参考に呼び出してください',
+        // 主軸 action は kind ごとに変わるが、レスポンスでは「最も多い」傾向に合わせて
+        // 表組み中心 → extract_tables、それ以外 → read_text を hint として置く。
+        primary_action: examples.some((e) => e.tool === 'extract_tables')
+          ? 'extract_tables'
+          : 'read_text',
+        min_pdf_reader_version: '0.3.0',
+        note:
+          '本文取得は pdf-reader-mcp に委譲（責務分離）。' +
+          'comparison / attachment は extract_tables (v0.3.0+) で表構造を保持したまま抽出するのが最優先。' +
+          'それ以外は read_text。examples を kind 別に参考にしてください。',
         examples,
       },
       legal_status: TSUTATSU_LEGAL_STATUS,

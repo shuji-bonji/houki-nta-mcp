@@ -18,6 +18,7 @@
 - **HP 構造変更耐性 (v0.6.0)**: 9 種別 baseline で履歴管理 + `--health-check` CLI で週次 canary 検証
 - **添付 PDF kind 分類 (v0.7.0)**: タイトルから 6 種別（新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）に自動分類。Markdown 出力は kind 優先度ソートの表 + `pdf-reader-mcp` 呼び出し例つき
 - **`hasPdf` 検索フィルタ + `nta_inspect_pdf_meta` (v0.7.1)**: PDF 付きの重要文書だけを抽出 / PDF メタだけを軽量に返す軽量 API を提供
+- **kind 別 `reader_hints` + `extract_tables` 推奨 (v0.7.2)**: 添付 PDF の kind ごとに `pdf-reader-mcp` 呼び出し例を生成。`comparison`（新旧対照表）/ `attachment`（別紙・別表）は `pdf-reader-mcp@0.3.0+` の `extract_tables` で表構造を保持したまま抽出するよう誘導。「新旧**対応**表」など表記ゆれにも対応。v0.6.0 期に投入された DB レコードでも kind は応答時に動的補完
 - **レスポンスに `freshness` 付き**: 利用者（LLM）が staleness を判定できる
 - **法的位置付けを明示**: 各レスポンスに `legal_status` フィールド（通達 = 税務署員のみ拘束、QA = 参考情報、等）
 
@@ -37,7 +38,7 @@
 | `nta_search_tax_answer`      | タックスアンサーを FTS5 全文検索（`hasPdf` フィルタ・`freshness`） |
 | `nta_get_qa`                 | 質疑応答事例の本文を取得                               |
 | `nta_search_qa`              | 質疑応答事例を FTS5 全文検索（`freshness` 付き）       |
-| `nta_inspect_pdf_meta`       | 指定文書の添付 PDF メタ + `pdf-reader-mcp` 呼び出し例だけを返す軽量 API (v0.7.1) |
+| `nta_inspect_pdf_meta`       | 指定文書の添付 PDF メタ + `pdf-reader-mcp` 呼び出し例（kind 別 / extract_tables 推奨）だけを返す軽量 API (v0.7.1, v0.7.2 で拡張) |
 | `resolve_abbreviation`       | 略称→エントリ解決（houki-abbreviations 経由）          |
 
 ### 対応通達（4 種）
@@ -126,6 +127,37 @@ houki-nta-mcp --health-check
 
 DB は `${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db`。詳細は [`docs/DATABASE.md`](docs/DATABASE.md)。
 
+### 投入済みかどうかを素早く確認する
+
+`nta_search_*` の応答が空 (`results: []` + `--bulk-download-* で DB 投入済みか確認してください` のヒント) の場合、対象 docType が未投入の可能性があります。投入有無は以下で確認できます。
+
+```bash
+# 各 docType の件数を一発で確認 (DB が無ければ投入前)
+sqlite3 "$HOME/.cache/houki-nta-mcp/cache.db" \
+  "SELECT doc_type, COUNT(*) FROM document GROUP BY doc_type ORDER BY doc_type;"
+```
+
+期待される doc_type 名 → 対応 bulk DL コマンド:
+
+| doc_type           | bulk DL コマンド                                | 備考                                  |
+| ------------------ | ----------------------------------------------- | ------------------------------------- |
+| `tsutatsu`         | `--bulk-download-all`                           | 通達本体 4 種を一括（消基通・所基通・法基通・相基通） |
+| `kaisei`           | `--bulk-download-kaisei`                        | 改正通達                              |
+| `jimu-unei`        | `--bulk-download-jimu-unei`                     | 事務運営指針                          |
+| `bunshokaitou`     | `--bulk-download-bunshokaitou [--bunsho-taxonomy=…]` | 文書回答事例（taxonomy 指定で短縮）   |
+| `tax-answer`       | `--bulk-download-tax-answer`                    | タックスアンサー                      |
+| `qa-jirei`         | `--bulk-download-qa [--qa-topic=…]`             | 質疑応答事例（topic 指定で短縮）      |
+
+`--bulk-download-everything` は上記すべてを順番に実行する短絡コマンドです。
+
+bunsho-taxonomy / tax-answer-taxonomy / qa-topic で範囲を絞らない場合、`bunshokaitou` と `qa-jirei` は数千件単位になるため、初回は taxonomy/topic を絞って投入することを推奨します。
+
+```bash
+# 例: 所得税関連だけを bulk DL（数十分 → 数分に短縮）
+houki-nta-mcp --bulk-download-bunshokaitou --bunsho-taxonomy=shotoku
+houki-nta-mcp --bulk-download-qa --qa-topic=shotoku
+```
+
 ## 推奨運用フロー
 
 スクレイピング主体のため、国税庁 HP の構造変更で bulk DL や parse が静かに壊れるリスクがあります。検知・可視化のため、以下を組み合わせて運用するのを推奨:
@@ -200,7 +232,7 @@ cron 設定例:
 ### 初回 bulk DL の注意
 
 - **MCP サーバ起動とは別プロセス** で `npx -y @shuji-bonji/houki-nta-mcp --bulk-download-everything` を事前実行することを推奨（計 50 分前後）。
-- [`pdf-reader-mcp`](https://www.npmjs.com/package/@shuji-bonji/pdf-reader-mcp) を併用すると、改正通達の添付 PDF（新旧対照表など）も内容取得できます。v0.7.0 以降は kind 分類で「どの PDF を最優先で読むべきか」が Markdown 出力に明示されます。
+- [`pdf-reader-mcp`](https://www.npmjs.com/package/@shuji-bonji/pdf-reader-mcp) を併用すると、改正通達の添付 PDF（新旧対照表など）も内容取得できます。v0.7.0 以降は kind 分類で「どの PDF を最優先で読むべきか」が Markdown 出力に明示され、**v0.7.2 + pdf-reader-mcp v0.3.0 以降では `comparison` / `attachment` 系の PDF に対して `extract_tables` 呼び出し例を自動で出力**します（表構造を保持したまま改正後/改正前を分離）。
 
 ### prerelease (alpha) チャンネル
 

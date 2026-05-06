@@ -629,7 +629,7 @@ describe('toolHandlers map', () => {
   });
 });
 
-describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1)', () => {
+describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v0.7.2)', () => {
   it('DB 未投入の docId はエラー + hint', async () => {
     const r = (await handleNtaInspectPdfMeta(
       { docType: 'kaisei', docId: 'unknown-doc-id' },
@@ -681,7 +681,12 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1)', () => {
       docId: string;
       title: string;
       attachedPdfs: Array<{ kind?: string; url: string }>;
-      reader_hints: { tool: string; primary_action: string; examples: unknown[] };
+      reader_hints: {
+        tool: string;
+        primary_action: string;
+        min_pdf_reader_version?: string;
+        examples: Array<{ kind: string; tool: string; args: { url: string } }>;
+      };
     };
 
     expect(r.docType).toBe('kaisei');
@@ -690,9 +695,64 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1)', () => {
     // comparison が attachment より先
     expect(r.attachedPdfs[0].kind).toBe('comparison');
     expect(r.attachedPdfs[1].kind).toBe('attachment');
-    // 呼び出し例は先頭 (comparison) の URL
+    // v0.7.2: kind 別に複数の examples が出る (comparison + attachment の 2 件)
     expect(r.reader_hints.tool).toContain('pdf-reader-mcp');
-    expect(r.reader_hints.primary_action).toBe('read_text');
-    expect(r.reader_hints.examples).toHaveLength(1);
+    expect(r.reader_hints.primary_action).toBe('extract_tables');
+    expect(r.reader_hints.min_pdf_reader_version).toBe('0.3.0');
+    expect(r.reader_hints.examples).toHaveLength(2);
+    expect(r.reader_hints.examples[0]).toMatchObject({
+      kind: 'comparison',
+      tool: 'extract_tables',
+      args: { url: 'https://x/a.pdf' },
+    });
+    expect(r.reader_hints.examples[1]).toMatchObject({
+      kind: 'attachment',
+      tool: 'extract_tables',
+      args: { url: 'https://x/b.pdf' },
+    });
+  });
+
+  it('v0.6.0 期の DB レコード (kind なし) はタイトルから動的補完される (v0.7.2)', async () => {
+    const Database = (await import('better-sqlite3')).default;
+    const tmpFile = `/tmp/inspect-pdf-meta-fillkind-${Date.now()}.db`;
+    const seedDb = new Database(tmpFile);
+    const { initSchema } = await import('../db/schema.js');
+    initSchema(seedDb);
+
+    seedDb
+      .prepare(
+        `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        'kaisei',
+        'legacy-001',
+        'shohi',
+        '改正通達',
+        'https://x/index.htm',
+        '2026-05-06T00:00:00Z',
+        '本文',
+        // kind フィールド無し（v0.6.0 期投入を再現）
+        JSON.stringify([
+          { title: '新旧対応表', url: 'https://x/c.pdf', sizeKb: 399 },
+          { title: '別紙1', url: 'https://x/a.pdf', sizeKb: 67 },
+        ]),
+        'h2'
+      );
+    seedDb.close();
+
+    const r = (await handleNtaInspectPdfMeta(
+      { docType: 'kaisei', docId: 'legacy-001' },
+      { dbPath: tmpFile }
+    )) as {
+      attachedPdfs: Array<{ kind?: string; title: string }>;
+      reader_hints: { examples: Array<{ kind: string; tool: string }> };
+    };
+
+    // タイトルから推定された kind が attachedPdfs に入る
+    expect(r.attachedPdfs.find((p) => p.title === '新旧対応表')?.kind).toBe('comparison');
+    expect(r.attachedPdfs.find((p) => p.title === '別紙1')?.kind).toBe('attachment');
+    // examples も kind 別に出る
+    expect(r.reader_hints.examples.map((e) => e.kind)).toEqual(['comparison', 'attachment']);
   });
 });

@@ -73,7 +73,7 @@ async function main() {
   await server.connect(transport);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 4-2: has_pdf filter / nta_inspect_pdf_meta / Phase 4-1: PDF kind classification / Phase 5: Resilience)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 4 self-feedback: kind 別 reader_hints + extract_tables 推奨 + 「新旧対応表」表記ゆれ対応 / Phase 4-2: has_pdf filter / nta_inspect_pdf_meta / Phase 4-1: PDF kind classification / Phase 5: Resilience)`
   );
 }
 
