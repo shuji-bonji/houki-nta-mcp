@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+🗺️ **Phase 6 計画書 (v1.0.0 への道)** を [`docs/PHASE6.md`](docs/PHASE6.md) として策定。
+新機能の大幅追加ではなく、**運用品質と発信の底上げ** を主軸に v1.0.0 安定リリースを目指す。
+
+サブフェーズ構成:
+
+- **6-1 (v0.8.0)**: search relevance ranking 精度向上 (clause 番号 boost / doc_type 重み付け / 略称展開 / score 応答)
+- **6-2 (v0.9.0)**: bulk DL 差分更新 (HEAD `Last-Modified` バイパス + `content_hash` バイパスで 50 分 → 5〜10 分目標)
+- **6-3 (リリース番号なし)**: houki-hub-doc サイト構築 + llms.txt 公開
+
+完了基準は PHASE6.md §7「v1.0.0 リリース判定基準」を参照。スコープ外は同 §8。
+
 ## [0.7.3] - 2026-05-07
 
 📚 **ドキュメント patch** — v0.7.2 リリース後に houki-egov-mcp + pdf-reader-mcp と

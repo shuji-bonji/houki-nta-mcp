@@ -18,9 +18,9 @@ houki-nta-mcp v0.7.1 + `@shuji-bonji/pdf-reader-mcp` の組み合わせで、国
 | --- | ---------------------------------------------- | ----------- | --------------------------------------------- |
 | 1   | inspect_structure / inspect_fonts on Linearized PDFs | Bug         | ✅ **Resolved in v0.2.3** (2026-05-06 publish) |
 | 2   | Tagged PDF Table → Markdown table 抽出         | Feature     | ✅ **Resolved in v0.3.0** (2026-05-06 publish, `extract_tables` tool) |
-| 3   | Untagged 並列カラム PDF の column-aware 抽出   | Feature     | 🟢 起票 Ready                                  |
-| 4   | 連続する全角空白の整形オプション               | Enhancement | 🟢 起票 Ready                                  |
-| 5   | StructTree から documentShape ヒントを返す     | Improvement | 🟡 アイディア段階 (Phase 5 で再検討)           |
+| 3   | Untagged 並列カラム PDF の column-aware 抽出   | Feature     | ✅ **Resolved in v0.4.0** (2026-05-07 publish 予定, `read_text` / `read_url` の `split_columns` パラメータ) |
+| 4   | 連続する全角空白の整形オプション               | Enhancement | ✅ **Resolved in v0.5.0** (2026-05-07 publish 予定, `read_text` / `read_url` の `compact_whitespace` パラメータ) |
+| 5   | StructTree から documentShape ヒントを返す     | Improvement | 🟡 **Phase 5 で再検討に確定** — `houki-research-skill` の orchestration 設計と一緒に判断 (本判定: 2026-05-07) |
 
 ---
 

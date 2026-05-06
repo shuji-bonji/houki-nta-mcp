@@ -276,6 +276,7 @@ npm test
 - [`docs/RESILIENCE.md`](docs/RESILIENCE.md) — HP 構造変更検知の 5 層フレームワーク・運用フロー
 - [`docs/PHASE4-PDF.md`](docs/PHASE4-PDF.md) — Phase 4: PDF メタデータ強化と pdf-reader-mcp 連携の責務分離
 - [`docs/PHASE4-PDF-FIXTURES.md`](docs/PHASE4-PDF-FIXTURES.md) — kind 別代表 PDF カタログ + Phase 4-3 実機テスト結果
+- 🚧 [`docs/PHASE6.md`](docs/PHASE6.md) — **Phase 6 計画書**: 運用品質と発信の底上げ (v1.0.0 への道) — search relevance ranking / bulk DL 差分更新 / houki-hub-doc + llms.txt 公開
 - [`llms.txt`](llms.txt) — LLM 向け summary（family routing / setup / legal positioning）
 - [`DISCLAIMER.md`](DISCLAIMER.md) — 通達の法的位置付け・利用範囲
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — 貢献方法
