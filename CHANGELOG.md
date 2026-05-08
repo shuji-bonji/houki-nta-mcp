@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.9.1] - 2026-05-08
+
+🩹 **patch リリース** — スモークテスト (2026-05-08) で発見された `legal_status` 文言の不整合を修正。Issue #1 / #2 を同時解消。
+
+### Fixed
+
+- **Issue #1 — `nta_inspect_pdf_meta` の `legal_status` が docType 別になっていなかった問題**: `bunshokaitou` / `tax-answer` を渡しても通達文言 (「通達は行政内部文書…」) + `binds_tax_office: true` が返る挙動を修正。docType に応じた legal_status を返すように変更。
+- **Issue #2 — `nta_search_bunshokaitou` / `nta_get_bunshokaitou` の `legal_status.note` から「文書回答事例」が抜けていた問題**: 旧来は `NTA_GENERAL_INFO_LEGAL_STATUS` (note: 「タックスアンサー・質疑応答事例は…」) を流用していたため、文書回答事例自体への言及がなかった。新設した `BUNSHOKAITOU_LEGAL_STATUS` で「文書回答事例は照会者・国税庁双方の合意に基づく個別事案回答…」と独立文言に変更。
+- **`renderDocumentMarkdown` の footer 文言**: kind=`'文書回答事例'` のときに「通達・事務運営指針は…」と返していた箇所を文書回答事例固有の文言に修正。
+
+### Added
+
+- **`BUNSHOKAITOU_LEGAL_STATUS` 定数** を [`src/constants.ts`](src/constants.ts) に新設。文書回答事例の法的性質 (個別事案回答 / 一般法的拘束力なし) を明文化。
+- **`LEGAL_STATUS_BY_DOCTYPE` 一元 map** を [`src/constants.ts`](src/constants.ts) に新設。`DocType` (`kaisei` / `jimu-unei` / `bunshokaitou` / `tax-answer` / `qa-jirei`) → `legal_status` の対応を 1 か所に集約し、ハンドラ側で `LEGAL_STATUS_BY_DOCTYPE[doc.docType]` を参照する形に切替。
+- **`src/constants.test.ts`** 新設 (8 ケース): `LEGAL_STATUS_BY_DOCTYPE` の定義網羅性 + Issue #2 の回帰防止 (bunshokaitou の note にタックスアンサー文言が含まれていないこと、「文書回答事例」「個別事案」が含まれていること)。
+
+### Changed
+
+- **6 ハンドラの legal_status 出力**:
+  - `handleNtaInspectPdfMeta`: `TSUTATSU_LEGAL_STATUS` 固定 → `LEGAL_STATUS_BY_DOCTYPE[doc.docType]` (5 docType を正しく出し分け)
+  - `handleNtaSearchBunshokaitou` / `handleNtaGetBunshokaitou` (3 箇所): `NTA_GENERAL_INFO_LEGAL_STATUS` → `BUNSHOKAITOU_LEGAL_STATUS`
+  - `tsutatsu` / `kaisei` / `jimu-unei` / `tax-answer` / `qa-jirei` 系ハンドラは挙動変更なし
+- **`renderDocumentMarkdown`**: `kind='文書回答事例'` のとき footer を文書回答事例固有の文言に切替。`'改正通達'` / `'事務運営指針'` は据え置き。
+
+### Compatibility
+
+- 既存テスト 408 件は **すべて互換** (`tsutatsu` 系の `binds_tax_office: true` 期待は据え置きの `TSUTATSU_LEGAL_STATUS` で満たされる)。
+- `NTA_GENERAL_INFO_LEGAL_STATUS` の note 文言自体は変更なし (タックスアンサー・質疑応答事例向けは元々正しい)。
+- 公開 export `BUNSHOKAITOU_LEGAL_STATUS` / `LEGAL_STATUS_BY_DOCTYPE` を新たに追加 (既存 export は破壊しない)。
+
+### Migration (v0.9.0 → v0.9.1)
+
+クライアント (Skill / LLM) 側で `legal_status.note` 文字列を比較・解析している場合のみ影響する可能性があります。具体的には:
+
+- `nta_inspect_pdf_meta(docType=bunshokaitou).legal_status.note` が「通達は行政内部文書…」だったのが「文書回答事例は照会者・国税庁双方の合意に基づく…」に変わる
+- `nta_inspect_pdf_meta(docType=tax-answer).legal_status.note` が「通達は行政内部文書…」だったのが「タックスアンサー・質疑応答事例は…」に変わる
+- `nta_inspect_pdf_meta(docType=qa-jirei).legal_status.note` も同上
+- `nta_search_bunshokaitou(...).legal_status.note` が「タックスアンサー・質疑応答事例は…」だったのが「文書回答事例は照会者・国税庁双方の合意…」に変わる
+- `nta_search_bunshokaitou(...).legal_status.binds_tax_office` は true → false **ではなく** 元から false (v0.9.0 でも false だった、note 文言だけが誤っていた)
+
+note 文言を表示・伝達するだけのクライアントは影響なし。
+
 ## [0.9.0] - 2026-05-08
 
 ⚡ **Phase 6-2: bulk DL 差分更新** — `--bulk-download-everything` の所要時間を 50 分 → 5〜10 分に短縮するためのリリース。`If-Modified-Since` を使った conditional GET と `content_hash` バイパスの 2 段階で、サーバー側で「変更なし」と判定された頁はパース・DB 書き込みごとスキップする。

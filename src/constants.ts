@@ -118,6 +118,49 @@ export const NTA_GENERAL_INFO_LEGAL_STATUS = {
 } as const;
 
 /**
+ * 文書回答事例の法的位置付け (v0.9.1 で独立化)。
+ *
+ * 文書回答事例は照会者・国税庁双方の合意に基づく **個別事案への回答** であり、
+ * 行政の解説資料 (タックスアンサー・質疑応答事例) とは性質が異なる。
+ * - 同じ事案であれば類似判断が期待できる (国税庁が公表する以上、後の同様事案で
+ *   方針を変えにくい "事実上の指針" として機能)
+ * - ただし「個別事案への回答」のため、一般的法的拘束力はない
+ *
+ * @see Issue #2 (2026-05-08 smoketest feedback)
+ */
+export const BUNSHOKAITOU_LEGAL_STATUS = {
+  binds_citizens: false,
+  binds_courts: false,
+  binds_tax_office: false,
+  note: '文書回答事例は照会者・国税庁双方の合意に基づく個別事案回答であり、一般的な法的拘束力はない。同じ事案で同様の判断を期待することは可能だが、実務判断は通達・法令本文に基づく必要がある',
+} as const;
+
+/**
+ * docType ごとの `legal_status` 一元 map (v0.9.1 で導入)。
+ *
+ * `nta_inspect_pdf_meta` / `nta_search_*` / `nta_get_*` ハンドラの戻り値に
+ * 載せる `legal_status` を、docType に応じて適切に出し分けるための map。
+ *
+ * 設計:
+ *  - `kaisei` / `jimu-unei`: 通達 (kaisei は改正通達, jimu-unei は事務運営指針も
+ *    通達の 1 種)。`TSUTATSU_LEGAL_STATUS` (binds_tax_office: true) を再利用
+ *  - `bunshokaitou`: 個別事案回答 → `BUNSHOKAITOU_LEGAL_STATUS`
+ *  - `tax-answer` / `qa-jirei`: 解説資料 → `NTA_GENERAL_INFO_LEGAL_STATUS`
+ *
+ * `tsutatsu` (section テーブル系) は document テーブルではないので本 map には
+ * 含めない (`TSUTATSU_LEGAL_STATUS` を直接参照)。
+ *
+ * @see Issue #1 (2026-05-08 smoketest feedback)
+ */
+export const LEGAL_STATUS_BY_DOCTYPE = {
+  kaisei: TSUTATSU_LEGAL_STATUS,
+  'jimu-unei': TSUTATSU_LEGAL_STATUS,
+  bunshokaitou: BUNSHOKAITOU_LEGAL_STATUS,
+  'tax-answer': NTA_GENERAL_INFO_LEGAL_STATUS,
+  'qa-jirei': NTA_GENERAL_INFO_LEGAL_STATUS,
+} as const;
+
+/**
  * 質疑応答事例のベース URL。
  * 個別事例 URL は `${base}{税目}/{カテゴリ}/{事例番号}.htm` の形式。
  */

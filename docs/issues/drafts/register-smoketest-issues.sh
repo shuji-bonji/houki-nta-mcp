@@ -18,25 +18,25 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "==== Issue #1 ===="
 gh issue create --repo "$REPO" \
   --title "legal_status を docType 別に整備 (LEGAL_STATUS_BY_DOCTYPE 一元化)" \
-  --label "enhancement" --label "good-first-issue" --label "smoketest-2026-05-08" \
+  --label "enhancement" \
   --body-file "$DIR/issue-1-legal-status-by-doctype.md"
 
 echo "==== Issue #2 ===="
 gh issue create --repo "$REPO" \
   --title "nta_search_bunshokaitou の legal_status.note に「文書回答事例」を含める" \
-  --label "enhancement" --label "smoketest-2026-05-08" \
+  --label "enhancement" \
   --body-file "$DIR/issue-2-search-bunshokaitou-note.md"
 
 echo "==== Issue #3 ===="
 gh issue create --repo "$REPO" \
   --title "search 系全体で通称→正式名の synonym 展開 (kaisei/bunshokaitou 等にも)" \
-  --label "enhancement" --label "smoketest-2026-05-08" \
+  --label "enhancement" \
   --body-file "$DIR/issue-3-synonym-expansion-document.md"
 
 echo "==== Issue #5 ===="
 gh issue create --repo "$REPO" \
   --title "freshness ロジックを houki-hub family 共有パッケージに昇格" \
-  --label "enhancement" --label "smoketest-2026-05-08" \
+  --label "enhancement" \
   --body-file "$DIR/issue-5-freshness-shared.md"
 
 echo

@@ -9,6 +9,8 @@
 import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
 
 import {
+  BUNSHOKAITOU_LEGAL_STATUS,
+  LEGAL_STATUS_BY_DOCTYPE,
   NTA_GENERAL_INFO_LEGAL_STATUS,
   NTA_HINT,
   QA_BASE_URL,
@@ -909,9 +911,16 @@ function renderDocumentMarkdown(
   }
   lines.push('');
   lines.push('---');
-  lines.push(
-    '*通達・事務運営指針は行政内部文書であり、納税者・裁判所への直接的拘束力なし（最高裁 昭和43.12.24）*'
-  );
+  // v0.9.1: kind 別の footer 文言 (Issue #1, #2)
+  if (kind === '文書回答事例') {
+    lines.push(
+      '*文書回答事例は照会者・国税庁双方の合意に基づく個別事案回答であり、一般的な法的拘束力はない（実務判断は通達・法令本文に基づく必要あり）*'
+    );
+  } else {
+    lines.push(
+      '*通達・事務運営指針は行政内部文書であり、納税者・裁判所への直接的拘束力なし（最高裁 昭和43.12.24）*'
+    );
+  }
   return lines.join('\n');
 }
 
@@ -941,7 +950,8 @@ export async function handleNtaSearchBunshokaitou(
         results: [],
         keyword: args.keyword,
         hint: '該当なし。`--bulk-download-bunshokaitou` で DB 投入済みか確認してください',
-        legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+        // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
+        legal_status: BUNSHOKAITOU_LEGAL_STATUS,
       };
     }
     const taxonomyFilter = args.taxonomy !== undefined ? [args.taxonomy] : undefined;
@@ -965,7 +975,8 @@ export async function handleNtaSearchBunshokaitou(
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
-      legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+      // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
+      legal_status: BUNSHOKAITOU_LEGAL_STATUS,
     };
   } finally {
     closeDb(db);
@@ -991,7 +1002,8 @@ export async function handleNtaGetBunshokaitou(
     if (args.format === 'json') {
       return {
         document: doc,
-        legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+        // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
+        legal_status: BUNSHOKAITOU_LEGAL_STATUS,
         source: 'db' as const,
       };
     }
@@ -1070,7 +1082,8 @@ export async function handleNtaInspectPdfMeta(
           'それ以外は read_text。examples を kind 別に参考にしてください。',
         examples,
       },
-      legal_status: TSUTATSU_LEGAL_STATUS,
+      // v0.9.1: docType 別の legal_status を返す (Issue #1)
+      legal_status: LEGAL_STATUS_BY_DOCTYPE[doc.docType] ?? TSUTATSU_LEGAL_STATUS,
     };
   } finally {
     closeDb(db);
