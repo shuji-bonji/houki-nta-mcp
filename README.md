@@ -101,11 +101,34 @@ clause 番号は **Normalize-everywhere** で全角→半角統一されてい�
 
 通達本体・改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例を事前に bulk DL してローカル SQLite (FTS5) に投入します。1 度実行すれば DB から即時応答（fetch なし）。
 
+### コマンドの呼び出し形式
+
+bulk DL コマンドは利用形態に応じて以下の 3 形式があります。以降の例は **A. グローバルインストール済み** の形式で記載しています。`B` / `C` を使う場合は同様に置き換えてください。
+
+| 利用形態 | コマンド形式 | 前提 |
+|---|---|---|
+| **A. グローバル install 済み** | `houki-nta-mcp --bulk-download-everything` | `npm install -g @shuji-bonji/houki-nta-mcp` 実行済み |
+| **B. npx 経由（都度実行）** | `npx -y @shuji-bonji/houki-nta-mcp --bulk-download-everything` | Node.js / npm がインストール済みなら追加準備不要 |
+| **C. ローカルクローン** | `node /path/to/houki-nta-mcp/dist/index.js --bulk-download-everything` | `git clone` + `npm install` + `npm run build` 実行済み |
+
+> [!TIP]
+> Claude Desktop / Claude Code で MCP サーバとして登録する場合は別問題で、`mcp_servers` 設定の `npx -y @shuji-bonji/houki-nta-mcp` (= 形式 B) を使います（後述「Claude Desktop / Claude Code への登録例」を参照）。bulk DL は **MCP サーバ起動とは別プロセス** で人間が実行するため、ここではどの形式でも構いません。
+
 ```bash
 # 推奨: 6 種別を一括投入（約 50 分。--bunsho-taxonomy / --tax-answer-taxonomy / --qa-topic で短縮可）
+
+# A. グローバル install 済み
 houki-nta-mcp --bulk-download-everything --bunsho-taxonomy=shotoku
 
-# 個別実行
+# B. npx 経由
+npx -y @shuji-bonji/houki-nta-mcp --bulk-download-everything --bunsho-taxonomy=shotoku
+
+# C. ローカルクローン
+node /path/to/houki-nta-mcp/dist/index.js --bulk-download-everything --bunsho-taxonomy=shotoku
+```
+
+```bash
+# 個別実行（以下は形式 A の例。B / C は上記対応表で置き換え）
 houki-nta-mcp --bulk-download-all          # 通達本体 4 種
 houki-nta-mcp --bulk-download-kaisei       # 改正通達
 houki-nta-mcp --bulk-download-jimu-unei    # 事務運営指針
@@ -158,13 +181,26 @@ bunsho-taxonomy / tax-answer-taxonomy / qa-topic で範囲を絞らない場合�
 
 ```bash
 # 例: 所得税関連だけを bulk DL（数十分 → 数分に短縮）
+
+# A. グローバル install 済み
 houki-nta-mcp --bulk-download-bunshokaitou --bunsho-taxonomy=shotoku
 houki-nta-mcp --bulk-download-qa --qa-topic=shotoku
+
+# B. npx 経由
+npx -y @shuji-bonji/houki-nta-mcp --bulk-download-bunshokaitou --bunsho-taxonomy=shotoku
+npx -y @shuji-bonji/houki-nta-mcp --bulk-download-qa --qa-topic=shotoku
+
+# C. ローカルクローン
+node /path/to/houki-nta-mcp/dist/index.js --bulk-download-bunshokaitou --bunsho-taxonomy=shotoku
+node /path/to/houki-nta-mcp/dist/index.js --bulk-download-qa --qa-topic=shotoku
 ```
 
 ## 推奨運用フロー
 
 スクレイピング主体のため、国税庁 HP の構造変更で bulk DL や parse が静かに壊れるリスクがあります。検知・可視化のため、以下を組み合わせて運用するのを推奨:
+
+> [!NOTE]
+> 以下の表およびコマンド例は、前述「コマンドの呼び出し形式」の **形式 A (グローバル install 済み)** を前提に記載しています。`B` (npx) / `C` (ローカルクローン) を使う場合は同様に置き換えてください。
 
 | 頻度         | コマンド                                   | 用途                                     |
 | ------------ | ------------------------------------------ | ---------------------------------------- |
@@ -175,12 +211,23 @@ houki-nta-mcp --bulk-download-qa --qa-topic=shotoku
 cron 設定例:
 
 ```cron
+# A. グローバル install 済み（npm install -g 済 / `which houki-nta-mcp` で絶対パス確認）
 # 月初に bulk DL（毎月 1 日 03:00 JST）
 0 3 1 * *  /usr/local/bin/houki-nta-mcp --bulk-download-everything > ~/.cache/houki-nta-mcp/last-bulk.log 2>&1
-
 # 月曜に health-check（毎週月曜 09:00 JST）
 0 9 * * 1  /usr/local/bin/houki-nta-mcp --health-check >> ~/.cache/houki-nta-mcp/health.log 2>&1
+
+# B. npx 経由（PATH に node が通っている前提。/opt/homebrew/bin など環境ごとに調整）
+0 3 1 * *  /opt/homebrew/bin/npx -y @shuji-bonji/houki-nta-mcp --bulk-download-everything > ~/.cache/houki-nta-mcp/last-bulk.log 2>&1
+0 9 * * 1  /opt/homebrew/bin/npx -y @shuji-bonji/houki-nta-mcp --health-check >> ~/.cache/houki-nta-mcp/health.log 2>&1
+
+# C. ローカルクローン
+0 3 1 * *  /opt/homebrew/bin/node /path/to/houki-nta-mcp/dist/index.js --bulk-download-everything > ~/.cache/houki-nta-mcp/last-bulk.log 2>&1
+0 9 * * 1  /opt/homebrew/bin/node /path/to/houki-nta-mcp/dist/index.js --health-check >> ~/.cache/houki-nta-mcp/health.log 2>&1
 ```
+
+> [!TIP]
+> cron は環境変数を継承しないので、`houki-nta-mcp` / `npx` / `node` は **絶対パスで指定**してください。`which houki-nta-mcp` / `which npx` / `which node` で確認できます。
 
 レスポンスに `freshness` フィールドが付き、`staleness` (`fresh`/`stale`/`outdated`) で再 bulk DL の必要性を判断できます。設計詳細は [`docs/RESILIENCE.md`](docs/RESILIENCE.md)。
 
