@@ -277,11 +277,15 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
       { fetchImpl, dbPath: ':memory:' }
     )) as {
       error?: string;
-      status?: number;
+      code?: string;
+      retryable?: boolean;
+      detail?: { status?: number; url?: string };
     };
 
     expect(r.error).toContain('取得に失敗');
-    expect(r.status).toBe(404);
+    expect(r.code).toBe('SOURCE_API_ERROR');
+    expect(r.retryable).toBe(true);
+    expect(r.detail?.status).toBe(404);
   });
 });
 

@@ -267,6 +267,27 @@ npm test
 }
 ```
 
+## エラー応答 (houki-hub family contract)
+
+本 MCP のエラー応答は **houki-hub family 共通契約**に従います。`code` 文字列は family 全体で統一された語彙を使用するため、houki-egov-mcp / pdf-reader-mcp と併用しても LLM・Skill 層は一貫したロジックで解釈できます。
+
+- [`docs/ERROR-CODES.md`](https://github.com/shuji-bonji/houki-research-skill/blob/main/docs/ERROR-CODES.md) — 共通エラーコード語彙の正典 (houki-research-skill)
+- [`docs/ERROR-HANDLING.md`](https://github.com/shuji-bonji/houki-research-skill/blob/main/docs/ERROR-HANDLING.md) — 解釈ポリシー / next_actions テンプレ
+
+実装は **[houki-egov-mcp の `src/errors.ts`](https://github.com/shuji-bonji/houki-egov-mcp/blob/main/src/errors.ts) をリファレンス**としつつ、本 MCP では共通パッケージ (`houki-abbreviations` 等) への依存を持たず独立して実装します。
+
+```json
+{
+  "error": "通達 docId=0025004-999 が見つかりません",
+  "code": "TSUTATSU_NOT_FOUND",
+  "hint": "nta_search_tsutatsu で正しい docId を検索してください",
+  "next_actions": [
+    { "action": "nta_search_tsutatsu", "reason": "キーワード検索で該当通達を探せます", "example": { "keyword": "適格請求書" } }
+  ],
+  "retryable": false
+}
+```
+
 ## ドキュメント
 
 - 🌐 **[`docs/HOUKI-FAMILY-INTEGRATION.md`](docs/HOUKI-FAMILY-INTEGRATION.md) — houki-hub family 4 つを連携した統合利用ガイド (Claude Desktop / Claude Code 向け install→設定→実例 4 ユースケース)**

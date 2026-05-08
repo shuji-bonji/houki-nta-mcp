@@ -7,16 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-🗺️ **Phase 6 計画書 (v1.0.0 への道)** を [`docs/PHASE6.md`](docs/PHASE6.md) として策定。
-新機能の大幅追加ではなく、**運用品質と発信の底上げ** を主軸に v1.0.0 安定リリースを目指す。
+(none)
+
+## [0.8.0] - 2026-05-08
+
+🚀 **Phase 6-1 (search relevance ranking)** + **family-compatible error contract** + **Phase 6 計画書** を同梱したマイルストーンリリース。
+
+### ✨ Phase 6-1: search relevance ranking 精度向上
+
+`nta_search_*` 全 6 ツールが正規化された `score` (0.0〜1.5) と `scoreReasons` を返すようになりました。LLM はヒットの確からしさを定量的に判断でき、複数 search 結果を横断的に並べ替え可能です。
+
+#### Added
+
+- **新規 [`src/services/relevance-scoring.ts`](src/services/relevance-scoring.ts)**: 純関数として `computeRelevance()` / `extractClauseNumberFromQuery()` / `rankToBaseScore()` / `sortByScoreDesc()` を提供。
+  - **clause 番号 boost** — クエリに `5-1-9` `1-4-13の2` 等の clause 番号が含まれヒットの `clauseNumber` と完全一致する場合に +0.5 加点。全角ハイフン・全角数字も正規化して比較。
+  - **doc_type 重み付け** — 法的拘束力の階層に基づく重み (通達 1.0 / 改正通達 0.95 / 文書回答事例 0.9 / 事務運営指針 0.85 / Q&A 0.7 / タックスアンサー 0.6)。
+  - **rank → 0〜1 正規化** — FTS5 BM25 rank を `1 / (1 + 10 / max(|rank|, ε))` で 0〜1 に変換。
+- **略称展開 (abbreviation expansion)** — キーワード全体が houki-nta 管轄の略称 (例: `消基通`) に該当する場合、`formal_name` (`消費税法基本通達`) を OR で展開。`source_mcp_hint !== 'houki-nta'` の場合は誤爆防止のため展開しない。`enableAbbreviationExpansion: false` で opt-out 可能。
+- **`SearchHit` 型の拡張** — `ClauseSearchHit` / `DocumentSearchHit` に optional `score?: number` / `scoreReasons?: string[]` を追加。既存利用者は破壊されない。
+- **テスト** — `src/services/relevance-scoring.test.ts` (16 ケース) + `src/services/db-search.test.ts` に Phase 6-1 用 5 ケース追加 (clause boost / abbreviation expansion / score 降順 / opt-out 等)。
+
+#### Changed
+
+- **`searchClauseFts` / `searchDocumentFts`** — FTS5 から要求 limit の 3 倍 (上限 150) を取得し、JS で score 計算 → 降順ソート → 要求 limit 件に絞る方式に変更。SQL レイヤーは触らず、relevance-scoring を後付けする設計。
+- **`sanitizeFtsQuery()`** — 内部実装を `buildSanitizedPhrase()` + 新規 `buildFtsQueryWithAbbreviation()` に分割。後者が略称展開を担当する。後方互換: `sanitizeFtsQuery()` の挙動と公開 API は不変。
+- **6 search ハンドラ** (`nta_search_tsutatsu` / `nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` / `nta_search_bunshokaitou` / `nta_search_qa` / `nta_search_tax_answer`) — 戻り値の `hits[]` / `results[]` に `score` と `scoreReasons` を含めて返すように。
+
+### ✨ family-compatible error contract 対応
+
+houki-hub MCP family 共通のエラー語彙 ([houki-research-skill / docs/ERROR-CODES.md](https://github.com/shuji-bonji/houki-research-skill/blob/main/docs/ERROR-CODES.md)) に準拠する独自実装を追加。共通パッケージ依存は持たず、`code` 文字列の語彙のみを揃える。
+
+#### Added
+
+- **新規 [`src/errors.ts`](src/errors.ts)**: `LawErrorCode` / `LawServiceError` / `makeError` / `NEXT_ACTIONS`
+  プリセットを houki-egov-mcp の `src/errors.ts` をリファレンスに独自実装。
+  `houki-abbreviations` 等の共通パッケージへの依存なし。
+- **新規 README セクション「エラー応答 (houki-hub family contract)」**: family contract と
+  ERROR-CODES.md / ERROR-HANDLING.md へのリンク、応答例を明記。
+
+#### Changed
+
+- `src/tools/handlers.ts` の全 23 箇所のエラー戻り値を `makeError(code, message, options)` 経由
+  に統一。家族共通コード (`INVALID_ARGUMENT` / `OUT_OF_SCOPE` / `TSUTATSU_NOT_FOUND` /
+  `ARTICLE_NOT_FOUND` / `ABBREVIATION_NOT_FOUND` / `DOC_NOT_FOUND` / `SOURCE_API_ERROR` /
+  `INTERNAL_ERROR`) を割り当て。
+- 外部ソース由来エラー (`NtaFetchError` catch) は `retryable: true` + `next_actions: [retryLater]`
+  + `detail.status` 付きで返すように。LLM が retry 判断しやすくなる。
+- 略称解決の管轄違い (`source_mcp_hint` 設定済) は `OUT_OF_SCOPE` + `delegateTo` next_action
+  で返す。Skill 層からの自動ルーティングが可能に。
+- DB 未投入系エラーは `bulkDownload` next_action 付きで返す。
+
+#### Compatibility
+
+- `error` フィールドは従来通り人間可読メッセージを保持。新規 `code` フィールドは追加情報として並走。
+- **breaking**: 外部 API のステータスコードはエラー応答のトップレベル `status` から
+  `detail.status` に移動（family contract 準拠）。同様に `url` も `detail.url` に移動可能。
+  既存トップレベル `url` は houki-nta-mcp 固有のままサポート継続（後方互換）。
+- 既存テストの `r.error.toContain('...')` 形式は全件パス。`r.status` を直接検査していた
+  1 テストを `r.detail?.status` に追従修正済み。
+
+### 🗺️ Phase 6 計画書 (v1.0.0 への道)
+
+[`docs/PHASE6.md`](docs/PHASE6.md) として策定。新機能の大幅追加ではなく、**運用品質と発信の底上げ** を主軸に v1.0.0 安定リリースを目指す。
 
 サブフェーズ構成:
 
-- **6-1 (v0.8.0)**: search relevance ranking 精度向上 (clause 番号 boost / doc_type 重み付け / 略称展開 / score 応答)
+- **6-1 (v0.8.0)**: search relevance ranking 精度向上 (clause 番号 boost / doc_type 重み付け / 略称展開 / score 応答) ✅ 本リリースで完了
 - **6-2 (v0.9.0)**: bulk DL 差分更新 (HEAD `Last-Modified` バイパス + `content_hash` バイパスで 50 分 → 5〜10 分目標)
 - **6-3 (リリース番号なし)**: houki-hub-doc サイト構築 + llms.txt 公開
 
 完了基準は PHASE6.md §7「v1.0.0 リリース判定基準」を参照。スコープ外は同 §8。
+
+### Migration (v0.7.x → v0.8.0)
+
+- **検索結果の構造変化**: `nta_search_*` の戻り値の `hits[]` / `results[]` に `score` と `scoreReasons` が新規追加。既存フィールドは不変なので、JSON.parse して既存フィールドだけ参照しているクライアントは破壊されない。
+- **検索結果の順序変化**: BM25 rank 順から `score` 降順に変わる。具体的には clause 番号完全一致や doc_type が高い hit が上位に来やすくなる。意図的に旧順序が必要な場合は `enableAbbreviationExpansion: false` を渡したうえで score を無視できる (が推奨されない)。
+- **`code` の語彙変化**: クライアント側で `code` 文字列を比較しているコードは family 共通語彙への追従が必要。詳細は houki-research-skill の `docs/ERROR-CODES.md` を参照。
 
 ## [0.7.3] - 2026-05-07
 

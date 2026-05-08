@@ -53,6 +53,7 @@ import type {
   GetTaxAnswerArgs,
   InspectPdfMetaArgs,
 } from '../types/index.js';
+import { makeError, NEXT_ACTIONS } from '../errors.js';
 
 // NOT_IMPLEMENTED は v0.5.0-alpha.1 で全 search 系ハンドラが本実装になり、未使用に。
 // 将来また「未実装スタブ」を作る際は復活させる。
@@ -75,17 +76,19 @@ export async function handleNtaSearchTsutatsu(args: SearchTsutatsuArgs) {
 export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath?: string } = {}) {
   const keyword = args.keyword?.trim();
   if (!keyword) {
-    return { error: 'keyword を指定してください' };
+    return makeError('INVALID_ARGUMENT', 'keyword を指定してください', {
+      tool: 'nta_search_tsutatsu',
+    });
   }
 
   const db = openDb(options.dbPath);
   try {
     if (!hasAnyClause(db)) {
-      return {
-        error: 'ローカル DB に検索対象がありません',
+      return makeError('TSUTATSU_NOT_FOUND', 'ローカル DB に検索対象がありません', {
         hint: '初回は `houki-nta-mcp --bulk-download` を実行して通達一式をローカル DB に投入してください（消費税法基本通達: 約 100 秒）',
         tool: 'nta_search_tsutatsu',
-      };
+        next_actions: [NEXT_ACTIONS.bulkDownload()],
+      });
     }
 
     const limit = Math.min(Math.max(args.limit ?? 10, 1), 50);
@@ -111,6 +114,8 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
         title: h.title,
         snippet: h.snippet,
         sourceUrl: h.sourceUrl,
+        ...(h.score !== undefined ? { score: h.score } : {}),
+        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
@@ -153,28 +158,31 @@ export async function getTsutatsu(
   // 1. 略称解決
   const resolved = resolveAbbreviation(args.name);
   if (!resolved) {
-    return {
-      error: `辞書に該当なし: "${args.name}"。略称または正式名で指定してください`,
-      tool: 'nta_get_tsutatsu',
-    };
+    return makeError(
+      'ABBREVIATION_NOT_FOUND',
+      `辞書に該当なし: "${args.name}"。略称または正式名で指定してください`,
+      {
+        tool: 'nta_get_tsutatsu',
+        next_actions: [NEXT_ACTIONS.searchTsutatsu(args.name)],
+      }
+    );
   }
 
   // 1b. 管轄判定
   if (resolved.source_mcp_hint !== NTA_HINT) {
-    return {
-      error: `"${args.name}" は ${resolved.source_mcp_hint} の管轄です`,
+    return makeError('OUT_OF_SCOPE', `"${args.name}" は ${resolved.source_mcp_hint} の管轄です`, {
       hint: `${resolved.source_mcp_hint}-mcp で取得してください`,
       resolved,
-    };
+      next_actions: [NEXT_ACTIONS.delegateTo(resolved.source_mcp_hint ?? 'unknown')],
+    });
   }
 
   // 2. clause 必須チェック
   if (!args.clause) {
-    return {
-      error: 'clause を指定してください',
+    return makeError('INVALID_ARGUMENT', 'clause を指定してください', {
       hint: '例: "5-1-9" / "1-4-13の2"（消基通スタイル）/ "2-4の2"（所基通スタイル）',
       resolved,
-    };
+    });
   }
 
   // 3. DB lookup を試みる（bulk DL 済みなら即時応答）
@@ -187,11 +195,14 @@ export async function getTsutatsu(
 
     // 4. DB に formal_name エントリ自体があるが該当 clause が無い場合は available_clauses を返す
     if (hasAnyClause(db, resolved.formal)) {
-      return {
-        error: `clause "${args.clause}" は DB 内の "${resolved.formal}" に見つかりません`,
-        hint: '別の clause 番号を試すか、`--bulk-download` で再取得してください（最新の改正反映用）',
-        available_clauses: listAvailableClauses(db, resolved.formal, 50),
-      };
+      return makeError(
+        'ARTICLE_NOT_FOUND',
+        `clause "${args.clause}" は DB 内の "${resolved.formal}" に見つかりません`,
+        {
+          hint: '別の clause 番号を試すか、`--bulk-download` で再取得してください（最新の改正反映用）',
+          available_clauses: listAvailableClauses(db, resolved.formal, 50),
+        }
+      );
     }
   } finally {
     closeDb(db);
@@ -200,25 +211,28 @@ export async function getTsutatsu(
   // 5. DB miss → ライブ取得経路へフォールバック
   const rootUrl = TSUTATSU_URL_ROOTS[resolved.formal];
   if (!rootUrl) {
-    return {
-      error: `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`,
-      hint:
-        `先に \`houki-nta-mcp --bulk-download --tsutatsu="${resolved.formal}"\` を実行して ` +
-        'DB に投入してください（Phase 2d 以降は他通達も bulk DL 経由で対応）。',
-      supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
-      resolved,
-      tool: 'nta_get_tsutatsu',
-    };
+    return makeError(
+      'TSUTATSU_NOT_FOUND',
+      `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`,
+      {
+        hint:
+          `先に \`houki-nta-mcp --bulk-download --tsutatsu="${resolved.formal}"\` を実行して ` +
+          'DB に投入してください（Phase 2d 以降は他通達も bulk DL 経由で対応）。',
+        next_actions: [NEXT_ACTIONS.bulkDownload(resolved.formal)],
+        supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
+        resolved,
+        tool: 'nta_get_tsutatsu',
+      }
+    );
   }
 
   const parsed = parseClauseNumber(args.clause);
   if (!parsed) {
-    return {
-      error: `clause の形式が不正: "${args.clause}"`,
+    return makeError('INVALID_ARGUMENT', `clause の形式が不正: "${args.clause}"`, {
       hint:
         'ライブ取得には「章-節-条」形式（例: "5-1-9" / "1-4-13の2"）が必要です。' +
         '他通達体系（条-項）の場合は `--bulk-download` で DB 投入してください',
-    };
+    });
   }
 
   const url = buildSectionUrl(rootUrl, parsed.chapter, parsed.section);
@@ -232,11 +246,12 @@ export async function getTsutatsu(
     fetchedAt = fetched.fetchedAt;
   } catch (err) {
     if (err instanceof NtaFetchError) {
-      return {
-        error: `国税庁サイトからの取得に失敗: ${err.message}`,
+      return makeError('SOURCE_API_ERROR', `国税庁サイトからの取得に失敗: ${err.message}`, {
         url,
-        ...(err.status !== undefined ? { status: err.status } : {}),
-      };
+        retryable: true,
+        next_actions: [NEXT_ACTIONS.retryLater()],
+        detail: err.status !== undefined ? { status: err.status, url } : { url },
+      });
     }
     throw err;
   }
@@ -246,21 +261,21 @@ export async function getTsutatsu(
     section = parseTsutatsuSection(html, sourceUrl, fetchedAt);
   } catch (err) {
     if (err instanceof TsutatsuParseError) {
-      return {
-        error: `通達ページのパースに失敗: ${err.message}`,
+      return makeError('INTERNAL_ERROR', `通達ページのパースに失敗: ${err.message}`, {
         url,
-      };
+        hint: 'パーサのバグまたは国税庁ページの構造変更の可能性。報告してください',
+        detail: { url, cause: err.message },
+      });
     }
     throw err;
   }
 
   const clause = section.clauses.find((c) => c.clauseNumber === args.clause);
   if (!clause) {
-    return {
-      error: `clause "${args.clause}" がページ内に見つかりません`,
+    return makeError('ARTICLE_NOT_FOUND', `clause "${args.clause}" がページ内に見つかりません`, {
       url,
       available_clauses: section.clauses.map((c) => c.clauseNumber),
-    };
+    });
   }
 
   // Write-through cache: ライブ取得した section の clauses 一式を DB に書き戻す。
@@ -380,6 +395,8 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
         title: h.title,
         sourceUrl: h.sourceUrl,
         snippet: h.snippet,
+        ...(h.score !== undefined ? { score: h.score } : {}),
+        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
@@ -403,16 +420,14 @@ export async function handleNtaGetQa(args: GetQaArgs) {
 export async function getQa(args: GetQaArgs, options: { fetchImpl?: typeof fetch } = {}) {
   const topic = args.topic;
   if (!QA_TOPICS.includes(topic as QaTopic)) {
-    return {
-      error: `topic "${topic}" は houki-nta-mcp では未対応です`,
+    return makeError('INVALID_ARGUMENT', `topic "${topic}" は houki-nta-mcp では未対応です`, {
       hint: '対応税目: shotoku, gensen, joto, sozoku, hyoka, hojin, shohi, inshi, hotei',
-    };
+    });
   }
   if (!args.category || !args.id) {
-    return {
-      error: 'category と id を両方指定してください',
+    return makeError('INVALID_ARGUMENT', 'category と id を両方指定してください', {
       hint: '/law/shitsugi/{topic}/01.htm の TOC ページで category 番号と事例番号を確認',
-    };
+    });
   }
 
   // パディングを綺麗に: "2" → "02" に揃える（実 URL は 2 桁ゼロ埋めが多い）
@@ -430,11 +445,12 @@ export async function getQa(args: GetQaArgs, options: { fetchImpl?: typeof fetch
     fetchedAt = fetched.fetchedAt;
   } catch (err) {
     if (err instanceof NtaFetchError) {
-      return {
-        error: `国税庁サイトからの取得に失敗: ${err.message}`,
+      return makeError('SOURCE_API_ERROR', `国税庁サイトからの取得に失敗: ${err.message}`, {
         url,
-        ...(err.status !== undefined ? { status: err.status } : {}),
-      };
+        retryable: true,
+        next_actions: [NEXT_ACTIONS.retryLater()],
+        detail: err.status !== undefined ? { status: err.status, url } : { url },
+      });
     }
     throw err;
   }
@@ -451,10 +467,11 @@ export async function getQa(args: GetQaArgs, options: { fetchImpl?: typeof fetch
     });
   } catch (err) {
     if (err instanceof TsutatsuParseError) {
-      return {
-        error: `質疑応答事例ページのパースに失敗: ${err.message}`,
+      return makeError('INTERNAL_ERROR', `質疑応答事例ページのパースに失敗: ${err.message}`, {
         url,
-      };
+        hint: 'パーサのバグまたは国税庁ページの構造変更の可能性。報告してください',
+        detail: { url, cause: err.message },
+      });
     }
     throw err;
   }
@@ -509,6 +526,8 @@ export async function handleNtaSearchTaxAnswer(
         title: h.title,
         sourceUrl: h.sourceUrl,
         snippet: h.snippet,
+        ...(h.score !== undefined ? { score: h.score } : {}),
+        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
@@ -535,17 +554,23 @@ export async function getTaxAnswer(
 ) {
   const no = args.no?.trim();
   if (!no || !/^\d+$/.test(no)) {
-    return {
-      error: `タックスアンサー番号は数字で指定してください: "${args.no}" は不正`,
-      hint: '例: "6101" (消費税の基本的なしくみ), "1120" (医療費控除)',
-    };
+    return makeError(
+      'INVALID_ARGUMENT',
+      `タックスアンサー番号は数字で指定してください: "${args.no}" は不正`,
+      {
+        hint: '例: "6101" (消費税の基本的なしくみ), "1120" (医療費控除)',
+      }
+    );
   }
   const folder = TAX_ANSWER_FOLDER_MAP[no[0]];
   if (!folder) {
-    return {
-      error: `番号 "${no}" の先頭桁 "${no[0]}" は houki-nta-mcp v0.2.x では未対応`,
-      hint: '対応番号帯: 1xxx=所得税, 2xxx=源泉, 3xxx=譲渡, 4xxx=相続・贈与, 5xxx=法人税, 6xxx=消費税, 7xxx=印紙税, 9xxx=お知らせ。8xxx 帯は未対応（Phase 2 で対応予定）',
-    };
+    return makeError(
+      'INVALID_ARGUMENT',
+      `番号 "${no}" の先頭桁 "${no[0]}" は houki-nta-mcp v0.2.x では未対応`,
+      {
+        hint: '対応番号帯: 1xxx=所得税, 2xxx=源泉, 3xxx=譲渡, 4xxx=相続・贈与, 5xxx=法人税, 6xxx=消費税, 7xxx=印紙税, 9xxx=お知らせ。8xxx 帯は未対応（Phase 2 で対応予定）',
+      }
+    );
   }
 
   const url = `${TAX_ANSWER_BASE_URL}${folder}/${no}.htm`;
@@ -560,11 +585,12 @@ export async function getTaxAnswer(
     fetchedAt = fetched.fetchedAt;
   } catch (err) {
     if (err instanceof NtaFetchError) {
-      return {
-        error: `国税庁サイトからの取得に失敗: ${err.message}`,
+      return makeError('SOURCE_API_ERROR', `国税庁サイトからの取得に失敗: ${err.message}`, {
         url,
-        ...(err.status !== undefined ? { status: err.status } : {}),
-      };
+        retryable: true,
+        next_actions: [NEXT_ACTIONS.retryLater()],
+        detail: err.status !== undefined ? { status: err.status, url } : { url },
+      });
     }
     throw err;
   }
@@ -574,10 +600,11 @@ export async function getTaxAnswer(
     taxAnswer = parseTaxAnswer(html, sourceUrl, fetchedAt);
   } catch (err) {
     if (err instanceof TsutatsuParseError) {
-      return {
-        error: `タックスアンサーページのパースに失敗: ${err.message}`,
+      return makeError('INTERNAL_ERROR', `タックスアンサーページのパースに失敗: ${err.message}`, {
         url,
-      };
+        hint: 'パーサのバグまたは国税庁ページの構造変更の可能性。報告してください',
+        detail: { url, cause: err.message },
+      });
     }
     throw err;
   }
@@ -686,6 +713,8 @@ export async function handleNtaSearchKaiseiTsutatsu(
         issuedAt: h.issuedAt,
         sourceUrl: h.sourceUrl,
         snippet: h.snippet,
+        ...(h.score !== undefined ? { score: h.score } : {}),
+        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
@@ -706,11 +735,10 @@ export async function handleNtaGetKaiseiTsutatsu(
   try {
     const doc = getDocumentFromDb(db, 'kaisei', args.docId);
     if (!doc) {
-      return {
-        error: `改正通達 docId="${args.docId}" は DB に未投入です`,
+      return makeError('TSUTATSU_NOT_FOUND', `改正通達 docId="${args.docId}" は DB に未投入です`, {
         hint: '`houki-nta-mcp --bulk-download-kaisei` で 4 通達分の改正通達を投入してください',
         available_doc_ids: listAvailableDocIds(db, 'kaisei', 30),
-      };
+      });
     }
 
     if (args.format === 'json') {
@@ -805,6 +833,8 @@ export async function handleNtaSearchJimuUnei(
         issuedAt: h.issuedAt,
         sourceUrl: h.sourceUrl,
         snippet: h.snippet,
+        ...(h.score !== undefined ? { score: h.score } : {}),
+        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
@@ -825,11 +855,14 @@ export async function handleNtaGetJimuUnei(
   try {
     const doc = getDocumentFromDb(db, 'jimu-unei', args.docId);
     if (!doc) {
-      return {
-        error: `事務運営指針 docId="${args.docId}" は DB に未投入です`,
-        hint: '`houki-nta-mcp --bulk-download-jimu-unei` で投入してください',
-        available_doc_ids: listAvailableDocIds(db, 'jimu-unei', 30),
-      };
+      return makeError(
+        'TSUTATSU_NOT_FOUND',
+        `事務運営指針 docId="${args.docId}" は DB に未投入です`,
+        {
+          hint: '`houki-nta-mcp --bulk-download-jimu-unei` で投入してください',
+          available_doc_ids: listAvailableDocIds(db, 'jimu-unei', 30),
+        }
+      );
     }
     if (args.format === 'json') {
       return {
@@ -928,6 +961,8 @@ export async function handleNtaSearchBunshokaitou(
         issuedAt: h.issuedAt,
         sourceUrl: h.sourceUrl,
         snippet: h.snippet,
+        ...(h.score !== undefined ? { score: h.score } : {}),
+        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
@@ -948,11 +983,10 @@ export async function handleNtaGetBunshokaitou(
   try {
     const doc = getDocumentFromDb(db, 'bunshokaitou', args.docId);
     if (!doc) {
-      return {
-        error: `文書回答事例 docId="${args.docId}" は DB に未投入です`,
+      return makeError('DOC_NOT_FOUND', `文書回答事例 docId="${args.docId}" は DB に未投入です`, {
         hint: '`houki-nta-mcp --bulk-download-bunshokaitou` で投入してください（全税目で約 30 分）',
         available_doc_ids: listAvailableDocIds(db, 'bunshokaitou', 30),
-      };
+      });
     }
     if (args.format === 'json') {
       return {
@@ -985,12 +1019,15 @@ export async function handleNtaInspectPdfMeta(
   try {
     const doc = getDocumentFromDb(db, args.docType, args.docId);
     if (!doc) {
-      return {
-        error: `${args.docType} の docId="${args.docId}" は DB に未登録です`,
-        hint:
-          `\`--bulk-download-${args.docType === 'tax-answer' ? 'tax-answer' : args.docType}\`` +
-          ' で投入済みか確認してください。docId が正しいかも `nta_search_*` で検証可能',
-      };
+      return makeError(
+        'DOC_NOT_FOUND',
+        `${args.docType} の docId="${args.docId}" は DB に未登録です`,
+        {
+          hint:
+            `\`--bulk-download-${args.docType === 'tax-answer' ? 'tax-answer' : args.docType}\`` +
+            ' で投入済みか確認してください。docId が正しいかも `nta_search_*` で検証可能',
+        }
+      );
     }
 
     // v0.7.2: kind 未設定（v0.6.0 期に投入された DB レコード）はタイトルから動的補完。

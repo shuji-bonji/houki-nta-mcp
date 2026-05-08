@@ -7,10 +7,41 @@
  * - tsutatsu join で formal_name フィルタ（特定通達のみ検索）
  */
 
+import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
 import type DatabaseT from 'better-sqlite3';
 
+import { type DocTypeForScoring, computeRelevance, sortByScoreDesc } from './relevance-scoring.js';
 import { normalizeClauseNumber, normalizeSearchQuery } from './text-normalize.js';
 import type { AttachedPdf, DocType, NtaDocument } from '../types/document.js';
+
+/**
+ * Phase 6-1: re-rank 用に FTS5 から取得する件数の倍率。
+ * 要求 limit より多く取って JS で score 順に並べ替えてから limit 件返す。
+ */
+const RERANK_FETCH_MULTIPLIER = 3;
+const RERANK_MAX_FETCH = 150;
+
+/** Phase 6-1: DocType (DB) → DocTypeForScoring (relevance-scoring) のマッピング */
+function dbDocTypeToScoring(docType: DocType): DocTypeForScoring {
+  switch (docType) {
+    case 'kaisei':
+      return 'kaisei';
+    case 'jimu-unei':
+      return 'jimu-unei';
+    case 'bunshokaitou':
+      return 'bunshokaitou';
+    case 'qa-jirei':
+      return 'qa';
+    case 'tax-answer':
+      return 'tax-answer';
+    default: {
+      // 網羅性を担保するため exhaustive check
+      const _exhaustive: never = docType;
+      void _exhaustive;
+      return 'tax-answer';
+    }
+  }
+}
 
 /** 検索ヒット 1 件 */
 export interface ClauseSearchHit {
@@ -28,6 +59,15 @@ export interface ClauseSearchHit {
   sourceUrl: string;
   /** FTS5 rank（小さいほど高スコア。bm25 ベース） */
   rank: number;
+  /**
+   * Phase 6-1 (v0.8.0): 0.0〜1.5 の正規化された関連性スコア。
+   * doc_type 重み + clause 完全一致 boost + base(rank) で算出。
+   */
+  score?: number;
+  /**
+   * Phase 6-1 (v0.8.0): スコア決定の理由 (例: `["doc_type=tsutatsu weight 1.00", "clause exact match"]`)
+   */
+  scoreReasons?: string[];
 }
 
 export interface SearchClauseOptions {
@@ -35,6 +75,11 @@ export interface SearchClauseOptions {
   formalName?: string;
   /** 取得件数。default 10、最大 50 */
   limit?: number;
+  /**
+   * Phase 6-1 (v0.8.0): キーワード全体が houki-nta 管轄の略称に該当する場合に
+   * formal_name を OR 展開する。default `true`。
+   */
+  enableAbbreviationExpansion?: boolean;
 }
 
 /**
@@ -49,16 +94,22 @@ export function searchClauseFts(
   options: SearchClauseOptions = {}
 ): ClauseSearchHit[] {
   const limit = Math.min(Math.max(options.limit ?? 10, 1), 50);
-  const sanitized = sanitizeFtsQuery(keyword);
-  if (!sanitized) return [];
+  // Phase 6-1: 略称展開を含む FTS5 クエリ生成
+  const built = buildFtsQueryWithAbbreviation(keyword, {
+    enableExpansion: options.enableAbbreviationExpansion,
+  });
+  if (!built.query) return [];
 
-  const params: Array<string | number> = [sanitized];
+  // Phase 6-1: re-rank のために要求 limit より多めに取る
+  const fetchLimit = Math.min(limit * RERANK_FETCH_MULTIPLIER, RERANK_MAX_FETCH);
+
+  const params: Array<string | number> = [built.query];
   let where = `clause_fts MATCH ?`;
   if (options.formalName) {
     where += ` AND t.formal_name = ?`;
     params.push(options.formalName);
   }
-  params.push(limit);
+  params.push(fetchLimit);
 
   const sql = `
     SELECT
@@ -77,7 +128,22 @@ export function searchClauseFts(
     LIMIT ?
   `;
 
-  return db.prepare(sql).all(...params) as ClauseSearchHit[];
+  const rawHits = db.prepare(sql).all(...params) as ClauseSearchHit[];
+
+  // Phase 6-1: relevance score を計算して降順で並べ替え、要求 limit 件に絞る
+  const scored = rawHits.map((hit) => {
+    const { score, scoreReasons } = computeRelevance({
+      rank: hit.rank,
+      docType: 'tsutatsu',
+      clauseNumber: hit.clauseNumber,
+      query: keyword,
+    });
+    if (built.expandedFrom && scoreReasons) {
+      scoreReasons.push(`abbreviation expanded: ${built.expandedFrom} → ${built.expandedTo}`);
+    }
+    return { ...hit, score, scoreReasons };
+  });
+  return sortByScoreDesc(scored).slice(0, limit);
 }
 
 /**
@@ -91,20 +157,66 @@ export function searchClauseFts(
  * - trigram tokenizer は文字列を 3-gram に分解するので、フレーズ検索は `"..."` でラップ
  */
 export function sanitizeFtsQuery(raw: string): string {
+  return buildSanitizedPhrase(raw);
+}
+
+/**
+ * 1 つのキーワードを FTS5 フレーズに整形する内部ヘルパー。
+ * 半角化 → メタ文字除去 → 半角空白で AND 結合。
+ */
+function buildSanitizedPhrase(raw: string): string {
   if (!raw) return '';
   // 1) 全角→半角の正規化（DB 投入時と同じルール）
   const normalized = normalizeSearchQuery(raw);
   // 2) 制御文字・FTS5 メタ文字をスペース化
-  // FTS5 のメタ: " * : ( )
   const cleaned = normalized
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/["*:()]/g, ' ')
     .trim();
   if (cleaned.length < 2) return '';
-  // 3) 半角空白で複数語があれば AND 検索（normalizeSearchQuery 適用後は半角化済み）
   const tokens = cleaned.split(/\s+/).filter((t) => t.length >= 1);
   if (tokens.length === 0) return '';
   return tokens.map((t) => `"${t}"`).join(' AND ');
+}
+
+/**
+ * Phase 6-1: 略称展開を行ったうえで FTS5 クエリを組み立てる。
+ *
+ * - キーワード全体が houki-nta 管轄の略称に該当する場合のみ、formal_name を OR 展開
+ * - 例: "消基通" → `("消基通") OR ("消費税法基本通達")`
+ * - 略称解決の結果が houki-nta 以外 (e.g. houki-egov の法令名) の場合は展開しない
+ *   (検索対象が通達 / Q&A / 文書回答事例 / タックスアンサー等であり、法令名展開は誤爆のもと)
+ *
+ * 戻り値:
+ *   - `query`: FTS5 MATCH に渡す式 (空文字なら呼び出し側で 0 件扱い)
+ *   - `expandedFrom`: 展開元の略称 (展開しなかった場合は undefined)
+ *   - `expandedTo`: 展開先の formal name (展開しなかった場合は undefined)
+ */
+export function buildFtsQueryWithAbbreviation(
+  keyword: string,
+  options: { enableExpansion?: boolean } = {}
+): { query: string; expandedFrom?: string; expandedTo?: string } {
+  const enable = options.enableExpansion !== false;
+  const trimmed = keyword?.trim() ?? '';
+  const main = buildSanitizedPhrase(trimmed);
+  if (!main) return { query: '' };
+  if (!enable) return { query: main };
+
+  const abbr = resolveAbbreviation(trimmed);
+  if (!abbr) return { query: main };
+  // houki-nta 管轄外の略称 (例: 法令名) は展開しない
+  if (abbr.source_mcp_hint !== 'houki-nta') return { query: main };
+  // formal が同一文字列なら展開しても意味がない
+  if (abbr.formal === trimmed) return { query: main };
+
+  const formalPhrase = buildSanitizedPhrase(abbr.formal);
+  if (!formalPhrase) return { query: main };
+
+  return {
+    query: `(${main}) OR (${formalPhrase})`,
+    expandedFrom: trimmed,
+    expandedTo: abbr.formal,
+  };
 }
 
 /**
@@ -245,6 +357,13 @@ export interface DocumentSearchHit {
   sourceUrl: string;
   snippet: string;
   rank: number;
+  /**
+   * Phase 6-1 (v0.8.0): 0.0〜1.5 の正規化された関連性スコア。
+   * doc_type 重み + base(rank) で算出。
+   */
+  score?: number;
+  /** Phase 6-1 (v0.8.0): スコア決定の理由 */
+  scoreReasons?: string[];
 }
 
 export interface SearchDocumentOptions {
@@ -264,6 +383,11 @@ export interface SearchDocumentOptions {
    * 改正点・別表・Q&A など PDF 添付が必須の重要文書だけを抽出したいときに使う。
    */
   hasPdf?: boolean;
+  /**
+   * Phase 6-1 (v0.8.0): キーワード全体が houki-nta 管轄の略称に該当する場合に
+   * formal_name を OR 展開する。default `true`。
+   */
+  enableAbbreviationExpansion?: boolean;
 }
 
 /**
@@ -275,10 +399,16 @@ export function searchDocumentFts(
   options: SearchDocumentOptions = {}
 ): DocumentSearchHit[] {
   const limit = Math.min(Math.max(options.limit ?? 10, 1), 50);
-  const sanitized = sanitizeFtsQuery(keyword);
-  if (!sanitized) return [];
+  // Phase 6-1: 略称展開を含む FTS5 クエリ生成
+  const built = buildFtsQueryWithAbbreviation(keyword, {
+    enableExpansion: options.enableAbbreviationExpansion,
+  });
+  if (!built.query) return [];
 
-  const params: Array<string | number> = [sanitized];
+  // Phase 6-1: re-rank のために要求 limit より多めに取る
+  const fetchLimit = Math.min(limit * RERANK_FETCH_MULTIPLIER, RERANK_MAX_FETCH);
+
+  const params: Array<string | number> = [built.query];
   let where = `document_fts MATCH ?`;
   if (options.docType) {
     where += ` AND d.doc_type = ?`;
@@ -295,7 +425,7 @@ export function searchDocumentFts(
     // PDF を持たない文書だけ
     where += ` AND (d.attached_pdfs_json IS NULL OR d.attached_pdfs_json = '[]' OR d.attached_pdfs_json = '')`;
   }
-  params.push(limit);
+  params.push(fetchLimit);
 
   const sql = `
     SELECT
@@ -313,7 +443,22 @@ export function searchDocumentFts(
     ORDER BY document_fts.rank
     LIMIT ?
   `;
-  return db.prepare(sql).all(...params) as DocumentSearchHit[];
+
+  const rawHits = db.prepare(sql).all(...params) as DocumentSearchHit[];
+
+  // Phase 6-1: relevance score を計算して降順で並べ替え、要求 limit 件に絞る
+  const scored = rawHits.map((hit) => {
+    const { score, scoreReasons } = computeRelevance({
+      rank: hit.rank,
+      docType: dbDocTypeToScoring(hit.docType),
+      query: keyword,
+    });
+    if (built.expandedFrom && scoreReasons) {
+      scoreReasons.push(`abbreviation expanded: ${built.expandedFrom} → ${built.expandedTo}`);
+    }
+    return { ...hit, score, scoreReasons };
+  });
+  return sortByScoreDesc(scored).slice(0, limit);
 }
 
 /**

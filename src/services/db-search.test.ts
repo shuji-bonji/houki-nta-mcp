@@ -290,3 +290,103 @@ describe('searchDocumentFts — Phase 4-2: hasPdf フィルタ', () => {
     expect(hits.map((h) => h.docId)).toContain('empty-str-pdf');
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Phase 6-1 (v0.8.0): relevance ranking                                      */
+/* -------------------------------------------------------------------------- */
+
+describe('searchClauseFts — Phase 6-1 relevance ranking', () => {
+  let db: DatabaseT.Database;
+  beforeEach(() => {
+    db = new Database(':memory:');
+    initSchema(db);
+    seed(db, '消費税法基本通達', '消基通', [
+      {
+        clauseNumber: '5-1-9',
+        chapter: 5,
+        section: 1,
+        title: '請求対価の額',
+        fullText: '請求対価の額に該当する金銭等の取扱いを示す',
+        sourceUrl: 'https://x/05/01.htm',
+      },
+      {
+        clauseNumber: '5-1-1',
+        chapter: 5,
+        section: 1,
+        title: '事業としての意義',
+        fullText: '事業として 反復継続独立して行われる',
+        sourceUrl: 'https://x/05/01-1.htm',
+      },
+      {
+        clauseNumber: '1-4-13',
+        chapter: 1,
+        section: 4,
+        title: 'なんらかの規定',
+        fullText: '請求対価の額に類似する文言を持つ別の clause',
+        sourceUrl: 'https://x/01/04.htm',
+      },
+    ]);
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('返り値に score と scoreReasons が含まれる', () => {
+    const hits = searchClauseFts(db, '請求対価');
+    expect(hits.length).toBeGreaterThan(0);
+    for (const h of hits) {
+      expect(typeof h.score).toBe('number');
+      expect(Array.isArray(h.scoreReasons)).toBe(true);
+      expect(h.scoreReasons!.some((s) => s.includes('doc_type=tsutatsu'))).toBe(true);
+    }
+  });
+
+  it('clause 番号を含むクエリは該当 clause が 1 位に来る', () => {
+    // BM25 だけでは "5-1-9" 含む clause がトップとは限らないが、boost で 1 位になるべき
+    const hits = searchClauseFts(db, '5-1-9 請求対価');
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].clauseNumber).toBe('5-1-9');
+    expect(hits[0].scoreReasons).toContain('clause exact match');
+  });
+
+  it('score 降順で並ぶ', () => {
+    const hits = searchClauseFts(db, '請求対価');
+    for (let i = 1; i < hits.length; i++) {
+      expect(hits[i - 1].score!).toBeGreaterThanOrEqual(hits[i].score!);
+    }
+  });
+});
+
+describe('searchClauseFts — Phase 6-1 abbreviation expansion', () => {
+  let db: DatabaseT.Database;
+  beforeEach(() => {
+    db = new Database(':memory:');
+    initSchema(db);
+    seed(db, '消費税法基本通達', '消基通', [
+      {
+        clauseNumber: '1-1-1',
+        chapter: 1,
+        section: 1,
+        title: '基本的な考え方',
+        fullText: '消費税法基本通達の総則を示す。略称展開で hit',
+        sourceUrl: 'https://x/01/01.htm',
+      },
+    ]);
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('"消基通" で検索すると formal_name 経由でヒットする (abbreviation expansion)', () => {
+    // fullText には "消基通" は含まれていないが、"消費税法基本通達" は含まれる
+    const hits = searchClauseFts(db, '消基通');
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].scoreReasons!.some((s) => s.includes('abbreviation expanded'))).toBe(true);
+  });
+
+  it('enableAbbreviationExpansion=false で展開を無効化できる', () => {
+    const hits = searchClauseFts(db, '消基通', { enableAbbreviationExpansion: false });
+    // expansion なしでは "消基通" 自体は本文に含まれないので 0 件
+    expect(hits.length).toBe(0);
+  });
+});
