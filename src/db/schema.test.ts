@@ -107,6 +107,97 @@ describe('initSchema', () => {
   });
 });
 
+describe('initSchema — Phase 6-2 (v0.9.0): last_modified / etag カラム', () => {
+  let db: DatabaseT.Database;
+  beforeEach(() => {
+    db = new Database(':memory:');
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('section に last_modified / etag カラムが追加されている', () => {
+    initSchema(db);
+    const cols = (db.prepare(`PRAGMA table_info(section)`).all() as Array<{ name: string }>).map(
+      (r) => r.name
+    );
+    expect(cols).toContain('last_modified');
+    expect(cols).toContain('etag');
+    expect(cols).toContain('content_hash'); // v2 から残置
+  });
+
+  it('document に last_modified / etag カラムが追加されている', () => {
+    initSchema(db);
+    const cols = (db.prepare(`PRAGMA table_info(document)`).all() as Array<{ name: string }>).map(
+      (r) => r.name
+    );
+    expect(cols).toContain('last_modified');
+    expect(cols).toContain('etag');
+  });
+
+  it('v3 → v4 マイグレーションで既存データを保ったままカラム追加できる', () => {
+    // v3 シミュレーション: section に last_modified / etag が無い状態を作る
+    db.exec(`
+      CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE tsutatsu (
+        id INTEGER PRIMARY KEY,
+        formal_name TEXT NOT NULL UNIQUE,
+        abbr TEXT NOT NULL,
+        source_root_url TEXT NOT NULL
+      );
+      CREATE TABLE section (
+        tsutatsu_id INTEGER NOT NULL REFERENCES tsutatsu(id) ON DELETE CASCADE,
+        chapter_number INTEGER NOT NULL,
+        section_number INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        url TEXT,
+        fetched_at TEXT NOT NULL,
+        content_hash TEXT,
+        PRIMARY KEY (tsutatsu_id, chapter_number, section_number)
+      );
+      CREATE TABLE document (
+        id INTEGER PRIMARY KEY,
+        doc_type TEXT NOT NULL,
+        doc_id TEXT NOT NULL,
+        taxonomy TEXT,
+        title TEXT NOT NULL,
+        issued_at TEXT,
+        issuer TEXT,
+        source_url TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        full_text TEXT NOT NULL,
+        attached_pdfs_json TEXT NOT NULL,
+        content_hash TEXT,
+        UNIQUE(doc_type, doc_id)
+      );
+      INSERT INTO schema_meta(key, value) VALUES ('schema_version', '3');
+      INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES ('消費税法基本通達', '消基通', 'https://x/');
+      INSERT INTO section(tsutatsu_id, chapter_number, section_number, title, fetched_at, content_hash)
+        VALUES (1, 1, 1, '第1章第1節', '2026-05-01T00:00:00Z', 'pre-existing-hash');
+    `);
+
+    // v4 へのマイグレーションを起動 (initSchema が migrateV3ToV4 を呼ぶ)
+    initSchema(db);
+
+    // 既存データが保持されている
+    const sec = db
+      .prepare(`SELECT title, content_hash, last_modified, etag FROM section WHERE tsutatsu_id=1`)
+      .get() as {
+      title: string;
+      content_hash: string;
+      last_modified: string | null;
+      etag: string | null;
+    };
+    expect(sec.title).toBe('第1章第1節');
+    expect(sec.content_hash).toBe('pre-existing-hash');
+    expect(sec.last_modified).toBeNull();
+    expect(sec.etag).toBeNull();
+
+    // schema_version が v4 に更新されている
+    expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
+  });
+});
+
 describe('clearAllData', () => {
   it('全テーブルを空にし FTS5 も rebuild する', () => {
     const db = new Database(':memory:');

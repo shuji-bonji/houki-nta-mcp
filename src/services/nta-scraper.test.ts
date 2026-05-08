@@ -206,6 +206,109 @@ describe('fetchNtaPage — エラー系', () => {
 });
 
 /* -------------------------------------------------------------------------- */
+/* Phase 6-2 (v0.9.0): conditional GET                                        */
+/* -------------------------------------------------------------------------- */
+
+describe('fetchNtaPage — Phase 6-2 conditional GET', () => {
+  it('ifModifiedSince を渡すと If-Modified-Since ヘッダが付く', async () => {
+    let captured: Record<string, string> = {};
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      captured = init?.headers as Record<string, string>;
+      return sjisResponse('<html>OK</html>');
+    }) as unknown as typeof fetch;
+
+    await fetchNtaPage('https://x', {
+      fetchImpl,
+      ifModifiedSince: 'Thu, 18 Jan 2024 09:30:37 GMT',
+    });
+    expect(captured['If-Modified-Since']).toBe('Thu, 18 Jan 2024 09:30:37 GMT');
+  });
+
+  it('ifNoneMatch を渡すと If-None-Match ヘッダが付く', async () => {
+    let captured: Record<string, string> = {};
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      captured = init?.headers as Record<string, string>;
+      return sjisResponse('<html>OK</html>');
+    }) as unknown as typeof fetch;
+
+    await fetchNtaPage('https://x', { fetchImpl, ifNoneMatch: '"abc123"' });
+    expect(captured['If-None-Match']).toBe('"abc123"');
+  });
+
+  it('304 Not Modified を返すと html=空文字 + notModified=true で帰る', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 304,
+          statusText: 'Not Modified',
+          headers: {
+            'last-modified': 'Thu, 18 Jan 2024 09:30:37 GMT',
+            etag: '"abc123"',
+          },
+        })
+    ) as unknown as typeof fetch;
+
+    const r = await fetchNtaPage('https://x', {
+      fetchImpl,
+      ifModifiedSince: 'Thu, 18 Jan 2024 09:30:37 GMT',
+    });
+    expect(r.status).toBe(304);
+    expect(r.notModified).toBe(true);
+    expect(r.html).toBe('');
+    expect(r.lastModified).toBe('Thu, 18 Jan 2024 09:30:37 GMT');
+    expect(r.etag).toBe('"abc123"');
+  });
+
+  it('200 応答時に Last-Modified / ETag ヘッダを result に含める', async () => {
+    const fetchImpl = vi.fn(async () => {
+      const buf = iconvEncode('<html>本文</html>', 'shift_jis');
+      return new Response(buf, {
+        status: 200,
+        headers: {
+          'content-type': 'text/html; charset=Shift_JIS',
+          'last-modified': 'Tue, 31 Mar 2026 14:00:47 GMT',
+          etag: '"28f8-64e5264e67a98"',
+        },
+      });
+    }) as unknown as typeof fetch;
+
+    const r = await fetchNtaPage('https://x', { fetchImpl });
+    expect(r.status).toBe(200);
+    expect(r.notModified).toBeUndefined();
+    expect(r.lastModified).toBe('Tue, 31 Mar 2026 14:00:47 GMT');
+    expect(r.etag).toBe('"28f8-64e5264e67a98"');
+    expect(r.html).toContain('本文');
+  });
+
+  it('Last-Modified / ETag が無いレスポンスでも 200 で素通しする (両方 undefined)', async () => {
+    const fetchImpl = vi.fn(async () => {
+      const buf = iconvEncode('<html>本文</html>', 'shift_jis');
+      return new Response(buf, {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=Shift_JIS' },
+      });
+    }) as unknown as typeof fetch;
+
+    const r = await fetchNtaPage('https://x', { fetchImpl });
+    expect(r.status).toBe(200);
+    expect(r.lastModified).toBeUndefined();
+    expect(r.etag).toBeUndefined();
+  });
+
+  it('ifModifiedSince 未指定なら If-Modified-Since ヘッダを送らない', async () => {
+    let captured: Record<string, string> = {};
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      captured = init?.headers as Record<string, string>;
+      return sjisResponse('<html>OK</html>');
+    }) as unknown as typeof fetch;
+
+    await fetchNtaPage('https://x', { fetchImpl });
+    expect(captured['If-Modified-Since']).toBeUndefined();
+    expect(captured['If-None-Match']).toBeUndefined();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* integration test — INTEGRATION=1 でのみ実行                                 */
 /* -------------------------------------------------------------------------- */
 

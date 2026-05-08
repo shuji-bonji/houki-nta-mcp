@@ -16,6 +16,13 @@ import type DatabaseT from 'better-sqlite3';
 import { logger } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotDocumentTable } from './db-snapshot.js';
+import {
+  buildConditionalFetchOptions,
+  loadDocumentConditionState,
+  newDifferentialCounts,
+  updateDocumentFetchedAt,
+  updateDocumentMetaOnly,
+} from './document-conditional-fetch.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { parseTaxAnswer } from './tax-answer-parser.js';
 import { extractPdfKind } from './pdf-meta.js';
@@ -45,6 +52,10 @@ export interface BulkTaxAnswerResult {
   aggregation?: BulkRunRecord;
   /** baseline 比較の評価結果（aggregation がある時のみ） */
   health?: HealthEvaluation;
+  /** Phase 6-2 (v0.9.0): 304 / 同 hash / 変更 の内訳 */
+  documentsNotModified?: number;
+  documentsContentSame?: number;
+  documentsContentChanged?: number;
 }
 
 export interface BulkTaxAnswerOptions {
@@ -58,6 +69,8 @@ export interface BulkTaxAnswerOptions {
   limit?: number | undefined;
   /** baseline 永続化のパス上書き（テスト用、Phase 5 Resilience）*/
   baselinePath?: string;
+  /** Phase 6-2 (v0.9.0): true で conditional GET をスキップ */
+  forceReload?: boolean;
 }
 
 interface TaxAnswerIndexEntry {
@@ -126,8 +139,8 @@ export async function bulkDownloadTaxAnswer(
   const targets = options.limit ? entries.slice(0, options.limit) : entries;
 
   const upsert = db.prepare(
-    `INSERT INTO document(doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO document(doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url, fetched_at, full_text, attached_pdfs_json, content_hash, last_modified, etag)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(doc_type, doc_id) DO UPDATE SET
        taxonomy=excluded.taxonomy,
        title=excluded.title,
@@ -137,11 +150,14 @@ export async function bulkDownloadTaxAnswer(
        fetched_at=excluded.fetched_at,
        full_text=excluded.full_text,
        attached_pdfs_json=excluded.attached_pdfs_json,
-       content_hash=excluded.content_hash`
+       content_hash=excluded.content_hash,
+       last_modified=excluded.last_modified,
+       etag=excluded.etag`
   );
 
   let documentsFetched = 0;
   let documentsFailed = 0;
+  const counts = newDifferentialCounts();
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i];
     onProgress?.({
@@ -152,7 +168,19 @@ export async function bulkDownloadTaxAnswer(
     });
     if (i > 0) await sleep(requestIntervalMs);
     try {
-      const fetched = await fetchNtaPage(t.url, fetchImpl ? { fetchImpl } : {});
+      const state = options.forceReload
+        ? null
+        : loadDocumentConditionState(db, 'tax-answer', t.url);
+      const fetchOpts = buildConditionalFetchOptions(state, fetchImpl);
+      const fetched = await fetchNtaPage(t.url, fetchOpts);
+
+      if (fetched.notModified) {
+        updateDocumentFetchedAt(db, 'tax-answer', t.url, fetched.fetchedAt);
+        counts.notModified++;
+        documentsFetched++;
+        continue;
+      }
+
       const ta = parseTaxAnswer(fetched.html, fetched.sourceUrl, fetched.fetchedAt);
       // タックスアンサーの本文は sections の text を結合
       const fullText = normalizeJpText(
@@ -177,6 +205,22 @@ export async function bulkDownloadTaxAnswer(
         fullText,
         attachedPdfs: extractPdfs(fetched.html, ta.sourceUrl),
       };
+      const hash = computeHash(doc);
+
+      if (state?.contentHash && state.contentHash === hash) {
+        updateDocumentMetaOnly(
+          db,
+          'tax-answer',
+          t.url,
+          fetched.fetchedAt,
+          fetched.lastModified ?? null,
+          fetched.etag ?? null
+        );
+        counts.contentSame++;
+        documentsFetched++;
+        continue;
+      }
+
       upsert.run(
         doc.docType,
         doc.docId,
@@ -188,8 +232,11 @@ export async function bulkDownloadTaxAnswer(
         doc.fetchedAt,
         doc.fullText,
         JSON.stringify(doc.attachedPdfs),
-        computeHash(doc)
+        hash,
+        fetched.lastModified ?? null,
+        fetched.etag ?? null
       );
+      counts.contentChanged++;
       documentsFetched++;
     } catch (err) {
       documentsFailed++;
@@ -219,7 +266,10 @@ export async function bulkDownloadTaxAnswer(
 
   onProgress?.({
     phase: 'done',
-    message: `完了: ${documentsFetched}/${targets.length} docs (${(durationMs / 1000).toFixed(1)}s)`,
+    message:
+      `完了: ${documentsFetched}/${targets.length} docs ` +
+      `(304: ${counts.notModified}, 同内容: ${counts.contentSame}, 更新: ${counts.contentChanged}) ` +
+      `${(durationMs / 1000).toFixed(1)}s`,
   });
 
   const result: BulkTaxAnswerResult = {
@@ -229,6 +279,9 @@ export async function bulkDownloadTaxAnswer(
     startedAt,
     finishedAt,
     durationMs,
+    documentsNotModified: counts.notModified,
+    documentsContentSame: counts.contentSame,
+    documentsContentChanged: counts.contentChanged,
   };
   if (aggregation) result.aggregation = aggregation;
   if (health) result.health = health;

@@ -86,6 +86,21 @@ export interface BulkDownloadResult {
   aggregation?: BulkRunRecord;
   /** baseline 比較の評価結果 */
   health?: HealthEvaluation;
+  /**
+   * Phase 6-2 (v0.9.0): 304 Not Modified で fetch 自体スキップした節数。
+   * (parse + DB write が両方スキップ)
+   */
+  sectionsNotModified?: number;
+  /**
+   * Phase 6-2 (v0.9.0): 200 で取得したが content_hash が DB と同じだった節数。
+   * (parse は走るが clause 再投入はスキップ)
+   */
+  sectionsContentSame?: number;
+  /**
+   * Phase 6-2 (v0.9.0): 200 で取得し content_hash が変わった (または初回投入) 節数。
+   * (clause を再投入)
+   */
+  sectionsContentChanged?: number;
 }
 
 export interface BulkDownloadOptions {
@@ -103,6 +118,13 @@ export interface BulkDownloadOptions {
   onlyChapter?: number;
   /** baseline 永続化のパス上書き（テスト用、Phase 5 Resilience）*/
   baselinePath?: string;
+  /**
+   * Phase 6-2 (v0.9.0): conditional GET をスキップして毎回フル取得する。
+   * `true` を指定すると `If-Modified-Since` ヘッダを送らず、content_hash 比較もスキップ。
+   * 既存 bulk DL データを完全に再構築したいときに使う。
+   * default: `false`（差分更新を有効化）
+   */
+  forceReload?: boolean;
 }
 
 /**
@@ -156,22 +178,44 @@ export async function bulkDownloadTsutatsu(
   const insertChapter = db.prepare(
     `INSERT OR REPLACE INTO chapter(tsutatsu_id, number, title) VALUES (?, ?, ?)`
   );
-  const deleteOldClauses = db.prepare(`DELETE FROM clause WHERE tsutatsu_id = ?`);
-  const deleteOldSections = db.prepare(`DELETE FROM section WHERE tsutatsu_id = ?`);
-  const insertSection = db.prepare(
-    `INSERT OR REPLACE INTO section(tsutatsu_id, chapter_number, section_number, title, url, fetched_at, content_hash)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  // Phase 6-2: section 単位 differential upsert
+  const selectSectionState = db.prepare(
+    `SELECT last_modified, etag, content_hash
+     FROM section
+     WHERE tsutatsu_id = ? AND chapter_number = ? AND section_number = ?`
   );
+  const updateSectionFetchedAt = db.prepare(
+    `UPDATE section SET fetched_at = ?
+     WHERE tsutatsu_id = ? AND chapter_number = ? AND section_number = ?`
+  );
+  const updateSectionMeta = db.prepare(
+    `UPDATE section SET fetched_at = ?, last_modified = ?, etag = ?
+     WHERE tsutatsu_id = ? AND chapter_number = ? AND section_number = ?`
+  );
+  const upsertSectionFull = db.prepare(
+    `INSERT OR REPLACE INTO section(tsutatsu_id, chapter_number, section_number, title, url, fetched_at, content_hash, last_modified, etag)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const deleteSectionClauses = db.prepare(
+    `DELETE FROM clause
+     WHERE tsutatsu_id = ? AND chapter_number = ? AND section_number = ?`
+  );
+  // forceReload 時に使う wholesale DELETE
+  const deleteAllClauses = db.prepare(`DELETE FROM clause WHERE tsutatsu_id = ?`);
+  const deleteAllSections = db.prepare(`DELETE FROM section WHERE tsutatsu_id = ?`);
   const insertClause = db.prepare(
     `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  // 既存データを消してから入れ直し（同 formal_name で idempotent）
   const tsutatsuRow = insertTsutatsu.get(formalName, abbr, rootUrl) as { id: number };
   const tsutatsuId = tsutatsuRow.id;
-  deleteOldClauses.run(tsutatsuId);
-  deleteOldSections.run(tsutatsuId);
+
+  // forceReload 指定時のみ既存データを完全消去（v0.8.x 以前の挙動）
+  if (options.forceReload) {
+    deleteAllClauses.run(tsutatsuId);
+    deleteAllSections.run(tsutatsuId);
+  }
 
   let chaptersCount = 0;
   for (const ch of toc.chapters) {
@@ -197,9 +241,12 @@ export async function bulkDownloadTsutatsu(
     }
   }
 
-  // 4. 各節を順次 fetch + parse + insert
+  // 4. 各節を順次 fetch + parse + insert (Phase 6-2: section 単位 differential)
   let sectionsFetched = 0;
   let sectionsFailed = 0;
+  let sectionsNotModified = 0;
+  let sectionsContentSame = 0;
+  let sectionsContentChanged = 0;
   let clausesCount = 0;
   const total = sectionTargets.length;
 
@@ -217,26 +264,77 @@ export async function bulkDownloadTsutatsu(
     }
 
     try {
-      const fetched = await fetchNtaPage(t.url, fetchImpl ? { fetchImpl } : {});
+      // Phase 6-2: 既存 section の last_modified / etag / content_hash を読み出す
+      const existing = options.forceReload
+        ? undefined
+        : (selectSectionState.get(tsutatsuId, t.chapter, t.section) as
+            | { last_modified: string | null; etag: string | null; content_hash: string | null }
+            | undefined);
+
+      const fetchOptions: Parameters<typeof fetchNtaPage>[1] = {};
+      if (fetchImpl) fetchOptions.fetchImpl = fetchImpl;
+      if (existing?.last_modified) fetchOptions.ifModifiedSince = existing.last_modified;
+      if (existing?.etag) fetchOptions.ifNoneMatch = existing.etag;
+
+      const fetched = await fetchNtaPage(t.url, fetchOptions);
+
+      // 304 Not Modified: parse スキップ + fetched_at だけ更新
+      if (fetched.notModified) {
+        updateSectionFetchedAt.run(fetched.fetchedAt, tsutatsuId, t.chapter, t.section);
+        sectionsNotModified++;
+        sectionsFetched++;
+        // 既存 clauses の数で clausesCount を加算
+        if (existing?.content_hash) {
+          const existingClauseCount = (
+            db
+              .prepare(
+                `SELECT count(*) AS n FROM clause WHERE tsutatsu_id=? AND chapter_number=? AND section_number=?`
+              )
+              .get(tsutatsuId, t.chapter, t.section) as { n: number }
+          ).n;
+          clausesCount += existingClauseCount;
+        }
+        continue;
+      }
+
+      // 200: parse → content_hash 比較で 2 段目バイパス
       const sec = parseTsutatsuSection(fetched.html, fetched.sourceUrl, fetched.fetchedAt);
+      const newHash = computeSectionContentHash(sec.clauses);
 
-      // section レコード（v2: content_hash で改正検知に備える）
-      const sectionContentHash = computeSectionContentHash(sec.clauses);
-      insertSection.run(
-        tsutatsuId,
-        t.chapter,
-        t.section,
-        t.title,
-        fetched.sourceUrl,
-        fetched.fetchedAt,
-        sectionContentHash
-      );
+      if (existing?.content_hash && existing.content_hash === newHash) {
+        // content_hash 一致: clause 再投入不要、メタだけ更新
+        updateSectionMeta.run(
+          fetched.fetchedAt,
+          fetched.lastModified ?? null,
+          fetched.etag ?? null,
+          tsutatsuId,
+          t.chapter,
+          t.section
+        );
+        sectionsContentSame++;
+        sectionsFetched++;
+        clausesCount += sec.clauses.length;
+        continue;
+      }
 
-      // clause レコード（FTS は trigger で自動更新）。
-      // title / full_text / paragraphs に **normalizeJpText** を適用し、
-      // 検索側との「Normalize-everywhere」整合を取る（全角ハイフン・全角チルダ・
-      // 全角数字・全角スペースを ASCII 化）。中黒 `・` 等は意味のある文字として残す。
-      const insertManyClauses = db.transaction(() => {
+      // content_hash 不一致 or 初回: clause 再投入
+      const replaceSection = db.transaction(() => {
+        deleteSectionClauses.run(tsutatsuId, t.chapter, t.section);
+        upsertSectionFull.run(
+          tsutatsuId,
+          t.chapter,
+          t.section,
+          t.title,
+          fetched.sourceUrl,
+          fetched.fetchedAt,
+          newHash,
+          fetched.lastModified ?? null,
+          fetched.etag ?? null
+        );
+        // clause レコード（FTS は trigger で自動更新）。
+        // title / full_text / paragraphs に **normalizeJpText** を適用し、
+        // 検索側との「Normalize-everywhere」整合を取る（全角ハイフン・全角チルダ・
+        // 全角数字・全角スペースを ASCII 化）。中黒 `・` 等は意味のある文字として残す。
         for (const c of sec.clauses) {
           const normalizedTitle = normalizeJpText(c.title);
           const normalizedFullText = normalizeJpText(c.fullText);
@@ -256,8 +354,9 @@ export async function bulkDownloadTsutatsu(
           );
         }
       });
-      insertManyClauses();
+      replaceSection();
 
+      sectionsContentChanged++;
       sectionsFetched++;
       clausesCount += sec.clauses.length;
     } catch (err) {
@@ -296,7 +395,10 @@ export async function bulkDownloadTsutatsu(
 
   onProgress?.({
     phase: 'done',
-    message: `完了: ${sectionsFetched}/${total} 節, ${clausesCount} clauses (${(durationMs / 1000).toFixed(1)}s)`,
+    message:
+      `完了: ${sectionsFetched}/${total} 節, ${clausesCount} clauses ` +
+      `(304: ${sectionsNotModified}, 同内容: ${sectionsContentSame}, 更新: ${sectionsContentChanged}) ` +
+      `${(durationMs / 1000).toFixed(1)}s`,
   });
 
   const result: BulkDownloadResult = {
@@ -309,6 +411,9 @@ export async function bulkDownloadTsutatsu(
     startedAt,
     finishedAt,
     durationMs,
+    sectionsNotModified,
+    sectionsContentSame,
+    sectionsContentChanged,
   };
   if (aggregation) result.aggregation = aggregation;
   if (health) result.health = health;

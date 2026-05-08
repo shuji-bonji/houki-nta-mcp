@@ -22,16 +22,29 @@ import { logger } from '../utils/logger.js';
 
 /** スクレイピング結果 */
 export interface NtaFetchResult {
-  /** デコード済み HTML 文字列 */
+  /** デコード済み HTML 文字列。304 Not Modified 時は空文字 */
   html: string;
   /** リクエストした URL（一次情報源として citation に使う） */
   sourceUrl: string;
   /** 取得時刻 ISO 8601 */
   fetchedAt: string;
-  /** デコードに使われた charset（小文字、'shift_jis' / 'utf-8' など） */
+  /** デコードに使われた charset（小文字、'shift_jis' / 'utf-8' など）。304 時は空文字 */
   charset: string;
-  /** HTTP ステータス */
+  /** HTTP ステータス。304 のときは 304、変更ありなら 200 */
   status: number;
+  /**
+   * Phase 6-2 (v0.9.0): サーバが返した HTTP `Last-Modified` ヘッダ。
+   * RFC 7232 形式 (`Thu, 18 Jan 2024 09:30:37 GMT`)。
+   * 304 応答時は通常は不在 (キャッシュ側に既存値があるため)。
+   */
+  lastModified?: string;
+  /** Phase 6-2 (v0.9.0): サーバが返した HTTP `ETag` ヘッダ */
+  etag?: string;
+  /**
+   * Phase 6-2 (v0.9.0): 304 Not Modified を受け取って parse をスキップした場合 `true`。
+   * 呼び出し側はこれを見て「DB の content_hash と fetched_at だけ更新」の経路に分岐する。
+   */
+  notModified?: boolean;
 }
 
 /** スクレイピング失敗時の例外。url / status / cause を保持 */
@@ -67,6 +80,18 @@ export interface FetchNtaPageOptions {
    * シグネチャは標準 fetch と同じ。
    */
   fetchImpl?: typeof fetch;
+  /**
+   * Phase 6-2 (v0.9.0): `If-Modified-Since` ヘッダに渡す値。
+   * RFC 7232 形式 (`Thu, 18 Jan 2024 09:30:37 GMT`) を期待。
+   * 指定するとサーバ側が同一 Last-Modified なら **304 Not Modified** を返し、
+   * `result.notModified === true` + `result.html === ''` で帰る。
+   */
+  ifModifiedSince?: string;
+  /**
+   * Phase 6-2 (v0.9.0): `If-None-Match` ヘッダに渡す ETag 値。
+   * `ifModifiedSince` と併用可能 (両方を送ってサーバが任意の判定をする)。
+   */
+  ifNoneMatch?: string;
 }
 
 /**
@@ -144,15 +169,48 @@ async function doFetch(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const headers: Record<string, string> = {
+      'User-Agent': FETCH_CONFIG.userAgent,
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'ja',
+    };
+    // Phase 6-2: conditional GET ヘッダ
+    if (options.ifModifiedSince) {
+      headers['If-Modified-Since'] = options.ifModifiedSince;
+    }
+    if (options.ifNoneMatch) {
+      headers['If-None-Match'] = options.ifNoneMatch;
+    }
+
     const res = await fetchImpl(url, {
       signal: controller.signal,
       redirect: 'follow',
-      headers: {
-        'User-Agent': FETCH_CONFIG.userAgent,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'ja',
-      },
+      headers,
     });
+
+    // Phase 6-2: 304 Not Modified — body は空、ヘッダだけ受け取って早期 return
+    if (res.status === 304) {
+      // ボディは消費しないが、Node fetch では cancel しないと socket がリークし得る
+      try {
+        await res.body?.cancel();
+      } catch {
+        // cancel 失敗は無視（テスト stub では body が undefined のことがある）
+      }
+      logger.debug('nta-scraper', 'not-modified', { url });
+      const result: NtaFetchResult = {
+        html: '',
+        sourceUrl: url,
+        fetchedAt: new Date().toISOString(),
+        charset: '',
+        status: 304,
+        notModified: true,
+      };
+      const lastMod = res.headers.get('last-modified');
+      const etag = res.headers.get('etag');
+      if (lastMod) result.lastModified = lastMod;
+      if (etag) result.etag = etag;
+      return result;
+    }
 
     if (!res.ok) {
       throw new NtaFetchError(`HTTP ${res.status} ${res.statusText}`, url, res.status);
@@ -171,13 +229,18 @@ async function doFetch(
       charset,
     });
 
-    return {
+    const result: NtaFetchResult = {
       html,
       sourceUrl: url,
       fetchedAt: new Date().toISOString(),
       charset,
       status: res.status,
     };
+    const lastMod = res.headers.get('last-modified');
+    const etag = res.headers.get('etag');
+    if (lastMod) result.lastModified = lastMod;
+    if (etag) result.etag = etag;
+    return result;
   } finally {
     clearTimeout(timer);
   }

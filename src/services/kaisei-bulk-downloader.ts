@@ -16,6 +16,13 @@ import { createHash } from 'node:crypto';
 import type DatabaseT from 'better-sqlite3';
 
 import { logger } from '../utils/logger.js';
+import {
+  buildConditionalFetchOptions,
+  loadDocumentConditionState,
+  newDifferentialCounts,
+  updateDocumentFetchedAt,
+  updateDocumentMetaOnly,
+} from './document-conditional-fetch.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { parseKaiseiIndex } from './kaisei-toc-parser.js';
 import { parseKaiseiPage } from './kaisei-parser.js';
@@ -45,6 +52,10 @@ export interface BulkKaiseiResult {
   startedAt: string;
   finishedAt: string;
   durationMs: number;
+  /** Phase 6-2 (v0.9.0): 304 / 同 hash / 変更 の内訳 */
+  documentsNotModified?: number;
+  documentsContentSame?: number;
+  documentsContentChanged?: number;
 }
 
 export interface BulkKaiseiOptions {
@@ -58,6 +69,12 @@ export interface BulkKaiseiOptions {
   onProgress?: (p: BulkKaiseiProgress) => void;
   /** 取得件数を制限（テスト用） */
   limit?: number | undefined;
+  /**
+   * Phase 6-2 (v0.9.0): conditional GET をスキップして毎回フル取得する。
+   * `true` で `If-Modified-Since` ヘッダを送らず、content_hash 比較もスキップ。
+   * default: `false`（差分更新を有効化）
+   */
+  forceReload?: boolean;
 }
 
 /**
@@ -81,10 +98,10 @@ export async function bulkDownloadKaisei(
   const entries = parseKaiseiIndex(indexFetched.html, indexFetched.sourceUrl);
   const targets = options.limit ? entries.slice(0, options.limit) : entries;
 
-  // 2. INSERT 文を準備
+  // 2. INSERT 文を準備 (Phase 6-2: last_modified / etag を含める)
   const upsertDocument = db.prepare(
-    `INSERT INTO document(doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO document(doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url, fetched_at, full_text, attached_pdfs_json, content_hash, last_modified, etag)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(doc_type, doc_id) DO UPDATE SET
        taxonomy=excluded.taxonomy,
        title=excluded.title,
@@ -94,12 +111,15 @@ export async function bulkDownloadKaisei(
        fetched_at=excluded.fetched_at,
        full_text=excluded.full_text,
        attached_pdfs_json=excluded.attached_pdfs_json,
-       content_hash=excluded.content_hash`
+       content_hash=excluded.content_hash,
+       last_modified=excluded.last_modified,
+       etag=excluded.etag`
   );
 
-  // 3. 各個別ページを順次取得
+  // 3. 各個別ページを順次取得 (Phase 6-2: conditional GET + 3-way diff)
   let documentsFetched = 0;
   let documentsFailed = 0;
+  const counts = newDifferentialCounts();
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i];
     onProgress?.({
@@ -111,11 +131,40 @@ export async function bulkDownloadKaisei(
     if (i > 0) await sleep(requestIntervalMs);
 
     try {
-      const fetched = await fetchNtaPage(t.url, fetchImpl ? { fetchImpl } : {});
+      // Phase 6-2: 既存 state を読んで conditional GET ヘッダ生成
+      const state = options.forceReload ? null : loadDocumentConditionState(db, 'kaisei', t.url);
+      const fetchOpts = buildConditionalFetchOptions(state, fetchImpl);
+      const fetched = await fetchNtaPage(t.url, fetchOpts);
+
+      // 304: parse スキップ + fetched_at だけ更新
+      if (fetched.notModified) {
+        updateDocumentFetchedAt(db, 'kaisei', t.url, fetched.fetchedAt);
+        counts.notModified++;
+        documentsFetched++;
+        continue;
+      }
+
       const doc = parseKaiseiPage(fetched.html, fetched.sourceUrl, fetched.fetchedAt);
       // 索引から取れた issuedAt が個別ページより信頼できる場合があるので fallback
       const issuedAt = doc.issuedAt ?? t.issuedAt;
       const hash = computeDocumentHash(doc);
+
+      // 200 + content_hash 一致: メタだけ更新
+      if (state?.contentHash && state.contentHash === hash) {
+        updateDocumentMetaOnly(
+          db,
+          'kaisei',
+          t.url,
+          fetched.fetchedAt,
+          fetched.lastModified ?? null,
+          fetched.etag ?? null
+        );
+        counts.contentSame++;
+        documentsFetched++;
+        continue;
+      }
+
+      // 200 + content_hash 不一致 or 初回: 通常 upsert
       upsertDocument.run(
         doc.docType,
         doc.docId,
@@ -127,8 +176,11 @@ export async function bulkDownloadKaisei(
         doc.fetchedAt,
         doc.fullText,
         JSON.stringify(doc.attachedPdfs),
-        hash
+        hash,
+        fetched.lastModified ?? null,
+        fetched.etag ?? null
       );
+      counts.contentChanged++;
       documentsFetched++;
     } catch (err) {
       documentsFailed++;
@@ -142,7 +194,10 @@ export async function bulkDownloadKaisei(
   const durationMs = Date.now() - startMs;
   onProgress?.({
     phase: 'done',
-    message: `完了: ${documentsFetched}/${targets.length} docs (${(durationMs / 1000).toFixed(1)}s)`,
+    message:
+      `完了: ${documentsFetched}/${targets.length} docs ` +
+      `(304: ${counts.notModified}, 同内容: ${counts.contentSame}, 更新: ${counts.contentChanged}) ` +
+      `${(durationMs / 1000).toFixed(1)}s`,
   });
 
   return {
@@ -153,6 +208,9 @@ export async function bulkDownloadKaisei(
     startedAt,
     finishedAt,
     durationMs,
+    documentsNotModified: counts.notModified,
+    documentsContentSame: counts.contentSame,
+    documentsContentChanged: counts.contentChanged,
   };
 }
 

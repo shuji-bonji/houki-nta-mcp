@@ -20,8 +20,9 @@ import type DatabaseT from 'better-sqlite3';
  * - v1: 初版（Phase 2a-c）
  * - v2: section に content_hash カラムを追加（Phase 2e: 改正検知用）
  * - v3: document / document_fts テーブル追加（Phase 3b: 改正通達・事務運営指針・文書回答事例）
+ * - v4: section / document に last_modified / etag を追加（Phase 6-2: 差分 bulk DL）
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -59,6 +60,10 @@ CREATE TABLE IF NOT EXISTS section (
   -- v2: 改正検知用の content hash（投入時の clauses fullText 連結 SHA-1）
   -- NULL は v1 から移行直後で未計算の状態を表す
   content_hash TEXT,
+  -- v4 (Phase 6-2): 差分 bulk DL 用。If-Modified-Since に渡す HTTP Last-Modified
+  -- ヘッダ値（RFC 7232 形式）と ETag を保持する。NULL は初回未取得を示す。
+  last_modified TEXT,
+  etag TEXT,
   PRIMARY KEY (tsutatsu_id, chapter_number, section_number)
 );
 
@@ -123,6 +128,9 @@ CREATE TABLE IF NOT EXISTS document (
   full_text TEXT NOT NULL,            -- 本文（normalize 済み）
   attached_pdfs_json TEXT NOT NULL,   -- JSON: [{ title, url, sizeKb? }]
   content_hash TEXT,                  -- 改正検知用 SHA-1
+  -- v4 (Phase 6-2): 差分 bulk DL 用
+  last_modified TEXT,
+  etag TEXT,
   UNIQUE(doc_type, doc_id)
 );
 CREATE INDEX IF NOT EXISTS idx_document_lookup ON document(doc_type, doc_id);
@@ -159,6 +167,9 @@ END;
 /**
  * DB を初期化（スキーマ作成 + バージョン記録）。
  * 既にスキーマがある場合は CREATE IF NOT EXISTS で skip。
+ *
+ * バージョン不一致時は可能な限り **追加マイグレーション** で既存データを保つ。
+ * 未知の遷移パスのみ `dropAndRecreate` にフォールバックする。
  */
 export function initSchema(db: DatabaseT.Database): void {
   db.exec(SCHEMA_SQL);
@@ -168,10 +179,57 @@ export function initSchema(db: DatabaseT.Database): void {
       'schema_version',
       String(SCHEMA_VERSION)
     );
-  } else if (cur !== SCHEMA_VERSION) {
-    // Phase 2a では「不一致なら DROP & CREATE」の単純戦略
-    dropAndRecreate(db);
+    return;
   }
+  if (cur === SCHEMA_VERSION) return;
+
+  // 既存 bulk DL データを保ったまま追加できるパスは個別に処理する
+  if (cur === 3 && SCHEMA_VERSION === 4) {
+    migrateV3ToV4(db);
+    setSchemaVersion(db, SCHEMA_VERSION);
+    return;
+  }
+
+  // 想定外の遷移は DROP & CREATE（既存データは失われる）
+  dropAndRecreate(db);
+}
+
+/**
+ * v3 → v4 マイグレーション（Phase 6-2: 差分 bulk DL）
+ *
+ * 既存 bulk DL データを保ったまま `last_modified` / `etag` カラムを追加する。
+ * 既存行は NULL のままで、初回 fetch 時に値が入る（`If-Modified-Since` を送れない
+ * 状態だが、200 で取得して以降は 304 が効く）。
+ */
+function migrateV3ToV4(db: DatabaseT.Database): void {
+  const sectionCols = listColumns(db, 'section');
+  if (!sectionCols.has('last_modified')) {
+    db.exec(`ALTER TABLE section ADD COLUMN last_modified TEXT`);
+  }
+  if (!sectionCols.has('etag')) {
+    db.exec(`ALTER TABLE section ADD COLUMN etag TEXT`);
+  }
+  const docCols = listColumns(db, 'document');
+  if (!docCols.has('last_modified')) {
+    db.exec(`ALTER TABLE document ADD COLUMN last_modified TEXT`);
+  }
+  if (!docCols.has('etag')) {
+    db.exec(`ALTER TABLE document ADD COLUMN etag TEXT`);
+  }
+}
+
+/** 指定テーブルのカラム名集合を返す */
+function listColumns(db: DatabaseT.Database, table: string): Set<string> {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return new Set(rows.map((r) => r.name));
+}
+
+/** schema_meta の schema_version を更新する */
+function setSchemaVersion(db: DatabaseT.Database, v: number): void {
+  db.prepare(
+    `INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run(String(v));
 }
 
 /** schema_meta から schema_version を読む。未設定なら null */

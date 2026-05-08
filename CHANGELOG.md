@@ -9,6 +9,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.9.0] - 2026-05-08
+
+⚡ **Phase 6-2: bulk DL 差分更新** — `--bulk-download-everything` の所要時間を 50 分 → 5〜10 分に短縮するためのリリース。`If-Modified-Since` を使った conditional GET と `content_hash` バイパスの 2 段階で、サーバー側で「変更なし」と判定された頁はパース・DB 書き込みごとスキップする。
+
+### Added
+
+- **新規 [`docs/PHASE6-2-SPIKE.md`](docs/PHASE6-2-SPIKE.md)**: 国税庁 HP の `Last-Modified` / `ETag` 実態調査の結果まとめ。実利用 6 URL すべてで `Last-Modified` が返り、`If-Modified-Since` 一致で **304 Not Modified** が返ることを実機で確認。
+- **新規 [`src/services/document-conditional-fetch.ts`](src/services/document-conditional-fetch.ts)**: 5 つの document 系 bulk-downloader (kaisei / jimu-unei / qa / tax-answer / bunshokaitou) で共有する conditional GET ヘルパー。
+  - `loadDocumentConditionState()` — `(doc_type, source_url)` で既存 `last_modified` / `etag` / `content_hash` を読み出す
+  - `buildConditionalFetchOptions()` — `fetchNtaPage` の options 組み立て
+  - `updateDocumentFetchedAt()` / `updateDocumentMetaOnly()` — 304 / 200+同 hash の経路で使う UPDATE
+  - `newDifferentialCounts()` — `notModified` / `contentSame` / `contentChanged` のカウンタ
+- **`fetchNtaPage` に `ifModifiedSince` / `ifNoneMatch` オプション + 304 対応**: `If-Modified-Since` / `If-None-Match` ヘッダを付与して GET。サーバが 304 を返した場合 `result.notModified === true` + `result.html === ''` で帰る。`result.lastModified` / `result.etag` も追加して呼び出し側に伝播。
+- **schema migration v3 → v4**: `section` / `document` テーブルに `last_modified TEXT` / `etag TEXT` カラムを追加。`ALTER TABLE ADD COLUMN` の **追加マイグレーション**で実装済 bulk DL データを保ったまま移行可能。
+- **bulk-downloader の `forceReload?: boolean` オプション**: `true` で conditional GET をスキップし、毎回フル取得。既存 bulk DL データを完全再構築したいときに使う。default は `false`(差分更新を有効化)。
+- **新規テスト**:
+  - `document-conditional-fetch.test.ts` (15 ケース): SQL 動作 + null 値の扱い + counter
+  - `nta-scraper.test.ts` の Phase 6-2 セクション (6 ケース): If-Modified-Since/If-None-Match ヘッダ生成、304 応答処理、Last-Modified/ETag ヘッダ抽出
+  - `schema.test.ts` の Phase 6-2 セクション (3 ケース): カラム追加、v3 → v4 マイグレーション
+- **`BulkDownloadResult` / `BulkKaiseiResult` / `BulkJimuUneiResult` / `BulkQaResult` / `BulkTaxAnswerResult` / `BulkBunshoResult` に `documentsNotModified` / `documentsContentSame` / `documentsContentChanged` (tsutatsu は `sectionsNotModified` 等) を追加**: 304/同 hash/変更 の内訳を返す。
+- **進捗メッセージに `(304: N, 同内容: N, 更新: N)` 形式の内訳を表示**: bulk DL の効率を肉眼で確認できる。
+
+### Changed
+
+- **tsutatsu bulk-downloader (`bulk-downloader.ts`) を section 単位 differential upsert に refactor**: 旧来の wholesale `DELETE FROM clause WHERE tsutatsu_id=?` + `DELETE FROM section WHERE tsutatsu_id=?` を撤去し、section 単位で 3-way 分岐 (304 → fetched_at だけ更新 / 200+同 hash → メタだけ更新 / 200+異 hash → 該当 section の clauses だけ DELETE+INSERT)。`forceReload: true` 指定時のみ wholesale 経路に戻す。
+- **5 document bulk-downloader (kaisei / jimu-unei / qa / tax-answer / bunshokaitou) を conditional GET 化**: 各 fetch 前に `loadDocumentConditionState` で既存メタを読み、`buildConditionalFetchOptions` で `If-Modified-Since` / `If-None-Match` を付ける。3-way 分岐は document-conditional-fetch ヘルパーが担当。
+- **`upsert document` SQL の改修**: `last_modified` / `etag` カラムへの INSERT/UPDATE を全 5 downloader に追加。
+
+### Performance
+
+| 指標 | v0.8.0 | v0.9.0 (推定) |
+|---|---|---|
+| 全件 bulk DL 時間 | 50 分 | **5〜10 分** (304 比率次第) |
+| HTTP リクエスト数 | 2,710 GET | 2,710 GET (うち 90%+ が 304 で軽量) |
+| parse 処理 | 2,710 回 | 200〜500 回 (変更分のみ) |
+| DB write | 2,710 回 | 50〜200 回 (実変更分のみ) |
+| 国税庁への負荷 | 高 | 中 (GET 数は不変だが、ペイロード送信は減) |
+
+### Migration (v0.8.0 → v0.9.0)
+
+- **既存 bulk DL データは保持されます**。schema v3 → v4 のマイグレーションは `ALTER TABLE ADD COLUMN` で行うため、再 bulk DL 不要。
+- **初回のみ `last_modified` / `etag` が NULL のため 304 は返らない**。1 回 200 で取得すれば次回から 304 が効く。
+- **`bulkDownloadTsutatsu` の挙動変化**: 旧来は冪等的に「全消去 → 全挿入」していたため、同じ `tsutatsu_id` の clauses が一旦消えていた。v0.9.0 では section 単位 differential upsert になり、変更がない section の clauses は触らない。**強制的にフル再構築したい場合は `forceReload: true` を渡してください**。
+- **CLI フラグ**: `houki-nta-mcp --bulk-download-*` は既定で差分更新になる。フル再構築は将来 `--force-reload` フラグを追加予定 (v0.9.x)。
+
 ## [0.8.0] - 2026-05-08
 
 🚀 **Phase 6-1 (search relevance ranking)** + **family-compatible error contract** + **Phase 6 計画書** を同梱したマイルストーンリリース。

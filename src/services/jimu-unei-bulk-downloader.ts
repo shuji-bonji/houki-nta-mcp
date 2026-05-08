@@ -10,6 +10,13 @@ import type DatabaseT from 'better-sqlite3';
 import { logger } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotDocumentTable } from './db-snapshot.js';
+import {
+  buildConditionalFetchOptions,
+  loadDocumentConditionState,
+  newDifferentialCounts,
+  updateDocumentFetchedAt,
+  updateDocumentMetaOnly,
+} from './document-conditional-fetch.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { parseJimuUneiIndex, parseJimuUneiPage } from './jimu-unei-parser.js';
 import { normalizeJpText } from './text-normalize.js';
@@ -39,6 +46,10 @@ export interface BulkJimuUneiResult {
   aggregation?: BulkRunRecord;
   /** baseline 比較の評価結果 */
   health?: HealthEvaluation;
+  /** Phase 6-2 (v0.9.0): 304 / 同 hash / 変更 の内訳 */
+  documentsNotModified?: number;
+  documentsContentSame?: number;
+  documentsContentChanged?: number;
 }
 
 export interface BulkJimuUneiOptions {
@@ -49,6 +60,8 @@ export interface BulkJimuUneiOptions {
   limit?: number | undefined;
   /** baseline 永続化のパス上書き（テスト用、Phase 5 Resilience）*/
   baselinePath?: string;
+  /** Phase 6-2 (v0.9.0): true で conditional GET をスキップ */
+  forceReload?: boolean;
 }
 
 /**
@@ -75,8 +88,8 @@ export async function bulkDownloadJimuUnei(
   const targets = options.limit ? entries.slice(0, options.limit) : entries;
 
   const upsertDocument = db.prepare(
-    `INSERT INTO document(doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO document(doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url, fetched_at, full_text, attached_pdfs_json, content_hash, last_modified, etag)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(doc_type, doc_id) DO UPDATE SET
        taxonomy=excluded.taxonomy,
        title=excluded.title,
@@ -86,11 +99,14 @@ export async function bulkDownloadJimuUnei(
        fetched_at=excluded.fetched_at,
        full_text=excluded.full_text,
        attached_pdfs_json=excluded.attached_pdfs_json,
-       content_hash=excluded.content_hash`
+       content_hash=excluded.content_hash,
+       last_modified=excluded.last_modified,
+       etag=excluded.etag`
   );
 
   let documentsFetched = 0;
   let documentsFailed = 0;
+  const counts = newDifferentialCounts();
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i];
     onProgress?.({
@@ -102,10 +118,35 @@ export async function bulkDownloadJimuUnei(
     if (i > 0) await sleep(requestIntervalMs);
 
     try {
-      const fetched = await fetchNtaPage(t.url, fetchImpl ? { fetchImpl } : {});
+      const state = options.forceReload ? null : loadDocumentConditionState(db, 'jimu-unei', t.url);
+      const fetchOpts = buildConditionalFetchOptions(state, fetchImpl);
+      const fetched = await fetchNtaPage(t.url, fetchOpts);
+
+      if (fetched.notModified) {
+        updateDocumentFetchedAt(db, 'jimu-unei', t.url, fetched.fetchedAt);
+        counts.notModified++;
+        documentsFetched++;
+        continue;
+      }
+
       const doc = parseJimuUneiPage(fetched.html, fetched.sourceUrl, fetched.fetchedAt);
       const issuedAt = doc.issuedAt ?? t.issuedAt;
       const hash = computeDocumentHash(doc);
+
+      if (state?.contentHash && state.contentHash === hash) {
+        updateDocumentMetaOnly(
+          db,
+          'jimu-unei',
+          t.url,
+          fetched.fetchedAt,
+          fetched.lastModified ?? null,
+          fetched.etag ?? null
+        );
+        counts.contentSame++;
+        documentsFetched++;
+        continue;
+      }
+
       upsertDocument.run(
         doc.docType,
         doc.docId,
@@ -117,8 +158,11 @@ export async function bulkDownloadJimuUnei(
         doc.fetchedAt,
         doc.fullText,
         JSON.stringify(doc.attachedPdfs),
-        hash
+        hash,
+        fetched.lastModified ?? null,
+        fetched.etag ?? null
       );
+      counts.contentChanged++;
       documentsFetched++;
     } catch (err) {
       documentsFailed++;
@@ -131,7 +175,10 @@ export async function bulkDownloadJimuUnei(
   const durationMs = Date.now() - startMs;
   onProgress?.({
     phase: 'done',
-    message: `完了: ${documentsFetched}/${targets.length} docs (${(durationMs / 1000).toFixed(1)}s)`,
+    message:
+      `完了: ${documentsFetched}/${targets.length} docs ` +
+      `(304: ${counts.notModified}, 同内容: ${counts.contentSame}, 更新: ${counts.contentChanged}) ` +
+      `${(durationMs / 1000).toFixed(1)}s`,
   });
 
   // Phase 5 Resilience: full run 時のみ集計 + baseline 永続化
@@ -158,6 +205,9 @@ export async function bulkDownloadJimuUnei(
     startedAt,
     finishedAt,
     durationMs,
+    documentsNotModified: counts.notModified,
+    documentsContentSame: counts.contentSame,
+    documentsContentChanged: counts.contentChanged,
   };
   if (aggregation) result.aggregation = aggregation;
   if (health) result.health = health;
