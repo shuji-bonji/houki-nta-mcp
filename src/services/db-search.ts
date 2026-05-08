@@ -180,12 +180,28 @@ function buildSanitizedPhrase(raw: string): string {
 }
 
 /**
- * Phase 6-1: 略称展開を行ったうえで FTS5 クエリを組み立てる。
+ * v0.9.2 (Issue #14 / smoketest #3): formal を OR 展開する条件で許可される
+ * `source_mcp_hint` のセット。
  *
- * - キーワード全体が houki-nta 管轄の略称に該当する場合のみ、formal_name を OR 展開
- * - 例: "消基通" → `("消基通") OR ("消費税法基本通達")`
- * - 略称解決の結果が houki-nta 以外 (e.g. houki-egov の法令名) の場合は展開しない
- *   (検索対象が通達 / Q&A / 文書回答事例 / タックスアンサー等であり、法令名展開は誤爆のもと)
+ * - `houki-nta`: 通達・改正通達・QA・タックスアンサー・文書回答事例 (本来の主軸)
+ * - `houki-egov`: 法令名 (例: "消費税法")。**通称 alias** (例: "インボイス") を
+ *   houki-abbreviations に登録すると、houki-nta-mcp の検索本文 (通達等) には
+ *   法令名がよく出てくるため OR 展開で広めに拾えるとヒット率が上がる。
+ *
+ * `houki-court` (判例) / `houki-saiketsu` (裁決) は houki-nta-mcp の検索対象外
+ * なので展開しない (ただ広げてもノイズが増えるだけ)。
+ */
+const EXPAND_FORMAL_FOR_HINTS: ReadonlySet<string> = new Set(['houki-nta', 'houki-egov']);
+
+/**
+ * Phase 6-1: 略称展開を行ったうえで FTS5 クエリを組み立てる。
+ * v0.9.2 (Issue #14): houki-egov 管轄エントリも展開対象に拡張。
+ *
+ * 例:
+ * - "消基通" (houki-nta) → `("消基通") OR ("消費税法基本通達")`
+ * - "インボイス" → 消費税法 entry hit (alias) → `("インボイス") OR ("消費税法")`
+ *   通達本文に「消費税法」が頻出するため OR 展開でヒット率が上がる。
+ *   Phase 6-1 の re-rank で「インボイス」自体を含む文書が score 上位に並ぶ。
  *
  * 戻り値:
  *   - `query`: FTS5 MATCH に渡す式 (空文字なら呼び出し側で 0 件扱い)
@@ -204,8 +220,9 @@ export function buildFtsQueryWithAbbreviation(
 
   const abbr = resolveAbbreviation(trimmed);
   if (!abbr) return { query: main };
-  // houki-nta 管轄外の略称 (例: 法令名) は展開しない
-  if (abbr.source_mcp_hint !== 'houki-nta') return { query: main };
+  // 許可リストに含まれる source_mcp_hint のみ formal を OR 展開
+  // (court / saiketsu は houki-nta の検索対象外なので展開しない)
+  if (!EXPAND_FORMAL_FOR_HINTS.has(abbr.source_mcp_hint)) return { query: main };
   // formal が同一文字列なら展開しても意味がない
   if (abbr.formal === trimmed) return { query: main };
 

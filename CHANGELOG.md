@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.9.2] - 2026-05-08
+
+🩹 **patch リリース** — Issue #14 (smoketest #3) 対応の最終ピース。houki-abbreviations v0.4.0 で追加された通称 alias (`インボイス` → 消費税法 等) が houki-nta-mcp の検索でも実際に効くよう、`buildFtsQueryWithAbbreviation` の `source_mcp_hint` 許可リストを `houki-nta` に加えて `houki-egov` まで広げた。
+
+### Fixed
+
+- **Issue #14 — `nta_search_*` で「インボイス」等の通称が 0 件になる問題の最終解決**:
+  - 旧来: `source_mcp_hint === 'houki-nta'` の entry のみ formal を OR 展開
+  - v0.9.2: 許可リスト `{ 'houki-nta', 'houki-egov' }` に拡張
+  - 効果: 「インボイス」→ 消費税法 entry (`source_mcp_hint='houki-egov'`) が hit → `("インボイス") OR ("消費税法")` で OR 展開 → 通達本文に頻出する「消費税法」経由で hit 件数が増える。Phase 6-1 の re-rank で「インボイス」自体を含む文書が score 上位に並ぶ。
+
+### Dependencies
+
+- **`@shuji-bonji/houki-abbreviations` を `^0.4.0` に更新** — Track 1 検索拡張 API + tax/administrative 領域の alias 拡充 (「インボイス」「ふるさと納税」「マイナ」「電帳」等の通称を主要法令エントリに追加) を取り込み。本 patch は houki-abbreviations v0.4.0 の変更と組合せて初めて完全動作する。
+
+### Compatibility
+
+- 既存テストは互換 (clause 検索の「消基通」展開はそのまま動作)。
+- 法令名 (例: 「消費税法」自体を keyword に渡す) で検索すると、`abbr.formal === trimmed` チェックで展開スキップなので、無限再帰や二重展開は発生しない。
+- `houki-court` / `houki-saiketsu` 管轄エントリは houki-nta-mcp の検索対象外なので展開しない (許可リスト外)。
+
+### Migration (v0.9.1 → v0.9.2)
+
+- npm の `@shuji-bonji/houki-abbreviations` が `^0.4.0` を要求するように更新される。
+- ユーザーが「インボイス」「ふるさと納税」等の通称で検索すると、これまで 0 件だったクエリで実際にヒットが返るようになる。検索結果の数が増えるので、UI 側で「0 件想定」のテストがあれば見直し推奨。
+- LLM (houki-research-skill) 側の処理ロジック変更は不要。
+
+### 関連 GitHub Issue
+
+- [Issue #14](https://github.com/shuji-bonji/houki-nta-mcp/issues/14): search 系全体で通称→正式名の synonym 展開 — **v0.9.2 で完全解決**
+
 ## [0.9.1] - 2026-05-08
 
 🩹 **patch リリース** — スモークテスト (2026-05-08) で発見された `legal_status` 文言の不整合を修正。Issue #1 / #2 を同時解消。

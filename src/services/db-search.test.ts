@@ -390,3 +390,38 @@ describe('searchClauseFts — Phase 6-1 abbreviation expansion', () => {
     expect(hits.length).toBe(0);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* v0.9.2 (Issue #14): 通称 alias 経由 (houki-egov 管轄) の OR 展開            */
+/* -------------------------------------------------------------------------- */
+
+describe('searchClauseFts — Issue #14: houki-egov 管轄エントリ経由の通称展開', () => {
+  let db: DatabaseT.Database;
+  beforeEach(() => {
+    db = new Database(':memory:');
+    initSchema(db);
+    seed(db, '消費税法基本通達', '消基通', [
+      {
+        clauseNumber: '1-7-2',
+        chapter: 1,
+        section: 7,
+        title: '登録番号の構成',
+        fullText: '適格請求書発行事業者の登録番号は、消費税法第57条の2に基づく',
+        sourceUrl: 'https://x/01/07.htm',
+      },
+    ]);
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('"インボイス" で検索すると消費税法経由で OR 展開されヒットする', () => {
+    // houki-abbreviations v0.4.0+ では「インボイス」は消費税法エントリの alias
+    // 消費税法エントリは source_mcp_hint=houki-egov だが、v0.9.2 で許可リストに含まれる
+    const hits = searchClauseFts(db, 'インボイス');
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].scoreReasons!.some((s) => s.includes('abbreviation expanded'))).toBe(true);
+    // 展開先が「消費税法」であること
+    expect(hits[0].scoreReasons!.some((s) => s.includes('消費税法'))).toBe(true);
+  });
+});
