@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.9.3] - 2026-05-08
+
+🩹 **patch リリース** — Issue #15 (freshness 共有化) 対応。`StalenessLevel` 型 / 閾値定数 / 純関数を **`@shuji-bonji/houki-abbreviations` v0.4.1** から import するように切替。挙動変更なし、family 全体で同じ閾値・判定ロジックが共有される。
+
+### Changed
+
+- **`src/services/freshness.ts`** が houki-abbreviations から `StalenessLevel` / `STALENESS_THRESHOLDS` / `judgeStaleness` / `computeDaysSince` を import する形に refactor。
+  - 自前の `judgeStaleness()` / 内部 `computeDaysSince()` を削除し、houki-abbreviations の純関数を採用
+  - `FRESH_DAYS` / `STALE_DAYS` 定数は **`STALENESS_THRESHOLDS.fresh_days` / `.stale_days` への alias として残置** (deprecated、後方互換のため)
+  - DB アクセス層 (`summarizeFreshnessFromSection` / `summarizeFreshnessFromDocument`) と警告メッセージ生成 (`buildWarning`) は houki-nta-mcp 固有なので **本ファイルに残す**
+- 既存の `StalenessLevel` / `judgeStaleness` / `STALENESS_THRESHOLDS` を **本モジュールから re-export** して、既存 import パスは維持。
+
+### Dependencies
+
+- **`@shuji-bonji/houki-abbreviations` を `^0.4.1` に更新** — Issue #15 対応の `src/freshness.ts` 同梱。
+
+### Compatibility
+
+- 完全後方互換。挙動・閾値は不変 (`fresh_days=7`, `stale_days=30` の慣行値)。
+- 既存テストへの影響なし。
+
+### 関連 GitHub Issue
+
+- [Issue #15](https://github.com/shuji-bonji/houki-nta-mcp/issues/15): freshness ロジックを houki-hub family 共有パッケージに昇格 — **B 案 (型 + 閾値だけ houki-abbreviations に同梱) で v0.9.3 で完了**
+
 ## [0.9.2] - 2026-05-08
 
 🩹 **patch リリース** — Issue #14 (smoketest #3) 対応の最終ピース。houki-abbreviations v0.4.0 で追加された通称 alias (`インボイス` → 消費税法 等) が houki-nta-mcp の検索でも実際に効くよう、`buildFtsQueryWithAbbreviation` の `source_mcp_hint` 許可リストを `houki-nta` に加えて `houki-egov` まで広げた。

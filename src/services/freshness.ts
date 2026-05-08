@@ -4,18 +4,41 @@
  * Phase 5 Resilience の passive 検知。MCP tool 呼び出し時に DB の `fetched_at` を
  * 1 列読むだけで判定する（< 1ms）ため、レスポンス遅延への影響なし。
  *
- * staleness レベル:
- *  - fresh:    最後の bulk DL が 1 週間以内
- *  - stale:    1 週間〜1 ヶ月
+ * v0.9.3 (Issue #15): 型 / 閾値 / 純関数 (`StalenessLevel` / `STALENESS_THRESHOLDS` /
+ * `judgeStaleness` / `computeDaysSince`) は **`@shuji-bonji/houki-abbreviations` v0.4.1+**
+ * から import するように変更。家族で同じ感覚で staleness を判定できる。
+ * DB アクセス層・レスポンス整形・警告メッセージは houki-nta-mcp 固有のため本ファイルに残す。
+ *
+ * staleness レベル (閾値は houki-abbreviations の `STALENESS_THRESHOLDS` 経由で family 共通):
+ *  - fresh:    最後の bulk DL が 1 週間以内 (`< STALENESS_THRESHOLDS.fresh_days`)
+ *  - stale:    1 週間〜1 ヶ月 (`< STALENESS_THRESHOLDS.stale_days`)
  *  - outdated: 1 ヶ月以上経過 → 警告メッセージを付ける
  *
  * 設計詳細: docs/RESILIENCE.md §6
  */
 
+import {
+  type StalenessLevel,
+  STALENESS_THRESHOLDS,
+  computeDaysSince,
+  judgeStaleness,
+} from '@shuji-bonji/houki-abbreviations';
 import type DatabaseT from 'better-sqlite3';
 
-/** staleness の判定レベル */
-export type StalenessLevel = 'fresh' | 'stale' | 'outdated';
+// v0.9.3: houki-abbreviations から re-export して既存利用者の互換性を保つ
+export type { StalenessLevel };
+export { STALENESS_THRESHOLDS, judgeStaleness };
+
+/**
+ * @deprecated v0.9.3+: 互換性のため残置。新規実装は
+ * `STALENESS_THRESHOLDS.fresh_days` を使うこと。
+ */
+export const FRESH_DAYS = STALENESS_THRESHOLDS.fresh_days;
+/**
+ * @deprecated v0.9.3+: 互換性のため残置。新規実装は
+ * `STALENESS_THRESHOLDS.stale_days` を使うこと。
+ */
+export const STALE_DAYS = STALENESS_THRESHOLDS.stale_days;
 
 /** 検索範囲全体の freshness 情報（複数 doc を返す search 系で使用）*/
 export interface FreshnessRange {
@@ -43,22 +66,10 @@ export interface FreshnessSingle {
   warning?: string;
 }
 
-/** fresh < N 日 */
-export const FRESH_DAYS = 7;
-/** stale < N 日 (これ以上は outdated) */
-export const STALE_DAYS = 30;
-
-/**
- * 経過日数から staleness レベルを判定。
- */
-export function judgeStaleness(daysSince: number): StalenessLevel {
-  if (daysSince < FRESH_DAYS) return 'fresh';
-  if (daysSince < STALE_DAYS) return 'stale';
-  return 'outdated';
-}
-
 /**
  * outdated 時の警告メッセージを生成（fresh / stale は undefined）。
+ *
+ * 警告メッセージは MCP 固有 (bulk DL コマンド文言) のため houki-nta-mcp に残す。
  */
 export function buildWarning(
   staleness: StalenessLevel,
@@ -67,16 +78,6 @@ export function buildWarning(
 ): string | undefined {
   if (staleness !== 'outdated') return undefined;
   return `一部ドキュメントが ${daysSince} 日前のデータです。最新化するには ${bulkDownloadHint} を実行してください`;
-}
-
-/**
- * 経過日数を計算（小数なし、日数の floor）。
- */
-function computeDaysSince(fetchedAt: string, nowMs: number = Date.now()): number {
-  const fetchedMs = Date.parse(fetchedAt);
-  if (!Number.isFinite(fetchedMs)) return 0;
-  const diffMs = nowMs - fetchedMs;
-  return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
 }
 
 /**
