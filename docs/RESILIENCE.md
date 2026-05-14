@@ -149,13 +149,13 @@ bulk-downloader 実行時に **doc_type ごとに分離した baseline ファイ
 
 国税庁 HP の 4 つの変更パターンを検知するため、bulk DL 時に以下を集計する:
 
-| 指標 | 意味 | 検知できる変更パターン |
-|---|---|---|
-| `newDocs` | 索引にある doc_id で DB に無いもの → INSERT した件数 | **新規追加**（新通達公布等）|
-| `updatedDocs` | 既存 doc_id で content_hash が前回と違うもの → UPDATE した件数 | **既存更新**（通達改正等）|
-| `orphanedDocs` | DB にあるが索引から消えた doc_id の件数（DELETE せず保持）| **既存削除**（通達廃止等）|
-| `movedDocs` | orphaned + 同タイトル new がペアで存在する推定件数 | **既存移動**（URL 変更等）|
-| `documentsFailed` | parse / fetch に失敗した件数 | **構造変更**（HTML 構造変化等）|
+| 指標              | 意味                                                           | 検知できる変更パターン          |
+| ----------------- | -------------------------------------------------------------- | ------------------------------- |
+| `newDocs`         | 索引にある doc_id で DB に無いもの → INSERT した件数           | **新規追加**（新通達公布等）    |
+| `updatedDocs`     | 既存 doc_id で content_hash が前回と違うもの → UPDATE した件数 | **既存更新**（通達改正等）      |
+| `orphanedDocs`    | DB にあるが索引から消えた doc_id の件数（DELETE せず保持）     | **既存削除**（通達廃止等）      |
+| `movedDocs`       | orphaned + 同タイトル new がペアで存在する推定件数             | **既存移動**（URL 変更等）      |
+| `documentsFailed` | parse / fetch に失敗した件数                                   | **構造変更**（HTML 構造変化等） |
 
 ### 5.3 二重 threshold（絶対数 × 比率）
 
@@ -166,20 +166,20 @@ bulk-downloader 実行時に **doc_type ごとに分離した baseline ファイ
 function shouldWarn(failedCount: number, totalCount: number, doc_type: DocType): boolean {
   const minAbs = THRESHOLDS[doc_type].MIN_ABS;
   const minRate = THRESHOLDS[doc_type].MIN_RATE; // 共通 0.01 = 1%
-  return failedCount >= minAbs && (failedCount / totalCount) >= minRate;
+  return failedCount >= minAbs && failedCount / totalCount >= minRate;
 }
 ```
 
 種別ごとの `MIN_ABS`（v0.5.0 ベンチマーク fail rate 0% を基準に決定）:
 
-| 種別 | サイズ | MIN_ABS | MIN_RATE | 発火条件 |
-|---|---|---|---|---|
-| `kaisei` | 125 | 3 | 1% | 3 件失敗 + 比率 1% 以上で発火 |
-| `jimu-unei` | 32 | 2 | 1% | 2 件失敗で発火（小規模） |
-| `bunshokaitou` | 152 | 3 | 1% | 3 件失敗で発火 |
-| `tax-answer` | 744 | 5 | 1% | 5 件失敗で発火 |
-| `qa-jirei` | 1841 | 10 | 1% | 10 件失敗で発火 |
-| `tsutatsu`（4 通達合計） | 〜数千 clause | 30 | 1% | 30 clause 失敗で発火 |
+| 種別                     | サイズ        | MIN_ABS | MIN_RATE | 発火条件                      |
+| ------------------------ | ------------- | ------- | -------- | ----------------------------- |
+| `kaisei`                 | 125           | 3       | 1%       | 3 件失敗 + 比率 1% 以上で発火 |
+| `jimu-unei`              | 32            | 2       | 1%       | 2 件失敗で発火（小規模）      |
+| `bunshokaitou`           | 152           | 3       | 1%       | 3 件失敗で発火                |
+| `tax-answer`             | 744           | 5       | 1%       | 5 件失敗で発火                |
+| `qa-jirei`               | 1841          | 10      | 1%       | 10 件失敗で発火               |
+| `tsutatsu`（4 通達合計） | 〜数千 clause | 30      | 1%       | 30 clause 失敗で発火          |
 
 ### 5.4 count drift threshold
 
@@ -249,11 +249,11 @@ graph LR
   classDef ci fill:#fff3cd,stroke:#ffc107
 ```
 
-| 頻度 | コマンド | 用途 | 所要時間 |
-|---|---|---|---|
-| 月 1 回 | `houki-nta-mcp --bulk-download-everything` | 4 パターン集計、baseline 履歴 | 〜51 分 |
-| 週 1 回 | `houki-nta-mcp --health-check` | 6 種別 canary fetch | 〜数秒 |
-| 週 1 回（CI） | GitHub Actions cron | parser 互換性確認 | 〜数十秒 |
+| 頻度          | コマンド                                   | 用途                          | 所要時間 |
+| ------------- | ------------------------------------------ | ----------------------------- | -------- |
+| 月 1 回       | `houki-nta-mcp --bulk-download-everything` | 4 パターン集計、baseline 履歴 | 〜51 分  |
+| 週 1 回       | `houki-nta-mcp --health-check`             | 6 種別 canary fetch           | 〜数秒   |
+| 週 1 回（CI） | GitHub Actions cron                        | parser 互換性確認             | 〜数十秒 |
 
 ローカル運用例（cron / launchd）:
 
@@ -339,11 +339,11 @@ sisan/sozoku/kaisei/kaisei_a.htm         → 'sisan/sozoku/kaisei'
 
 [.github/workflows/canary.yml](../.github/workflows/canary.yml) に 3 つの job を週次 cron で並列実行する。
 
-| job              | strict | 目的                                                                                |
-| ---------------- | :----: | ----------------------------------------------------------------------------------- |
-| `integration`    | -      | `INTEGRATION=1 npm test` で実 fetch を含むテスト                                    |
-| `health-check`   | ✓      | 9 種別の canary fetch + parse。Lv-3a により soft-404 はここで明示的に fail する     |
-| `baseline-drift` | -      | menu.htm 突合で世代移行を事前検知 (`generation-drift` は warning 扱いで fail させない) |
+| job              | strict | 目的                                                                                   |
+| ---------------- | :----: | -------------------------------------------------------------------------------------- |
+| `integration`    |   -    | `INTEGRATION=1 npm test` で実 fetch を含むテスト                                       |
+| `health-check`   |   ✓    | 9 種別の canary fetch + parse。Lv-3a により soft-404 はここで明示的に fail する        |
+| `baseline-drift` |   -    | menu.htm 突合で世代移行を事前検知 (`generation-drift` は warning 扱いで fail させない) |
 
 `health-check` で気付くより前に `baseline-drift` が generation-drift を上申し、運用者が baseline URL を更新する→ canary が落ちずに済む、という流れが理想。
 
@@ -448,17 +448,17 @@ graph LR
 
 ### 実装タスク（v0.6.0）
 
-| #   | タスク                                                                                     | ファイル / 領域                            |
-| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| 1   | `~/.cache/houki-nta-mcp/baseline-{doc_type}.json` 永続化基盤（直近 12 回ローテーション）   | `src/services/health-store.ts`（新規）     |
-| 2   | 二重 threshold（`MIN_ABS` 種別別 + `MIN_RATE: 1%`）+ count drift（±20%）+ 構造変質（>50%） | `src/services/health-thresholds.ts`（新規）|
-| 3   | bulk-downloader に 4 パターン集計（new / updated / orphaned / moved）を統合                | 各 bulk-downloader                         |
+| #   | タスク                                                                                     | ファイル / 領域                                       |
+| --- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| 1   | `~/.cache/houki-nta-mcp/baseline-{doc_type}.json` 永続化基盤（直近 12 回ローテーション）   | `src/services/health-store.ts`（新規）                |
+| 2   | 二重 threshold（`MIN_ABS` 種別別 + `MIN_RATE: 1%`）+ count drift（±20%）+ 構造変質（>50%） | `src/services/health-thresholds.ts`（新規）           |
+| 3   | bulk-downloader に 4 パターン集計（new / updated / orphaned / moved）を統合                | 各 bulk-downloader                                    |
 | 4   | `--health-check` CLI 実装（6 種別の代表 URL を canary fetch + parse）                      | `src/cli.ts` + `src/services/health-check.ts`（新規） |
-| 5   | tool response に `freshness` フィールド追加（passive 検知、< 1ms）                         | `src/tools/handlers.ts`                    |
-| 6   | CI canary workflow 追加（週次 cron）                                                       | `.github/workflows/canary.yml`             |
-| 7   | README に運用フロー（月次 bulk DL + 週次 canary）+ cron 例を記載                           | `README.md`                                |
-| 8   | テスト追加（health-store / threshold / canary）                                            | 各 test ファイル                           |
-| 9   | CHANGELOG 更新 + version bump 0.5.0 → 0.6.0 + publish                                      | repo root                                  |
+| 5   | tool response に `freshness` フィールド追加（passive 検知、< 1ms）                         | `src/tools/handlers.ts`                               |
+| 6   | CI canary workflow 追加（週次 cron）                                                       | `.github/workflows/canary.yml`                        |
+| 7   | README に運用フロー（月次 bulk DL + 週次 canary）+ cron 例を記載                           | `README.md`                                           |
+| 8   | テスト追加（health-store / threshold / canary）                                            | 各 test ファイル                                      |
+| 9   | CHANGELOG 更新 + version bump 0.5.0 → 0.6.0 + publish                                      | repo root                                             |
 
 ## 9. Family-wide considerations
 

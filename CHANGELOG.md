@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - **`src/services/nta-scraper.ts`**: `isNtaSoft404` を新たに export (テスト容易性のため pure 関数として切り出し)。
 - **`src/cli.ts`**: `--health-check` 系の help テキスト直下に `--check-baseline-drift` の help を追記。
+- **README.md に Mermaid 図 2 つを追加**:
+  - 「データフロー全体俯瞰」: 国税庁 HP (6 大コンテンツ) → bulk DL → SQLite cache → 14 MCP tool の DB-first / live fallback 二段構成を flowchart で図示
+  - 「推奨運用ライフサイクル」: 月次 `bulk-download-everything` ↔ 週次 `health-check` / `check-baseline-drift` ↔ DB ↔ レスポンス freshness の循環関係を図示し、Lv-3a/3b 二重防御の位置付けを明示
 
 ### Compatibility
 
@@ -189,13 +192,13 @@ note 文言を表示・伝達するだけのクライアントは影響なし。
 
 ### Performance
 
-| 指標 | v0.8.0 | v0.9.0 (推定) |
-|---|---|---|
-| 全件 bulk DL 時間 | 50 分 | **5〜10 分** (304 比率次第) |
-| HTTP リクエスト数 | 2,710 GET | 2,710 GET (うち 90%+ が 304 で軽量) |
-| parse 処理 | 2,710 回 | 200〜500 回 (変更分のみ) |
-| DB write | 2,710 回 | 50〜200 回 (実変更分のみ) |
-| 国税庁への負荷 | 高 | 中 (GET 数は不変だが、ペイロード送信は減) |
+| 指標              | v0.8.0    | v0.9.0 (推定)                             |
+| ----------------- | --------- | ----------------------------------------- |
+| 全件 bulk DL 時間 | 50 分     | **5〜10 分** (304 比率次第)               |
+| HTTP リクエスト数 | 2,710 GET | 2,710 GET (うち 90%+ が 304 で軽量)       |
+| parse 処理        | 2,710 回  | 200〜500 回 (変更分のみ)                  |
+| DB write          | 2,710 回  | 50〜200 回 (実変更分のみ)                 |
+| 国税庁への負荷    | 高        | 中 (GET 数は不変だが、ペイロード送信は減) |
 
 ### Migration (v0.8.0 → v0.9.0)
 
@@ -247,7 +250,7 @@ houki-hub MCP family 共通のエラー語彙 ([houki-research-skill / docs/ERRO
   `ARTICLE_NOT_FOUND` / `ABBREVIATION_NOT_FOUND` / `DOC_NOT_FOUND` / `SOURCE_API_ERROR` /
   `INTERNAL_ERROR`) を割り当て。
 - 外部ソース由来エラー (`NtaFetchError` catch) は `retryable: true` + `next_actions: [retryLater]`
-  + `detail.status` 付きで返すように。LLM が retry 判断しやすくなる。
+  - `detail.status` 付きで返すように。LLM が retry 判断しやすくなる。
 - 略称解決の管轄違い (`source_mcp_hint` 設定済) は `OUT_OF_SCOPE` + `delegateTo` next_action
   で返す。Skill 層からの自動ルーティングが可能に。
 - DB 未投入系エラーは `bulkDownload` next_action 付きで返す。

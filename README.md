@@ -26,24 +26,73 @@
 - **レスポンスに `freshness` 付き**: 利用者（LLM）が staleness を判定できる
 - **法的位置付けを明示**: 各レスポンスに `legal_status` フィールド（通達 = 税務署員のみ拘束、QA = 参考情報、等）
 
+### データフロー全体俯瞰
+
+国税庁 HP の 6 大コンテンツを bulk DL で SQLite cache に投入し、MCP tool は **DB-first → live fallback** で応答します。
+
+```mermaid
+flowchart TB
+  subgraph NTA["国税庁 HP (www.nta.go.jp)"]
+    direction TB
+    N1["基本通達 4 種<br/>消基通 / 所基通<br/>法基通 / 相基通"]
+    N2["改正通達"]
+    N3["事務運営指針"]
+    N4["文書回答事例"]
+    N5["タックスアンサー"]
+    N6["質疑応答事例"]
+  end
+
+  subgraph DL["bulk DL 層 (CLI)"]
+    DLA["--bulk-download-everything<br/>または個別 --bulk-download-*"]
+  end
+
+  subgraph DBLayer["SQLite cache<br/>~/.cache/houki-nta-mcp/cache.db"]
+    direction TB
+    DB1["document<br/>(本文 + content_hash)"]
+    DB2["section / clause<br/>(章節構造)"]
+    DB3["FTS5 全文検索<br/>(Normalize-everywhere)"]
+  end
+
+  subgraph Tools["14 MCP tool"]
+    direction TB
+    T1["nta_get_* × 6<br/>nta_search_* × 6"]
+    T2["nta_inspect_pdf_meta<br/>resolve_abbreviation"]
+  end
+
+  NTA -->|"scrape + parse<br/>(週次 health-check で監視)"| DLA
+  DLA -->|"normalize + insert"| DBLayer
+  DBLayer -->|"DB-first ~10ms"| Tools
+  NTA -.->|"live fallback ~700ms<br/>(DB 未投入時のみ)"| Tools
+  Tools -->|"freshness / legal_status<br/>を埋め込んで応答"| LLM(["LLM / Claude"])
+
+  classDef nta fill:#fff3cd,stroke:#ffc107,color:#333
+  classDef db fill:#d4edda,stroke:#28a745,color:#333
+  classDef tool fill:#cce5ff,stroke:#0066cc,color:#333
+  classDef cli fill:#e2d6f3,stroke:#7952b3,color:#333
+  class NTA nta
+  class DBLayer db
+  class Tools tool
+  class DL cli
+```
+
 ## 提供ツール（14 ツール）
 
-| Tool                         | 用途                                                   |
-| ---------------------------- | ------------------------------------------------------ |
-| `nta_get_tsutatsu`           | 通達本文を取得（DB-first → live fallback、4 通達対応） |
-| `nta_search_tsutatsu`        | 通達を FTS5 全文検索（`freshness` 付き）               |
-| `nta_get_kaisei_tsutatsu`    | 改正通達を docId で取得（本文 + kind 分類付き PDF 表） |
-| `nta_search_kaisei_tsutatsu` | 改正通達を FTS5 検索（`hasPdf` フィルタ・`freshness`）  |
-| `nta_get_jimu_unei`          | 事務運営指針を取得                                     |
-| `nta_search_jimu_unei`       | 事務運営指針を FTS5 検索（`hasPdf` フィルタ・`freshness`） |
-| `nta_get_bunshokaitou`       | 文書回答事例を取得                                     |
-| `nta_search_bunshokaitou`    | 文書回答事例を FTS5 検索（`hasPdf` フィルタ・`freshness`） |
-| `nta_get_tax_answer`         | タックスアンサー本文を取得                             |
-| `nta_search_tax_answer`      | タックスアンサーを FTS5 全文検索（`hasPdf` フィルタ・`freshness`） |
-| `nta_get_qa`                 | 質疑応答事例の本文を取得                               |
-| `nta_search_qa`              | 質疑応答事例を FTS5 全文検索（`freshness` 付き）       |
+| Tool                         | 用途                                                                                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `nta_get_tsutatsu`           | 通達本文を取得（DB-first → live fallback、4 通達対応）                                                                           |
+| `nta_search_tsutatsu`        | 通達を FTS5 全文検索（`freshness` 付き）                                                                                         |
+| `nta_get_kaisei_tsutatsu`    | 改正通達を docId で取得（本文 + kind 分類付き PDF 表）                                                                           |
+| `nta_search_kaisei_tsutatsu` | 改正通達を FTS5 検索（`hasPdf` フィルタ・`freshness`）                                                                           |
+| `nta_get_jimu_unei`          | 事務運営指針を取得                                                                                                               |
+| `nta_search_jimu_unei`       | 事務運営指針を FTS5 検索（`hasPdf` フィルタ・`freshness`）                                                                       |
+| `nta_get_bunshokaitou`       | 文書回答事例を取得                                                                                                               |
+| `nta_search_bunshokaitou`    | 文書回答事例を FTS5 検索（`hasPdf` フィルタ・`freshness`）                                                                       |
+| `nta_get_tax_answer`         | タックスアンサー本文を取得                                                                                                       |
+| `nta_search_tax_answer`      | タックスアンサーを FTS5 全文検索（`hasPdf` フィルタ・`freshness`）                                                               |
+| `nta_get_qa`                 | 質疑応答事例の本文を取得                                                                                                         |
+| `nta_search_qa`              | 質疑応答事例を FTS5 全文検索（`freshness` 付き）                                                                                 |
 | `nta_inspect_pdf_meta`       | 指定文書の添付 PDF メタ + `pdf-reader-mcp` 呼び出し例（kind 別 / extract_tables 推奨）だけを返す軽量 API (v0.7.1, v0.7.2 で拡張) |
-| `resolve_abbreviation`       | 略称→エントリ解決（houki-abbreviations 経由）          |
+| `resolve_abbreviation`       | 略称→エントリ解決（houki-abbreviations 経由）                                                                                    |
 
 ### 対応通達（4 種）
 
@@ -105,11 +154,11 @@ clause 番号は **Normalize-everywhere** で全角→半角統一されてい�
 
 bulk DL コマンドは利用形態に応じて以下の 3 形式があります。以降の例は **A. グローバルインストール済み** の形式で記載しています。`B` / `C` を使う場合は同様に置き換えてください。
 
-| 利用形態 | コマンド形式 | 前提 |
-|---|---|---|
-| **A. グローバル install 済み** | `houki-nta-mcp --bulk-download-everything` | `npm install -g @shuji-bonji/houki-nta-mcp` 実行済み |
-| **B. npx 経由（都度実行）** | `npx -y @shuji-bonji/houki-nta-mcp --bulk-download-everything` | Node.js / npm がインストール済みなら追加準備不要 |
-| **C. ローカルクローン** | `node /path/to/houki-nta-mcp/dist/index.js --bulk-download-everything` | `git clone` + `npm install` + `npm run build` 実行済み |
+| 利用形態                       | コマンド形式                                                           | 前提                                                   |
+| ------------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------ |
+| **A. グローバル install 済み** | `houki-nta-mcp --bulk-download-everything`                             | `npm install -g @shuji-bonji/houki-nta-mcp` 実行済み   |
+| **B. npx 経由（都度実行）**    | `npx -y @shuji-bonji/houki-nta-mcp --bulk-download-everything`         | Node.js / npm がインストール済みなら追加準備不要       |
+| **C. ローカルクローン**        | `node /path/to/houki-nta-mcp/dist/index.js --bulk-download-everything` | `git clone` + `npm install` + `npm run build` 実行済み |
 
 > [!TIP]
 > Claude Desktop / Claude Code で MCP サーバとして登録する場合は別問題で、`mcp_servers` 設定の `npx -y @shuji-bonji/houki-nta-mcp` (= 形式 B) を使います（後述「Claude Desktop / Claude Code への登録例」を参照）。bulk DL は **MCP サーバ起動とは別プロセス** で人間が実行するため、ここではどの形式でも構いません。
@@ -169,14 +218,14 @@ sqlite3 "$HOME/.cache/houki-nta-mcp/cache.db" \
 
 期待される doc_type 名 → 対応 bulk DL コマンド:
 
-| doc_type           | bulk DL コマンド                                | 備考                                  |
-| ------------------ | ----------------------------------------------- | ------------------------------------- |
-| `tsutatsu`         | `--bulk-download-all`                           | 通達本体 4 種を一括（消基通・所基通・法基通・相基通） |
-| `kaisei`           | `--bulk-download-kaisei`                        | 改正通達                              |
-| `jimu-unei`        | `--bulk-download-jimu-unei`                     | 事務運営指針                          |
-| `bunshokaitou`     | `--bulk-download-bunshokaitou [--bunsho-taxonomy=…]` | 文書回答事例（taxonomy 指定で短縮）   |
-| `tax-answer`       | `--bulk-download-tax-answer`                    | タックスアンサー                      |
-| `qa-jirei`         | `--bulk-download-qa [--qa-topic=…]`             | 質疑応答事例（topic 指定で短縮）      |
+| doc_type       | bulk DL コマンド                                     | 備考                                                  |
+| -------------- | ---------------------------------------------------- | ----------------------------------------------------- |
+| `tsutatsu`     | `--bulk-download-all`                                | 通達本体 4 種を一括（消基通・所基通・法基通・相基通） |
+| `kaisei`       | `--bulk-download-kaisei`                             | 改正通達                                              |
+| `jimu-unei`    | `--bulk-download-jimu-unei`                          | 事務運営指針                                          |
+| `bunshokaitou` | `--bulk-download-bunshokaitou [--bunsho-taxonomy=…]` | 文書回答事例（taxonomy 指定で短縮）                   |
+| `tax-answer`   | `--bulk-download-tax-answer`                         | タックスアンサー                                      |
+| `qa-jirei`     | `--bulk-download-qa [--qa-topic=…]`                  | 質疑応答事例（topic 指定で短縮）                      |
 
 `--bulk-download-everything` は上記すべてを順番に実行する短絡コマンドです。
 
@@ -202,14 +251,45 @@ node /path/to/houki-nta-mcp/dist/index.js --bulk-download-qa --qa-topic=shotoku
 
 スクレイピング主体のため、国税庁 HP の構造変更で bulk DL や parse が静かに壊れるリスクがあります。検知・可視化のため、以下を組み合わせて運用するのを推奨:
 
+```mermaid
+flowchart LR
+  subgraph Monthly["月次（重い処理 / ~51 分）"]
+    M1["--bulk-download-everything<br/>6 種別を順次投入<br/>+ baseline 履歴記録"]
+  end
+
+  subgraph Weekly["週次（軽い処理 / 数秒〜数十秒）"]
+    direction TB
+    W1["--check-baseline-drift<br/>menu.htm 突合<br/>(v0.9.4+, ~0.1 秒)"]
+    W2["--health-check --strict<br/>9 種別 canary fetch+parse<br/>(~10 秒)"]
+  end
+
+  DB[("SQLite cache.db")]
+  R(["MCP レスポンス<br/>+ freshness<br/>(fresh / stale / outdated)"])
+
+  M1 -->|"normalize + insert"| DB
+  DB -->|"DB-first 応答"| R
+  W1 -.->|"drift 検出時<br/>baseline URL 更新を上申"| M1
+  W2 -.->|"parser 失敗時<br/>HP 構造変更を検知"| M1
+  R -.->|"stale なら<br/>再 bulk DL を促す"| M1
+
+  classDef monthly fill:#cce5ff,stroke:#0066cc
+  classDef weekly fill:#d4edda,stroke:#28a745
+  classDef response fill:#fff3cd,stroke:#ffc107
+  class Monthly monthly
+  class Weekly weekly
+  class R response
+```
+
+**設計の要点**: 重い `bulk-download-everything` は **月次**、軽い `health-check` / `check-baseline-drift` は **週次**で階層化。週次の 2 つは Lv-3a (soft-404) と Lv-3b (menu.htm drift) の**二重防御**で、canary が落ちる前に baseline 更新を促せます (詳細は [`docs/RESILIENCE.md`](docs/RESILIENCE.md) §5.9-5.11)。
+
 > [!NOTE]
 > 以下の表およびコマンド例は、前述「コマンドの呼び出し形式」の **形式 A (グローバル install 済み)** を前提に記載しています。`B` (npx) / `C` (ローカルクローン) を使う場合は同様に置き換えてください。
 
-| 頻度         | コマンド                                   | 用途                                                                                  |
-| ------------ | ------------------------------------------ | ------------------------------------------------------------------------------------- |
-| 月 1 回      | `houki-nta-mcp --bulk-download-everything` | 4 パターン集計 + baseline 永続化                                                      |
-| 週 1 回      | `houki-nta-mcp --health-check`             | 9 種別の代表 URL を canary fetch + parse                                              |
-| 週 1 回      | `houki-nta-mcp --check-baseline-drift`     | menu.htm を正典として世代移行 (`sozoku2` 等) を事前検知 (v0.9.4+、canary より早期)    |
+| 頻度         | コマンド                                   | 用途                                                                                   |
+| ------------ | ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| 月 1 回      | `houki-nta-mcp --bulk-download-everything` | 4 パターン集計 + baseline 永続化                                                       |
+| 週 1 回      | `houki-nta-mcp --health-check`             | 9 種別の代表 URL を canary fetch + parse                                               |
+| 週 1 回      | `houki-nta-mcp --check-baseline-drift`     | menu.htm を正典として世代移行 (`sozoku2` 等) を事前検知 (v0.9.4+、canary より早期)     |
 | 週 1 回 (CI) | GitHub Actions cron                        | `--health-check --strict` で自動検知 + `--check-baseline-drift` で drift 警告 (別 job) |
 
 cron 設定例:
@@ -333,7 +413,11 @@ npm test
   "code": "TSUTATSU_NOT_FOUND",
   "hint": "nta_search_tsutatsu で正しい docId を検索してください",
   "next_actions": [
-    { "action": "nta_search_tsutatsu", "reason": "キーワード検索で該当通達を探せます", "example": { "keyword": "適格請求書" } }
+    {
+      "action": "nta_search_tsutatsu",
+      "reason": "キーワード検索で該当通達を探せます",
+      "example": { "keyword": "適格請求書" }
+    }
   ],
   "retryable": false
 }
