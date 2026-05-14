@@ -216,6 +216,18 @@ async function doFetch(
       throw new NtaFetchError(`HTTP ${res.status} ${res.statusText}`, url, res.status);
     }
 
+    // soft-404 検知 (Phase 5 Resilience Lv-3a):
+    // 国税庁サイトは存在しない URL を 302 → /error/404.htm に飛ばすため、
+    // HTTP ステータスは 200 だが内容は「指定されたページを表示できませんでした」になる。
+    // parser を呼ぶ前にここで弾き、4xx 相当として永続エラーで返す。
+    if (isNtaSoft404(res.url, url)) {
+      throw new NtaFetchError(
+        `soft-404 (redirected to ${res.url})`,
+        url,
+        404 // 4xx 相当にして retry を skip させる
+      );
+    }
+
     const buf = Buffer.from(await res.arrayBuffer());
     const charset = options.forceCharset
       ? normalizeCharset(options.forceCharset)
@@ -293,4 +305,35 @@ export function normalizeCharset(charset: string): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 国税庁サイトの soft-404 判定 (Phase 5 Resilience Lv-3a)。
+ *
+ * 国税庁サイトは存在しない URL に対して
+ *   1. HTTP 302 → `https://www.nta.go.jp/error/404.htm` にリダイレクト
+ *   2. リダイレクト先は HTTP 200 を返す
+ * という構造で、parser から見ると「2007 bytes の謎の HTML」が降ってきて
+ * 「本体セレクタが見つかりません」という曖昧な失敗になる。
+ *
+ * `fetch` で `redirect: 'follow'` した結果として `res.url` が
+ * `/error/404.htm` で終わる、かつ要求 URL と異なる場合に soft-404 と判定する。
+ *
+ * 2026-05-11 Canary 失敗 (sozoku/, hojin/01/03.htm) で実際に踏んだケース。
+ *
+ * @param finalUrl `res.url` (redirect 追従後の最終 URL)
+ * @param requestedUrl 元の要求 URL
+ */
+export function isNtaSoft404(finalUrl: string, requestedUrl: string): boolean {
+  if (!finalUrl) return false;
+  if (finalUrl === requestedUrl) return false;
+  // 末尾のクエリ・ハッシュは無視して pathname 部だけ見たい
+  try {
+    const u = new URL(finalUrl);
+    // 国税庁の soft-404 着地点は通常 /error/404.htm。
+    // 将来 /error/40x.htm のような分岐があっても拾えるよう前方一致で判定する。
+    return u.hostname.endsWith('nta.go.jp') && u.pathname.startsWith('/error/');
+  } catch {
+    return false;
+  }
 }

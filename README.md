@@ -19,7 +19,7 @@
 - **高速応答**: bulk DL 済なら DB から即時応答（~10ms）。未投入なら live fetch（~700ms/件）でフォールバック
 - **正規化済み検索**: Normalize-everywhere 原則で全角・半角ゆらぎを吸収
 - **改正検知**: SHA-1 content_hash で個別文書の変化を検知、4 パターン集計（新規 / 更新 / 削除 / 移動）
-- **HP 構造変更耐性 (v0.6.0)**: 9 種別 baseline で履歴管理 + `--health-check` CLI で週次 canary 検証
+- **HP 構造変更耐性 (v0.6.0 / v0.9.4)**: 9 種別 baseline で履歴管理 + `--health-check` CLI で週次 canary 検証 + `--check-baseline-drift` で `menu.htm` を真の正典として世代移行 (`sozoku2` / `hyoka_new` 等) を**事前検知** + soft-404 (`/error/404.htm` 着地) を `fetchNtaPage` で自動 fail させる二重防御
 - **添付 PDF kind 分類 (v0.7.0)**: タイトルから 6 種別（新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）に自動分類。Markdown 出力は kind 優先度ソートの表 + `pdf-reader-mcp` 呼び出し例つき
 - **`hasPdf` 検索フィルタ + `nta_inspect_pdf_meta` (v0.7.1)**: PDF 付きの重要文書だけを抽出 / PDF メタだけを軽量に返す軽量 API を提供
 - **kind 別 `reader_hints` + `extract_tables` 推奨 (v0.7.2)**: 添付 PDF の kind ごとに `pdf-reader-mcp` 呼び出し例を生成。`comparison`（新旧対照表）/ `attachment`（別紙・別表）は `pdf-reader-mcp@0.3.0+` の `extract_tables` で表構造を保持したまま抽出するよう誘導。「新旧**対応**表」など表記ゆれにも対応。v0.6.0 期に投入された DB レコードでも kind は応答時に動的補完
@@ -141,6 +141,9 @@ houki-nta-mcp --refresh-stale=30 --apply
 
 # 9 種別の代表 URL を canary 検証（HP 構造変更検知）
 houki-nta-mcp --health-check
+
+# menu.htm を真の正典として CANARY_TARGETS の世代移行を事前検知（canary より前段の予兆検知 / v0.9.4+）
+houki-nta-mcp --check-baseline-drift
 ```
 
 | コンテンツ        | 件数の目安        | 投入時間                   |
@@ -202,11 +205,12 @@ node /path/to/houki-nta-mcp/dist/index.js --bulk-download-qa --qa-topic=shotoku
 > [!NOTE]
 > 以下の表およびコマンド例は、前述「コマンドの呼び出し形式」の **形式 A (グローバル install 済み)** を前提に記載しています。`B` (npx) / `C` (ローカルクローン) を使う場合は同様に置き換えてください。
 
-| 頻度         | コマンド                                   | 用途                                     |
-| ------------ | ------------------------------------------ | ---------------------------------------- |
-| 月 1 回      | `houki-nta-mcp --bulk-download-everything` | 4 パターン集計 + baseline 永続化         |
-| 週 1 回      | `houki-nta-mcp --health-check`             | 9 種別の代表 URL を canary fetch + parse |
-| 週 1 回 (CI) | GitHub Actions cron                        | `--health-check --strict` で自動検知     |
+| 頻度         | コマンド                                   | 用途                                                                                  |
+| ------------ | ------------------------------------------ | ------------------------------------------------------------------------------------- |
+| 月 1 回      | `houki-nta-mcp --bulk-download-everything` | 4 パターン集計 + baseline 永続化                                                      |
+| 週 1 回      | `houki-nta-mcp --health-check`             | 9 種別の代表 URL を canary fetch + parse                                              |
+| 週 1 回      | `houki-nta-mcp --check-baseline-drift`     | menu.htm を正典として世代移行 (`sozoku2` 等) を事前検知 (v0.9.4+、canary より早期)    |
+| 週 1 回 (CI) | GitHub Actions cron                        | `--health-check --strict` で自動検知 + `--check-baseline-drift` で drift 警告 (別 job) |
 
 cron 設定例:
 

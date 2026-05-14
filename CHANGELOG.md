@@ -9,6 +9,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.9.4] - 2026-05-15
+
+🩹 **patch リリース** — 2026-05-11 の週次 Canary 失敗 ([run #25651043688](https://github.com/shuji-bonji/houki-nta-mcp/actions/runs/25651043688)) で発覚した国税庁サイトの URL 体系変更 (`sozoku` → `sozoku2`, `hojin` のアンダースコア区切り) に追従。加えて **Phase 5 Resilience Lv-3a (soft-404 自動検知) と Lv-3b (menu.htm を真の正典とした baseline drift 検知)** を実装し、次回 URL drift が発生しても (a) parser 失敗より手前で原因が明示され、(b) canary が落ちる**前に** menu.htm 突合で予兆検知できる二重防御に進化させた。
+
+### Fixed
+
+- **`tsutatsu-hojin` / `tsutatsu-sozoku` の canary URL を最新の生存パスに差し替え** ([src/services/health-check.ts](src/services/health-check.ts)):
+  - `tsutatsu-hojin`: `/kihon/hojin/01/03.htm` → `/kihon/hojin/01/01_03.htm` (法基通は他通達と異なり `{章}/{章}_{節}.htm` のアンダースコア区切り)
+  - `tsutatsu-sozoku`: `/kihon/sisan/sozoku/01.htm` → `/kihon/sisan/sozoku2/01.htm` (大改正で世代ディレクトリ移行、旧 `sozoku/` の本体は soft-404、`kaisei/` 階層のみ残存)
+  - 旧 URL は HTTP 302 → `/error/404.htm` の soft-404 (2007 bytes / md5: `4460496d614e48b939834d4e45db57b6`) を返していた。
+  - `--health-check --strict` が **9/9 OK** に回復し週次 CI が緑に戻った。
+
+### Added
+
+- **Phase 5 Resilience Lv-3a: soft-404 自動検知** ([src/services/nta-scraper.ts](src/services/nta-scraper.ts)):
+  - `isNtaSoft404(finalUrl, requestedUrl)` を新規 export。`redirect: 'follow'` 後の `res.url` が `nta.go.jp/error/...` で着地し、かつ要求 URL と異なる場合に soft-404 と判定。
+  - `fetchNtaPage` 内で `res.ok` 後 / parser 呼び出し前に検査し、検出時は `NtaFetchError(status=404, message='soft-404 (redirected to ...)')` を投げる (= `fetchNtaPage` 既存の「4xx は retry しない」永続エラー経路に乗せる)。
+  - parser 失敗 (`通達本体 (div.imp-cnt-tsutatsu#bodyArea) が見つかりません`) より明確な error message が出るため、次回 URL drift 時の原因特定が即時化される。
+- **Phase 5 Resilience Lv-3b: menu.htm を正典とした baseline drift 事前検知** ([src/services/menu-parser.ts](src/services/menu-parser.ts), [src/services/baseline-drift.ts](src/services/baseline-drift.ts)):
+  - `parseTsutatsuMenu(html, sourceUrl)` で `/law/tsutatsu/menu.htm` をパースし、現存する通達 (本体 + 改正履歴) リンクを `MenuEntry[]` で抽出。
+  - `detectBaselineDrift()` / `classifyDrift()` で `CANARY_TARGETS` の各 baseline URL が menu に存在するかを **taxKey 粒度** (節レベルではなく税目レベル) で突合。
+  - 世代サフィックス (`{base}\d+` / `{base}_new` / `{base}_[a-z]+`) を持つ兄弟ディレクトリが menu に出現した場合は `generation-drift` として上申、消滅した場合は `missing` として上申。
+  - 旧 `sisan/sozoku/01.htm` を渡すと `missing + newerGenerations=['sozoku2']` を返し、旧 `sisan/hyoka/01.htm` (実サイトでは HTML コメント内に死蔵) も `missing + newerGenerations=['hyoka_new']` を正しく返すことを動作確認済み。
+- **CLI フラグ `--check-baseline-drift`** ([src/cli.ts](src/cli.ts)):
+  - menu.htm を 1 回だけ fetch して全 baseline と突合する。
+  - `--strict` 併用で drift があれば exit code 1 (CI 用)、未指定なら警告出力のみ。
+  - `--check-baseline-drift --help` で使い方を確認可能。
+- **`.github/workflows/canary.yml` に `baseline-drift` job 追加**:
+  - 週次 cron で `--check-baseline-drift` を実行。`--strict` は付けない (generation-drift は warning 扱い、運用者判断で baseline 更新を促す位置付け)。
+
+### Changed
+
+- **`src/services/nta-scraper.ts`**: `isNtaSoft404` を新たに export (テスト容易性のため pure 関数として切り出し)。
+- **`src/cli.ts`**: `--health-check` 系の help テキスト直下に `--check-baseline-drift` の help を追記。
+
+### Compatibility
+
+- 既存の MCP tool I/F は完全後方互換。新規 CLI フラグ追加のみで、tool 呼び出し側の変更は不要。
+- `fetchNtaPage` の例外 message に `soft-404 (...)` が追加されるが、これは parser 層に到達する前に潰される (parser 失敗より手前)。`error: 'fetch: soft-404 ...'` という新規 error 文言が canary 結果に出るようになる。
+- `--check-baseline-drift` は新規フラグなので、既存のスクリプトには影響しない。
+
+### Migration (v0.9.3 → v0.9.4)
+
+- npm の依存追加なし、DB スキーマ変更なし、tool API 変更なし。
+- ユーザー側の作業は **`npm update @shuji-bonji/houki-nta-mcp`** のみ。
+- 週次 CI を持っている場合、`baseline-drift` job が追加されるので Actions の job 一覧が 1 つ増える (failure は出さない方針)。
+
+### 関連
+
+- 草案: [draft-issues/houki-nta-mcp-issue-canary-url-drift.md](https://github.com/shuji-bonji/jp-houki-mcp/blob/main/draft-issues/houki-nta-mcp-issue-canary-url-drift.md) (今回の対応で消化、issue 起票はせず本リリースで完結)
+- 設計: [docs/RESILIENCE.md §5.6 / §5.7](docs/RESILIENCE.md) (Lv-3a / Lv-3b の詳細)
+
 ## [0.9.3] - 2026-05-08
 
 🩹 **patch リリース** — Issue #15 (freshness 共有化) 対応。`StalenessLevel` 型 / 閾値定数 / 純関数を **`@shuji-bonji/houki-abbreviations` v0.4.1** から import するように切替。挙動変更なし、family 全体で同じ閾値・判定ロジックが共有される。

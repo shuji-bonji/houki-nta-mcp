@@ -85,16 +85,20 @@ export const CANARY_TARGETS: CanaryTarget[] = [
   },
   {
     doc_type: 'tsutatsu-hojin',
-    label: '法基通 1-3',
-    url: 'https://www.nta.go.jp/law/tsutatsu/kihon/hojin/01/03.htm',
+    label: '法基通 第1章 第3節',
+    // 法基通は他通達と異なり {章}/{章}_{節}.htm のアンダースコア区切り。
+    // 旧 URL hojin/01/03.htm は 302 → /error/404.htm の soft-404 を返す。
+    url: 'https://www.nta.go.jp/law/tsutatsu/kihon/hojin/01/01_03.htm',
     parse: (html, sourceUrl, fetchedAt) => {
       parseTsutatsuSection(html, sourceUrl, fetchedAt);
     },
   },
   {
     doc_type: 'tsutatsu-sozoku',
-    label: '相基通 第1章',
-    url: 'https://www.nta.go.jp/law/tsutatsu/kihon/sisan/sozoku/01.htm',
+    label: '相基通 第1章 (sozoku2)',
+    // 相基通は大改正で sisan/sozoku/ → sisan/sozoku2/ に世代移行。
+    // 旧 sisan/sozoku/ の本体は 302 → /error/404.htm の soft-404、kaisei/ 階層のみ残存。
+    url: 'https://www.nta.go.jp/law/tsutatsu/kihon/sisan/sozoku2/01.htm',
     parse: (html, sourceUrl, fetchedAt) => {
       parseTsutatsuSection(html, sourceUrl, fetchedAt);
     },

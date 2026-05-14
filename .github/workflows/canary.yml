@@ -47,3 +47,21 @@ jobs:
       - run: npm run build
       - name: Run --health-check --strict
         run: node ./dist/index.js --health-check --strict
+
+  # Phase 5 Resilience Lv-3b: menu.htm を真の正典として CANARY_TARGETS の世代移行を事前検知
+  # health-check が落ちる前に「baseline URL は menu に存在するか」を確認するレイヤ。
+  # ここで strict にしないのは、`generation-drift` (新世代併存) を warning として扱いたいため。
+  # 真に baseline 更新が必要な `missing` のみ即時 fail させる運用にしたい場合は --strict を追加。
+  baseline-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - name: Run --check-baseline-drift
+        run: node ./dist/index.js --check-baseline-drift

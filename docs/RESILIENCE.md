@@ -265,6 +265,88 @@ graph LR
 0 9 * * 1  /usr/local/bin/houki-nta-mcp --health-check >> ~/.cache/houki-nta-mcp/health.log 2>&1
 ```
 
+### 5.9 Lv-3a: soft-404 自動検知（v0.9.4 で実装）
+
+国税庁サイトは存在しない URL に対して `HTTP 302 → /error/404.htm` のリダイレクトを返す運用で、最終ステータスは 200 OK・本体は 2007 bytes の「指定されたページを表示できませんでした」HTML。`fetchNtaPage` は redirect を follow するため、parser 層に到達して「`div.imp-cnt-tsutatsu#bodyArea` が見つかりません」という曖昧な失敗になっていた。
+
+これを 5.6 の canary より早い段階で潰すため、`fetchNtaPage` 内に soft-404 検知を組み込む（[src/services/nta-scraper.ts](../src/services/nta-scraper.ts) の `isNtaSoft404` / `doFetch`）。
+
+```mermaid
+sequenceDiagram
+  participant C as caller (health-check / bulk-download)
+  participant F as fetchNtaPage
+  participant N as nta.go.jp
+  C->>F: GET /law/tsutatsu/kihon/sisan/sozoku/01.htm
+  F->>N: HTTP request (redirect: 'follow')
+  N-->>F: 302 → /error/404.htm
+  N-->>F: 200 OK (2007 bytes, soft-404 HTML)
+  Note over F: res.url が /error/404.htm に着地<br/>→ isNtaSoft404 が true
+  F-->>C: throw NtaFetchError(status=404, "soft-404 (redirected to ...)")
+  Note over C: parser を呼ばず、4xx 永続エラーとして即時 fail
+```
+
+判定条件: `redirect: 'follow'` 後の `res.url` が
+
+1. `nta.go.jp` ホスト配下で
+2. `/error/` で始まる pathname に着地し
+3. 元の要求 URL と異なる
+
+の 3 つをすべて満たした場合に soft-404 と判定する。`fetchNtaPage` の既存の「4xx は retry しない」永続エラー経路に乗せるため `status=404` で `NtaFetchError` を投げる。
+
+これにより、次の URL drift が起きたときの error message は:
+
+- **Before**: `parse: 通達本体 (div.imp-cnt-tsutatsu#bodyArea) が見つかりません`（原因不明）
+- **After**: `fetch: soft-404 (redirected to https://www.nta.go.jp/error/404.htm)`（URL drift と即座に分かる）
+
+### 5.10 Lv-3b: menu.htm を正典とした baseline drift 事前検知（v0.9.4 で実装）
+
+5.6 の canary は「baseline URL が実 fetch + parse できるか」という事後検証だが、Lv-3b は「baseline URL が国税庁の現役通達インデックス (`/law/tsutatsu/menu.htm`) に**そもそも載っているか**」を事前検証する。canary が落ちる**前に** baseline 更新を促せる早期検知レイヤ。
+
+国税庁サイトの URL 体系の罠は 2 つ:
+
+1. **世代ディレクトリ移行**: 大改正があると `sozoku` → `sozoku2`, `hyoka` → `hyoka_new` のように新ディレクトリを切って旧本体は消す運用。`kaisei/` 階層だけ旧パスに残ることがある（例: `sisan/sozoku/kaisei/kaisei_a.htm` は今も生存）。
+2. **通達ごとに URL 区切りが違う**: `shohi` / `shotoku` は `{章}/{節}.htm`、`hojin` は `{章}/{章}_{節}.htm` のアンダースコア形式。同じ「基本通達」でも生成ロジックが揃っていない。
+
+これらを発見するため、[`src/services/menu-parser.ts`](../src/services/menu-parser.ts) で `menu.htm` を cheerio パースし、[`src/services/baseline-drift.ts`](../src/services/baseline-drift.ts) で `CANARY_TARGETS` と突合する。
+
+```mermaid
+flowchart LR
+  M[/law/tsutatsu/menu.htm<br/>UTF-8、現役の正典] --> P[parseTsutatsuMenu]
+  P --> ME[MenuEntry[]]
+  CT[CANARY_TARGETS] --> CD[detectBaselineDrift]
+  ME --> CD
+  CD --> R{classifyDrift per target}
+  R -->|baseline taxKey<br/>が menu に存在| OK[ok]
+  R -->|baseline taxKey<br/>無 + 新世代有| MG[missing + newer=...]
+  R -->|baseline taxKey<br/>無 + 新世代無| MS[missing]
+  R -->|baseline taxKey<br/>有 + 新世代も有| GD[generation-drift]
+```
+
+判定の核は **taxKey 粒度**。baseline URL は節レベル (`shohi/01/04.htm`) だが menu は章レベル (`shohi/01.htm`) しか載せないため、`computeTaxKey()` で「ファイル名でも純粋数字ディレクトリ (章番号) でもない名前付きディレクトリの連鎖」を抽出して比較する。
+
+```
+shohi/01/04.htm                          → 'shohi'
+sisan/sozoku2/01.htm                     → 'sisan/sozoku2'
+hojin/01/01_03.htm                       → 'hojin'
+sisan/sozoku/kaisei/kaisei_a.htm         → 'sisan/sozoku/kaisei'
+```
+
+世代サフィックス検出は `{base}\d+` / `{base}_new` / `{base}_[a-z]+` のパターンを兄弟ディレクトリ名から拾う。`sisan/sozoku` の baseline に対して menu に `sisan/sozoku2` があれば `newerGenerations=['sozoku2']` を返す。
+
+> **注意点 (cheerio 落とし穴)**: 国税庁 menu.htm は世代移行後の旧版リンクを `<!-- -->` 内に **コメントアウトで死蔵**する運用 (例: 旧 `sisan/hyoka/01.htm` は HTML コメント内に残存)。`grep 'href='` だと拾えるが cheerio は解釈しないため、cheerio 出力を真の正典として扱うのが正解。
+
+### 5.11 推奨 CI 構成 (v0.9.4 以降)
+
+[.github/workflows/canary.yml](../.github/workflows/canary.yml) に 3 つの job を週次 cron で並列実行する。
+
+| job              | strict | 目的                                                                                |
+| ---------------- | :----: | ----------------------------------------------------------------------------------- |
+| `integration`    | -      | `INTEGRATION=1 npm test` で実 fetch を含むテスト                                    |
+| `health-check`   | ✓      | 9 種別の canary fetch + parse。Lv-3a により soft-404 はここで明示的に fail する     |
+| `baseline-drift` | -      | menu.htm 突合で世代移行を事前検知 (`generation-drift` は warning 扱いで fail させない) |
+
+`health-check` で気付くより前に `baseline-drift` が generation-drift を上申し、運用者が baseline URL を更新する→ canary が落ちずに済む、という流れが理想。
+
 ## 6. Visibility design (Passive 検知)
 
 レスポンスに staleness 情報を埋め込む。実装コストは DB の `fetched_at` 1 列読むだけで、追加コストは < 1ms。

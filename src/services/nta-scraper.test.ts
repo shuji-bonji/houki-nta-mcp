@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { encode as iconvEncode } from 'iconv-lite';
 
-import { fetchNtaPage, detectCharset, normalizeCharset, NtaFetchError } from './nta-scraper.js';
+import {
+  fetchNtaPage,
+  detectCharset,
+  normalizeCharset,
+  NtaFetchError,
+  isNtaSoft404,
+} from './nta-scraper.js';
 
 /* -------------------------------------------------------------------------- */
 /* helpers                                                                    */
@@ -305,6 +311,111 @@ describe('fetchNtaPage — Phase 6-2 conditional GET', () => {
     await fetchNtaPage('https://x', { fetchImpl });
     expect(captured['If-Modified-Since']).toBeUndefined();
     expect(captured['If-None-Match']).toBeUndefined();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Phase 5 Resilience Lv-3a: soft-404 detection                               */
+/* -------------------------------------------------------------------------- */
+
+describe('isNtaSoft404 (pure)', () => {
+  it('redirect されて /error/404.htm に着地したら true', () => {
+    expect(
+      isNtaSoft404(
+        'https://www.nta.go.jp/error/404.htm',
+        'https://www.nta.go.jp/law/tsutatsu/kihon/hojin/01/03.htm'
+      )
+    ).toBe(true);
+  });
+
+  it('redirect されて /error/40x.htm のような派生にも前方一致で乗る', () => {
+    expect(
+      isNtaSoft404('https://www.nta.go.jp/error/40x.htm', 'https://www.nta.go.jp/law/x.htm')
+    ).toBe(true);
+  });
+
+  it('final URL が要求 URL と同一なら soft-404 ではない (redirect 発生せず)', () => {
+    const u = 'https://www.nta.go.jp/error/404.htm';
+    // ありえないが defensive: 元から /error/ を直接叩いた場合は素直に通す
+    expect(isNtaSoft404(u, u)).toBe(false);
+  });
+
+  it('nta.go.jp 以外のホストならば対象外', () => {
+    expect(
+      isNtaSoft404('https://example.com/error/404.htm', 'https://www.nta.go.jp/law/x.htm')
+    ).toBe(false);
+  });
+
+  it('finalUrl が空ならば false', () => {
+    expect(isNtaSoft404('', 'https://www.nta.go.jp/law/x.htm')).toBe(false);
+  });
+
+  it('正規の通達 URL (redirect 後でも /error/ でない) は false', () => {
+    expect(
+      isNtaSoft404(
+        'https://www.nta.go.jp/law/tsutatsu/kihon/sisan/sozoku2/01.htm',
+        'https://www.nta.go.jp/law/tsutatsu/kihon/sisan/sozoku/01.htm'
+      )
+    ).toBe(false);
+  });
+
+  it('壊れた URL は false (例外で fail させない)', () => {
+    expect(isNtaSoft404('not a url', 'https://www.nta.go.jp/law/x.htm')).toBe(false);
+  });
+});
+
+describe('fetchNtaPage — soft-404 (Phase 5 Resilience Lv-3a)', () => {
+  /** Response に最終 URL (`res.url`) を後付けで設定する (Node fetch では redirect 後 URL が入る) */
+  function makeResponseWithUrl(body: BodyInit | null, init: ResponseInit, finalUrl: string) {
+    const res = new Response(body, init);
+    Object.defineProperty(res, 'url', { value: finalUrl, configurable: true });
+    return res;
+  }
+
+  it('redirect で /error/404.htm に着地したら 200 でも 4xx 相当の NtaFetchError を投げる', async () => {
+    const sjisHtml =
+      '<html><head><title>指定されたページを表示できませんでした</title></head><body>404</body></html>';
+    const buf = iconvEncode(sjisHtml, 'shift_jis');
+    const fetchImpl = vi.fn(async () =>
+      makeResponseWithUrl(
+        buf,
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=Shift_JIS' },
+        },
+        'https://www.nta.go.jp/error/404.htm'
+      )
+    ) as unknown as typeof fetch;
+
+    await expect(
+      fetchNtaPage('https://www.nta.go.jp/law/tsutatsu/kihon/hojin/01/03.htm', {
+        fetchImpl,
+        maxRetries: 3,
+        retryBaseMs: 1,
+      })
+    ).rejects.toMatchObject({
+      name: 'NtaFetchError',
+      status: 404,
+      message: expect.stringContaining('soft-404'),
+    });
+    // 4xx 相当なので retry しない (= 1 回だけ呼ばれる)
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('res.url が同一 (= redirect なし) なら parser 層に流れる (soft-404 と誤判定しない)', async () => {
+    const url = 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/01/04.htm';
+    const buf = iconvEncode('<html>消基通</html>', 'shift_jis');
+    const fetchImpl = vi.fn(async () =>
+      makeResponseWithUrl(
+        buf,
+        { status: 200, headers: { 'Content-Type': 'text/html; charset=Shift_JIS' } },
+        url
+      )
+    ) as unknown as typeof fetch;
+
+    const r = await fetchNtaPage(url, { fetchImpl });
+    expect(r.status).toBe(200);
+    expect(r.html).toContain('消基通');
   });
 });
 

@@ -29,6 +29,7 @@ import {
 } from './services/bulk-aggregation.js';
 import { snapshotDocumentTable } from './services/db-snapshot.js';
 import { runHealthCheck } from './services/health-check.js';
+import { detectBaselineDrift } from './services/baseline-drift.js';
 import { loadBaseline } from './services/health-store.js';
 import { PACKAGE_INFO } from './config.js';
 import { TSUTATSU_URL_ROOTS } from './constants.js';
@@ -61,7 +62,9 @@ interface CliArgs {
   refreshStale: boolean;
   /** Phase 5 Resilience: 6 種別の代表 URL を canary fetch + parse 検証 */
   healthCheck: boolean;
-  /** --health-check 時に fail があれば exit code 非ゼロ（CI 用） */
+  /** Phase 5 Resilience Lv-3b: menu.htm を真の正典として CANARY_TARGETS の drift を検知 */
+  checkBaselineDrift: boolean;
+  /** --health-check / --check-baseline-drift 時に fail があれば exit code 非ゼロ（CI 用） */
   strict: boolean;
   tsutatsu: string;
   dbPath: string | undefined;
@@ -87,6 +90,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     staleDays: undefined,
     refreshStale: false,
     healthCheck: false,
+    checkBaselineDrift: false,
     strict: false,
     tsutatsu: '消費税法基本通達',
     dbPath: undefined,
@@ -122,6 +126,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     } else if (a === '--bulk-download-all') args.bulkDownloadAll = true;
     else if (a === '--bulk-download') args.bulkDownload = true;
     else if (a === '--health-check') args.healthCheck = true;
+    else if (a === '--check-baseline-drift') args.checkBaselineDrift = true;
     else if (a === '--strict') args.strict = true;
     else if (a === '--refresh') args.refresh = true;
     else if (a === '--apply') args.refreshStale = true;
@@ -153,6 +158,8 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
   houki-nta-mcp --refresh-stale=<日数> --apply  N 日以上古い section の通達を実際に再 DL
   houki-nta-mcp --health-check              6 大コンテンツ + 4 通達（計 9 種別）の代表 URL を canary fetch + parse 検証
   houki-nta-mcp --health-check --strict     fail があれば exit code 1（CI 用）
+  houki-nta-mcp --check-baseline-drift      /law/tsutatsu/menu.htm を正典として CANARY_TARGETS の世代移行を事前検知（Phase 5 Lv-3b）
+  houki-nta-mcp --check-baseline-drift --strict  drift があれば exit code 1（CI 用）
   houki-nta-mcp --version                  バージョンを表示
   houki-nta-mcp --help                     このメッセージを表示
 
@@ -224,7 +231,48 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
     await runHealthCheckCli(args);
     return true;
   }
+  if (args.checkBaselineDrift) {
+    await runBaselineDriftCli(args);
+    return true;
+  }
   return false;
+}
+
+/**
+ * Phase 5 Resilience Lv-3b: --check-baseline-drift CLI モード。
+ *
+ * `/law/tsutatsu/menu.htm` を「真の正典」として fetch し、
+ * CANARY_TARGETS の各 baseline URL が menu に存在するか、
+ * かつ新世代ディレクトリ (sozoku2, hyoka_new 等) が menu に出現していないかをチェックする。
+ *
+ * canary が落ちる**前に** baseline 更新を促せる早期検知レイヤ。
+ */
+async function runBaselineDriftCli(args: CliArgs): Promise<void> {
+  process.stderr.write(`[drift-check] fetching /law/tsutatsu/menu.htm ...\n`);
+  const result = await detectBaselineDrift();
+
+  process.stderr.write(`\n[drift-check] ===== サマリ =====\n`);
+  process.stderr.write(`  menu entries: ${result.menuEntryCount}\n`);
+  for (const e of result.entries) {
+    const mark = e.status === 'ok' ? '✓' : e.status === 'generation-drift' ? '⚠' : '✗';
+    process.stderr.write(`  ${mark} ${e.doc_type.padEnd(18)} ${e.label}\n`);
+    process.stderr.write(`    → ${e.message}\n`);
+    if (e.newerGenerations?.length) {
+      process.stderr.write(`    newer: ${e.newerGenerations.join(', ')}\n`);
+    }
+  }
+  process.stderr.write(
+    `\n[drift-check] ${result.entries.length - result.driftCount}/${result.entries.length} OK, drift=${result.driftCount} (${(result.durationMs / 1000).toFixed(1)}s)\n`
+  );
+
+  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+
+  if (args.strict && result.driftCount > 0) {
+    process.stderr.write(
+      `\n[drift-check] --strict: ${result.driftCount} drift detected → exit 1\n`
+    );
+    process.exit(1);
+  }
 }
 
 /**
