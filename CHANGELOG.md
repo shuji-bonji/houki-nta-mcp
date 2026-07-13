@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.9.5] - 2026-07-14
+
+🔌 **patch リリース** — Claude Code の **plugin manifest** (`.claude-plugin/plugin.json`) を追加。`/plugin` から houki-nta-mcp をワンステップでインストールできるようになった。機能・API に変更はない。
+
+### Added
+
+- **`.claude-plugin/plugin.json`** — Claude Code plugin manifest:
+  - `mcpServers.houki-nta` に `npx -y @shuji-bonji/houki-nta-mcp@latest` を定義。ユーザーは `claude_desktop_config.json` / `.mcp.json` を手で編集せずに導入できる。
+  - `name` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` を記載。
+  - plugin manifest の `version` は package.json と同期させる (以降のリリースでは両方を bump する)。
+
 ## [0.9.4] - 2026-05-15
 
 🩹 **patch リリース** — 2026-05-11 の週次 Canary 失敗 ([run #25651043688](https://github.com/shuji-bonji/houki-nta-mcp/actions/runs/25651043688)) で発覚した国税庁サイトの URL 体系変更 (`sozoku` → `sozoku2`, `hojin` のアンダースコア区切り) に追従。加えて **Phase 5 Resilience Lv-3a (soft-404 自動検知) と Lv-3b (menu.htm を真の正典とした baseline drift 検知)** を実装し、次回 URL drift が発生しても (a) parser 失敗より手前で原因が明示され、(b) canary が落ちる**前に** menu.htm 突合で予兆検知できる二重防御に進化させた。
