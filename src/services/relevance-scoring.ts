@@ -28,12 +28,7 @@
 
 /** スコア計算で扱う doc_type の正規化された識別子 */
 export type DocTypeForScoring =
-  | 'tsutatsu'
-  | 'kaisei'
-  | 'jimu-unei'
-  | 'bunshokaitou'
-  | 'qa'
-  | 'tax-answer';
+  'tsutatsu' | 'kaisei' | 'jimu-unei' | 'bunshokaitou' | 'qa' | 'tax-answer';
 
 /**
  * 法的拘束力の階層に基づく doc_type 重み (PHASE6 §3.2)。

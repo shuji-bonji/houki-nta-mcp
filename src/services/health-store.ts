@@ -26,11 +26,7 @@ import type { DocType } from '../types/document.js';
  * HP 変更も通達ごとに独立して発生するため、合算では detection 精度が落ちる。
  */
 export type BaselineDocType =
-  | DocType
-  | 'tsutatsu-shohi'
-  | 'tsutatsu-shotoku'
-  | 'tsutatsu-hojin'
-  | 'tsutatsu-sozoku';
+  DocType | 'tsutatsu-shohi' | 'tsutatsu-shotoku' | 'tsutatsu-hojin' | 'tsutatsu-sozoku';
 
 /** 基本通達 4 種の baseline 種別 */
 export const TSUTATSU_BASELINE_TYPES = [

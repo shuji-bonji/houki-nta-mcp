@@ -138,8 +138,7 @@ describe('bulkDownloadTsutatsu — 消基通 (fixture モック)', () => {
           `SELECT clause_number, source_url, title FROM clause WHERE tsutatsu_id = ? AND clause_number = ?`
         )
         .get(r.tsutatsuId, '1-4-13の2') as
-        | { clause_number: string; source_url: string; title: string }
-        | undefined;
+        { clause_number: string; source_url: string; title: string } | undefined;
       expect(lookup).toBeDefined();
       expect(lookup?.source_url).toBe('https://www.nta.go.jp/law/tsutatsu/kihon/shohi/01/04.htm');
       expect(lookup?.title).toContain('分割があった場合');

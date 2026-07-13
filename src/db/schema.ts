@@ -237,8 +237,7 @@ export function getSchemaVersion(db: DatabaseT.Database): number | null {
   // schema_meta テーブルが無い段階で呼ばれる場合に備える
   try {
     const row = db.prepare('SELECT value FROM schema_meta WHERE key = ?').get('schema_version') as
-      | { value?: string }
-      | undefined;
+      { value?: string } | undefined;
     if (!row?.value) return null;
     const n = parseInt(row.value, 10);
     return Number.isFinite(n) ? n : null;

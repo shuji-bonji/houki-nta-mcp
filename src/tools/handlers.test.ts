@@ -61,8 +61,7 @@ describe('searchTsutatsu — Phase 2c 本実装', () => {
   // search-stub の登録確認用に、spy せずに handleNtaSearchTsutatsu 経由でも呼べることを確認
   it('handleNtaSearchTsutatsu が searchTsutatsu に委譲されている', async () => {
     const r = (await handleNtaSearchTsutatsu({ keyword: '消費税' })) as
-      | { hits?: unknown[]; error?: string }
-      | { hits: unknown[]; count: number };
+      { hits?: unknown[]; error?: string } | { hits: unknown[]; count: number };
     // ローカルの実 DB が無い前提なので、error or hits=0 のいずれかのレスポンス形になっているはず
     expect(r).toBeDefined();
   });

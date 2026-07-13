@@ -315,8 +315,7 @@ export function getClauseFromDb(
   // 例: "1－4－13の2"（全角ハイフン）→ "1-4-13の2"（DB 内の正規化済み形式）
   const normalizedClauseNumber = normalizeClauseNumber(clauseNumber);
   const row = db.prepare(sql).get(formalName, normalizedClauseNumber) as
-    | (Omit<ClauseRow, 'paragraphs'> & { paragraphsJson: string })
-    | undefined;
+    (Omit<ClauseRow, 'paragraphs'> & { paragraphsJson: string }) | undefined;
   if (!row) return null;
 
   let paragraphs: ClauseRow['paragraphs'] = [];
