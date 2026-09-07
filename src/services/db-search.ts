@@ -62,7 +62,7 @@ export function describeSearchNotes(keyword: string): string[] {
     notes.push(
       a.ftsTokens.length > 0
         ? `${words} は ${FTS_MIN_TOKEN_LENGTH} 文字未満のため FTS5 (trigram) の索引に乗りません。3 文字以上の語で全文検索したうえで、本文に ${words} を含むものに絞り込みました`
-        : `${words} は ${FTS_MIN_TOKEN_LENGTH} 文字未満のため FTS5 (trigram) では検索できません。代わりに本文とタイトルの部分一致 (LIKE) で検索しました。0 件でも「該当なし」とは限らないので、3 文字以上の語 (例: "役員退職" "役員給与") での再検索を推奨します`
+        : `${words} は ${FTS_MIN_TOKEN_LENGTH} 文字未満のため FTS5 (trigram) では検索できません。代わりに本文とタイトルの部分一致 (LIKE) で検索しました。0 件でも「該当なし」とは限らないので、${words} に語を続けて 3 文字以上にした形での再検索を推奨します`
     );
   }
   if (a.droppedTokens.length > 0) {
