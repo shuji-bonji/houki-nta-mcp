@@ -342,6 +342,8 @@ export async function bulkDownloadTsutatsu(
           const normalizedParagraphs = c.paragraphs.map((p) => ({
             indent: p.indent,
             text: normalizeJpText(p.text),
+            // Issue #17: 画像の位置と alt を paragraphs_json にも残す
+            ...(p.images && p.images.length > 0 ? { images: p.images } : {}),
           }));
           insertClause.run(
             tsutatsuId,
@@ -452,7 +454,11 @@ export function writeBackLiveSection(
       clauseNumber: string;
       title: string;
       fullText: string;
-      paragraphs: ReadonlyArray<{ indent: 1 | 2 | 3; text: string }>;
+      paragraphs: ReadonlyArray<{
+        indent: 1 | 2 | 3;
+        text: string;
+        images?: ReadonlyArray<{ alt: string; src: string }>;
+      }>;
     }>;
   }
 ): number {
@@ -507,6 +513,8 @@ export function writeBackLiveSection(
         const normalizedParagraphs = c.paragraphs.map((p) => ({
           indent: p.indent,
           text: normalizeJpText(p.text),
+          // Issue #17: 画像の位置と alt を paragraphs_json にも残す
+          ...(p.images && p.images.length > 0 ? { images: p.images } : {}),
         }));
         insertClause.run(
           tsutatsuId,

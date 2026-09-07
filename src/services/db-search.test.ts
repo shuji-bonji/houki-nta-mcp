@@ -3,7 +3,15 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { initSchema } from '../db/schema.js';
-import { hasAnyClause, sanitizeFtsQuery, searchClauseFts, searchDocumentFts } from './db-search.js';
+import {
+  analyzeKeyword,
+  describeSearchNotes,
+  hasAnyClause,
+  makeLikeSnippet,
+  sanitizeFtsQuery,
+  searchClauseFts,
+  searchDocumentFts,
+} from './db-search.js';
 
 /* テスト用ヘルパ: tsutatsu と clause を 1 件ずつ INSERT */
 function seed(
@@ -50,19 +58,165 @@ describe('sanitizeFtsQuery', () => {
   });
 
   it('複数語は AND 結合', () => {
-    expect(sanitizeFtsQuery('課税 売上')).toBe('"課税" AND "売上"');
-    expect(sanitizeFtsQuery('課税  売上')).toBe('"課税" AND "売上"'); // 連続スペース
-    expect(sanitizeFtsQuery('課税　売上')).toBe('"課税" AND "売上"'); // 全角スペース
+    expect(sanitizeFtsQuery('課税仕入 売上高')).toBe('"課税仕入" AND "売上高"');
+    expect(sanitizeFtsQuery('課税仕入  売上高')).toBe('"課税仕入" AND "売上高"'); // 連続スペース
+    expect(sanitizeFtsQuery('課税仕入　売上高')).toBe('"課税仕入" AND "売上高"'); // 全角スペース
   });
 
   it('FTS5 メタ文字を除去', () => {
-    expect(sanitizeFtsQuery('"消費税"*:()軽減')).toBe('"消費税" AND "軽減"');
+    expect(sanitizeFtsQuery('"消費税"*:()軽減税率')).toBe('"消費税" AND "軽減税率"');
   });
 
   it('空文字 / 短すぎる入力は空文字を返す', () => {
     expect(sanitizeFtsQuery('')).toBe('');
     expect(sanitizeFtsQuery(' ')).toBe('');
     expect(sanitizeFtsQuery('a')).toBe('');
+  });
+
+  it('Issue #18: 3 文字未満の語は trigram に乗らないので MATCH 式から外す', () => {
+    expect(sanitizeFtsQuery('役員')).toBe('');
+    expect(sanitizeFtsQuery('課税 売上')).toBe('');
+    expect(sanitizeFtsQuery('役員 退職給与')).toBe('"退職給与"');
+  });
+});
+
+describe('analyzeKeyword / describeSearchNotes — Issue #18', () => {
+  it('語の長さで fts / short / dropped に振り分ける', () => {
+    expect(analyzeKeyword('役員 退職給与 a')).toEqual({
+      ftsTokens: ['退職給与'],
+      shortTokens: ['役員'],
+      droppedTokens: ['a'],
+    });
+    expect(analyzeKeyword('')).toEqual({ ftsTokens: [], shortTokens: [], droppedTokens: [] });
+  });
+
+  it('3 文字以上だけなら注記なし', () => {
+    expect(describeSearchNotes('軽減税率')).toEqual([]);
+  });
+
+  it('2 文字語だけなら LIKE で検索した旨と再検索の推奨を返す', () => {
+    const notes = describeSearchNotes('役員');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain('"役員"');
+    expect(notes[0]).toContain('LIKE');
+    expect(notes[0]).toContain('3 文字以上');
+  });
+
+  it('2 文字語 + 3 文字以上の語なら絞り込みに使った旨を返す', () => {
+    const notes = describeSearchNotes('役員 退職給与');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain('絞り込み');
+  });
+
+  it('1 文字語は外した旨を返す', () => {
+    const notes = describeSearchNotes('軽減税率 a');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain('"a"');
+    expect(notes[0]).toContain('1 文字');
+  });
+
+  it('makeLikeSnippet は最初の一致語の前後を <b> で囲んで返す', () => {
+    const text = `${'あ'.repeat(30)}役員${'い'.repeat(30)}`;
+    const snip = makeLikeSnippet(text, ['役員'], 4);
+    expect(snip).toBe(' … ああああ<b>役員</b>いいいい … ');
+    expect(makeLikeSnippet('役員だけ', ['役員'])).toBe('<b>役員</b>だけ');
+    expect(makeLikeSnippet('なし', ['役員'])).toBe('なし');
+  });
+});
+
+describe('searchClauseFts / searchDocumentFts — Issue #18: 2 文字語の LIKE 補完', () => {
+  let db: DatabaseT.Database;
+  beforeEach(() => {
+    db = new Database(':memory:');
+    initSchema(db);
+    seed(db, '法人税基本通達', '法基通', [
+      {
+        clauseNumber: '9-2-1',
+        chapter: 9,
+        section: 2,
+        title: '役員の範囲',
+        fullText:
+          '役員の範囲\n法第2条第15号に規定する役員には、使用人以外の者で経営に従事している者が含まれる。',
+        sourceUrl: 'https://x/09/02.htm',
+      },
+      {
+        clauseNumber: '9-2-27',
+        chapter: 9,
+        section: 2,
+        title: '退職給与の打切支給',
+        fullText:
+          '退職給与の打切支給\n法人が使用人に対し退職給与を支給した場合の取扱い。役員には適用しない。',
+        sourceUrl: 'https://x/09/02.htm',
+      },
+      {
+        clauseNumber: '2-1-1',
+        chapter: 2,
+        section: 1,
+        title: '棚卸資産の販売',
+        fullText:
+          '棚卸資産の販売\n棚卸資産の販売による収益の額は引渡しの日の属する事業年度の益金の額に算入する。',
+        sourceUrl: 'https://x/02/01.htm',
+      },
+    ]);
+    seedDoc(db, {
+      docType: 'qa-jirei',
+      docId: 'qa-1',
+      title: '役員に対する経済的利益',
+      fullText: '役員に対して社宅を貸与した場合の経済的利益の取扱い。',
+    });
+    seedDoc(db, {
+      docType: 'qa-jirei',
+      docId: 'qa-2',
+      title: '棚卸資産の評価',
+      fullText: '棚卸資産の評価方法の届出について。',
+    });
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('2 文字語だけのクエリは trigram では 0 件になるが、LIKE 補完でヒットする', () => {
+    // 前提の確認: FTS5 trigram は 2 文字語を索引しない
+    const ftsCount = db
+      .prepare(`SELECT COUNT(*) AS n FROM clause_fts WHERE clause_fts MATCH ?`)
+      .get('"役員"') as { n: number };
+    expect(ftsCount.n).toBe(0);
+
+    const hits = searchClauseFts(db, '役員');
+    expect(hits.map((h) => h.clauseNumber).sort()).toEqual(['9-2-1', '9-2-27']);
+    expect(hits[0].snippet).toContain('<b>役員</b>');
+    expect(hits[0].scoreReasons?.some((r) => r.includes('short token search'))).toBe(true);
+  });
+
+  it('2 文字語 + 3 文字以上の語は FTS ヒットを 2 文字語で絞り込む (AND)', () => {
+    const hits = searchClauseFts(db, '退職給与 役員');
+    expect(hits.map((h) => h.clauseNumber)).toEqual(['9-2-27']);
+    expect(hits[0].scoreReasons?.some((r) => r.includes('short token filter'))).toBe(true);
+    // 本文に含まれない 2 文字語で絞ると 0 件
+    expect(searchClauseFts(db, '退職給与 社宅')).toEqual([]);
+  });
+
+  it('formalName の絞り込みは LIKE 経路でも効く', () => {
+    expect(searchClauseFts(db, '役員', { formalName: '法人税基本通達' })).toHaveLength(2);
+    expect(searchClauseFts(db, '役員', { formalName: '所得税基本通達' })).toEqual([]);
+  });
+
+  it('LIKE のメタ文字 (% _) はリテラルとして扱う', () => {
+    expect(searchClauseFts(db, '%%')).toEqual([]);
+    expect(searchClauseFts(db, '__')).toEqual([]);
+  });
+
+  it('document 側も 2 文字語を LIKE で補完し、docType / taxonomy フィルタが効く', () => {
+    const hits = searchDocumentFts(db, '役員', { docType: 'qa-jirei' });
+    expect(hits.map((h) => h.docId)).toEqual(['qa-1']);
+    expect(hits[0].snippet).toContain('<b>役員</b>');
+    expect(searchDocumentFts(db, '役員', { docType: 'kaisei' })).toEqual([]);
+    expect(searchDocumentFts(db, '役員', { taxonomy: 'hojin' })).toEqual([]);
+  });
+
+  it('1 文字語だけのクエリは検索せず空配列', () => {
+    expect(searchClauseFts(db, 'a')).toEqual([]);
+    expect(searchDocumentFts(db, 'a')).toEqual([]);
   });
 });
 

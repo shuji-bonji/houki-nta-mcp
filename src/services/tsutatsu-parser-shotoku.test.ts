@@ -114,3 +114,43 @@ describe('parseTsutatsuSection — 所基通 fixtures', () => {
     }
   });
 });
+
+describe('Issue #17: 算式画像 (GIF) の alt をプレースホルダとして本文に残す', () => {
+  const html = loadFixture('www.nta.go.jp_law_tsutatsu_kihon_shotoku_04_01.htm');
+  const sourceUrl = 'https://www.nta.go.jp/law/tsutatsu/kihon/shotoku/04/01.htm';
+  const sec = parseTsutatsuSection(html, sourceUrl, '2026-09-07T00:00:00Z');
+
+  it('24-6: img だけの段落が [画像: alt] の段落として残り、images に alt / 絶対 URL が入る', () => {
+    const c = sec.clauses.find((x) => x.clauseNumber === '24-6');
+    expect(c).toBeDefined();
+    const imgPara = c!.paragraphs.find((p) => p.text.startsWith('[画像: '));
+    expect(imgPara).toBeDefined();
+    expect(imgPara!.indent).toBe(2);
+    // alt の HTML エンティティ (&times; &divide;) はデコードされる
+    expect(imgPara!.text).toBe(
+      '[画像: 株式等を取得するために要した負債の利子の総額×配当所得の収入金額÷（配当所得の収入金額+その利子の額を差し引く前の株式等に係る譲渡所得等の金額及び総合課税の株式等に係る事業所得等の金額）]'
+    );
+    expect(imgPara!.images).toEqual([
+      {
+        alt: '株式等を取得するために要した負債の利子の総額×配当所得の収入金額÷（配当所得の収入金額+その利子の額を差し引く前の株式等に係る譲渡所得等の金額及び総合課税の株式等に係る事業所得等の金額）',
+        src: 'https://www.nta.go.jp/law/tsutatsu/kihon/shotoku/04/24_6.gif',
+      },
+    ]);
+    // fullText (FTS 検索対象) にもプレースホルダが入る
+    expect(c!.fullText).toContain('[画像: 株式等を取得するために要した負債の利子の総額');
+  });
+
+  it('24-8: 画像段落の後ろの (注) 段落もこれまでどおり残る', () => {
+    const c = sec.clauses.find((x) => x.clauseNumber === '24-8');
+    expect(c).toBeDefined();
+    const texts = c!.paragraphs.map((p) => p.text);
+    expect(texts.some((t) => t.startsWith('[画像: 当該譲渡直前における'))).toBe(true);
+    expect(texts.some((t) => t.startsWith('（注）'))).toBe(true);
+  });
+
+  it('画像を含まない clause には images が付かない', () => {
+    const c = sec.clauses.find((x) => x.clauseNumber === '24-7');
+    expect(c).toBeDefined();
+    expect(c!.paragraphs.every((p) => p.images === undefined)).toBe(true);
+  });
+});

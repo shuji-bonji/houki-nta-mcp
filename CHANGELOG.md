@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.10.1] - 2026-09-07
+
+**Issue #17 / #18 対応リリース** — 2026-08-23 に報告された 2 件（どちらも cameltravel666-crypto さんの実測評価から）。ツール一覧は変わりません。応答に `search_notes` / `content_notes` / `images` が加わり、2 文字キーワードの検索結果と、画像を含む通達本文の内容が変わります。
+
+### Fixed
+
+- **[#18](https://github.com/shuji-bonji/houki-nta-mcp/issues/18) 2 文字キーワードの検索が空振りしても仕様起因か判別できなかった** — FTS5 の trigram tokenizer は 3 文字未満の語を索引しないため、「役員」「退職」のような 2 文字語は本文に 158 件あっても `hits: []` で、メッセージは通常の「該当なし」と同じだった。
+  - `src/services/db-search.ts`: キーワードを語の長さで 3 種に分ける `analyzeKeyword()` を追加。3 文字以上の語だけを FTS5 の `MATCH` に渡し（`sanitizeFtsQuery` も同じ規則になった）、2 文字語は (a) 3 文字以上の語と一緒なら FTS ヒットを本文 / タイトルの `includes` で絞り込み（AND）、(b) 2 文字語だけなら `full_text LIKE ? OR title LIKE ?` で検索する（`%` `_` はエスケープ）。1 文字語は外す。LIKE 経路の snippet は JS の `makeLikeSnippet()` で作り、`rank` は固定 `-1`（score は低め）。`scoreReasons` に `short token search (LIKE, no FTS rank): 役員` / `short token filter (LIKE): 役員` が入る
+  - 「消法」のように略称自体が 2 文字で trigram に乗らない場合は、`buildFtsQueryWithAbbreviation` が formal（消費税法）だけで検索する
+  - `nta_search_tsutatsu` / `nta_search_qa` / `nta_search_tax_answer` / `nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` / `nta_search_bunshokaitou` の 6 ツール: 2 文字語 / 1 文字語を含むクエリでは応答（ヒットあり・0 件の両方）に `search_notes: string[]` を付け、どう扱ったかを文で示す（`describeSearchNotes()`）。3 文字以上の語だけなら付かない
+  - `tools/list` の各 search ツールの `keyword` の description に「3 文字以上の語を推奨」を追記
+- **[#17](https://github.com/shuji-bonji/houki-nta-mcp/issues/17) 通達本文中の算式画像が alt ごと欠落し、本文の途切れを検知できなかった** — 所基通 36-40 / 36-41 / 36-43（05/04.htm）などで算式が `<img alt="…" src="143.gif">` だけの `<p class="marginLeft1em">` に置かれており、テキストが空の段落として落ちていた。
+  - `src/services/tsutatsu-parser.ts`: `replaceImagesWithPlaceholders()` を追加。clause 内の `<img>` を `[画像: alt]`（alt が無ければ `[画像: ファイル名]`）のテキストに置き換えてから段落を取り出すので、画像だけの段落も indent 2 の段落として残り、`fullText`（FTS5 の検索対象）にも入る。alt の HTML エンティティ（`&times;` `&divide;`）はデコードされる
+  - `src/types/tsutatsu.ts`: `TsutatsuParagraph.images?: TsutatsuImage[]`（`{ alt, src }`、src は sourceUrl 基準の絶対 URL）を追加。bulk DL / live 取得の書き戻しの両方で `paragraphs_json` に保存される（`ClauseRow.paragraphs` の型にも追加）
+  - `nta_get_tsutatsu`: `format: "json"` では画像を含む clause の応答直下に `content_notes: string[]` を付ける。Markdown では本文の後に `> 注意: 本文に画像が N 箇所含まれています（…）。算式の正確な内容は出典 URL の原ページで確認してください` の行を入れる（`describeImageNotes()`）
+  - **v0.10.0 以前に構築した DB には反映されない**。`houki-nta-mcp --bulk-download-all --refresh` で通達を再投入する（`--refresh` なしでは `304 Not Modified` の節は再解析されない。200 で返る節は fullText が変わり content_hash も変わるので再投入される）
+
+### Changed
+
+- テスト 20 件追加（合計 **508 tests**）: `db-search.test.ts` に `analyzeKeyword` / `describeSearchNotes` / `makeLikeSnippet` と LIKE 補完の経路（trigram で 0 件になる前提の確認を含む）、`handlers.test.ts` に一時ファイル DB での `search_notes` の有無、`tsutatsu-parser-shotoku.test.ts` に fixture 04/01.htm（24-6 / 24-8 の算式画像）、`tsutatsu-parser.test.ts` に alt 無し画像と相対 URL の絶対化
+- `sanitizeFtsQuery` の既存テスト 2 件を 3 文字以上の語に変更（「課税 売上」は 2 文字語なので MATCH 式に入らなくなったため）
+
 ## [0.10.0] - 2026-09-07
 
 **MCP SDK v2 移行リリース** — houki-egov-mcp v0.4.0 / v0.5.3 と同じ構成に揃え、houki-hub family 全 server が SDK v2 / Node 22 / TypeScript 7 / Biome になった。ツール一覧・各ツールの正常応答は v0.9.5 から変わらない。変わるのは `tools/call` のエラー応答の形式（下記 Changed の 2 点目）。

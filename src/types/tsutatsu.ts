@@ -9,6 +9,18 @@
 /** 段落のインデントレベル */
 export type ParagraphIndent = 1 | 2 | 3;
 
+/**
+ * Issue #17 (v0.10.1): 段落に含まれていた画像（算式の GIF 等）。
+ * 画像そのものは取得しないが、位置と alt テキストを失わないために残す。
+ * 本文 `text` には `[画像: alt]` のプレースホルダが同じ位置に入る。
+ */
+export interface TsutatsuImage {
+  /** `<img alt>`。無い場合は空文字 */
+  alt: string;
+  /** 画像 URL（sourceUrl 基準で絶対化済み） */
+  src: string;
+}
+
 /** 1 つの段落（本文 1 行 / サブ項目 / 注 等） */
 export interface TsutatsuParagraph {
   /**
@@ -18,8 +30,10 @@ export interface TsutatsuParagraph {
    *  - 3 = サブのサブ（`<p class="indent3">`、または インライン `style="margin-left:..."` の段落）
    */
   indent: ParagraphIndent;
-  /** プレーンテキスト。`<br>` は改行に正規化済み */
+  /** プレーンテキスト。`<br>` は改行に正規化済み。画像は `[画像: alt]` に置換済み */
   text: string;
+  /** Issue #17: この段落に含まれていた画像（無ければ省略） */
+  images?: TsutatsuImage[];
 }
 
 /**

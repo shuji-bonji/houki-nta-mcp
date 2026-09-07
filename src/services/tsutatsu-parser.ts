@@ -20,6 +20,7 @@ import type { Element } from 'domhandler';
 import type {
   ParagraphIndent,
   TsutatsuClause,
+  TsutatsuImage,
   TsutatsuParagraph,
   TsutatsuSection,
 } from '../types/tsutatsu.js';
@@ -67,7 +68,7 @@ export function parseTsutatsuSection(
 
   const chapterTitle = extractChapterTitle($, $body);
   const sectionTitle = extractSectionTitle($, $body);
-  const clauses = extractClauses($, $body);
+  const clauses = extractClauses($, $body, sourceUrl);
 
   const section: TsutatsuSection = {
     sourceUrl,
@@ -138,7 +139,11 @@ function extractSectionTitle($: CheerioAPI, $body: cheerio.Cheerio<Element>): st
  *  3. 続く indent2/indent3/style ベースの段落を sub-paragraph として収集
  *  4. 次の `<h2>` が現れるか body 末尾に達したら clause を確定
  */
-function extractClauses($: CheerioAPI, $body: cheerio.Cheerio<Element>): TsutatsuClause[] {
+function extractClauses(
+  $: CheerioAPI,
+  $body: cheerio.Cheerio<Element>,
+  sourceUrl: string
+): TsutatsuClause[] {
   const clauses: TsutatsuClause[] = [];
 
   // body の直下要素を順序通りに並べる
@@ -158,7 +163,7 @@ function extractClauses($: CheerioAPI, $body: cheerio.Cheerio<Element>): Tsutats
       return true;
     }
 
-    const result = buildClauseFromFollowing(followingEls);
+    const result = buildClauseFromFollowing($, followingEls, sourceUrl);
     if (!result) return true;
 
     const { clauseNumber, paragraphs } = result;
@@ -215,8 +220,18 @@ function collectUntilNextH2(
  * 番号取得に失敗したら null を返してその clause を skip する。
  */
 function buildClauseFromFollowing(
-  followingEls: cheerio.Cheerio<Element>[]
+  $: CheerioAPI,
+  followingEls: cheerio.Cheerio<Element>[],
+  sourceUrl: string
 ): { clauseNumber: string; paragraphs: TsutatsuParagraph[] } | null {
+  // Issue #17: 画像を `[画像: alt]` のプレースホルダに置き換え、要素ごとの画像一覧を控える。
+  // 算式が GIF で掲載されている段落は img だけで text が空のため、置換しないと段落ごと落ちる
+  const imagesByEl = new Map<cheerio.Cheerio<Element>, TsutatsuImage[]>();
+  for (const $el of followingEls) {
+    const images = replaceImagesWithPlaceholders($, $el, sourceUrl);
+    if (images.length > 0) imagesByEl.set($el, images);
+  }
+
   // 最初に出てくる p.indent1 を本文と見なす
   const $bodyP = followingEls.find(($el) => $el.is('p.indent1'));
   if (!$bodyP) return null;
@@ -227,7 +242,10 @@ function buildClauseFromFollowing(
 
   const { clauseNumber, body } = parsed;
 
-  const paragraphs: TsutatsuParagraph[] = [{ indent: 1, text: body }];
+  const bodyImages = imagesByEl.get($bodyP);
+  const paragraphs: TsutatsuParagraph[] = [
+    { indent: 1, text: body, ...(bodyImages ? { images: bodyImages } : {}) },
+  ];
 
   // body の後続要素から sub-paragraph を集める
   let foundBody = false;
@@ -244,10 +262,39 @@ function buildClauseFromFollowing(
     if (indent === null) continue;
     const text = normalizeWhitespace($el.text());
     if (!text) continue;
-    paragraphs.push({ indent, text });
+    const images = imagesByEl.get($el);
+    paragraphs.push({ indent, text, ...(images ? { images } : {}) });
   }
 
   return { clauseNumber, paragraphs };
+}
+
+/**
+ * Issue #17: 要素内の `<img>` を `[画像: alt]` のテキストに置き換え、画像情報を返す。
+ * alt が無い画像はファイル名で表す（例: `[画像: 143.gif]`）。
+ * src は sourceUrl 基準で絶対 URL にする。
+ */
+export function replaceImagesWithPlaceholders(
+  $: CheerioAPI,
+  $el: cheerio.Cheerio<Element>,
+  sourceUrl: string
+): TsutatsuImage[] {
+  const images: TsutatsuImage[] = [];
+  $el.find('img').each((_, img) => {
+    const $img = $(img);
+    const alt = normalizeWhitespace($img.attr('alt') ?? '');
+    const rawSrc = $img.attr('src') ?? '';
+    let src = rawSrc;
+    try {
+      src = rawSrc ? new URL(rawSrc, sourceUrl).toString() : '';
+    } catch {
+      // 相対 URL の解決に失敗したら生の値のまま
+    }
+    const label = alt || rawSrc.split('/').pop() || 'image';
+    images.push({ alt, src });
+    $img.replaceWith(`[画像: ${label}]`);
+  });
+  return images;
 }
 
 /**

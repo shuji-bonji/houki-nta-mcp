@@ -229,3 +229,27 @@ describe('parseTsutatsuSection — エラー系', () => {
     expect(() => parseTsutatsuSection(html, 'https://example.com/x')).toThrow(TsutatsuParseError);
   });
 });
+
+describe('Issue #17: replaceImagesWithPlaceholders', () => {
+  it('alt 無しの画像はファイル名で表し、相対 src は sourceUrl 基準で絶対化する', () => {
+    const html = `<div id="bodyArea">
+      <h2>（テスト）</h2>
+      <p class="indent1"><strong>1-1-1</strong>　本文<img src="x.gif">のあと。</p>
+      <p class="marginLeft1em"><img alt="算式 A" src="/law/tsutatsu/kihon/shohi/01/a.gif"></p>
+    </div>`;
+    const sec = parseTsutatsuSection(
+      html,
+      'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/01/01.htm'
+    );
+    const c = sec.clauses[0];
+    expect(c.paragraphs[0].text).toBe('本文[画像: x.gif]のあと。');
+    expect(c.paragraphs[0].images).toEqual([
+      { alt: '', src: 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/01/x.gif' },
+    ]);
+    expect(c.paragraphs[1]).toEqual({
+      indent: 2,
+      text: '[画像: 算式 A]',
+      images: [{ alt: '算式 A', src: 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/01/a.gif' }],
+    });
+  });
+});

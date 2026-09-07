@@ -1,7 +1,10 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import Database from 'better-sqlite3';
 import { encode as iconvEncode } from 'iconv-lite';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { initSchema } from '../db/schema.js';
 
 import {
   getQa,
@@ -65,6 +68,73 @@ describe('searchTsutatsu — Phase 2c 本実装', () => {
       | { hits: unknown[]; count: number };
     // ローカルの実 DB が無い前提なので、error or hits=0 のいずれかのレスポンス形になっているはず
     expect(r).toBeDefined();
+  });
+});
+
+describe('searchTsutatsu — Issue #18: 2 文字語の応答に search_notes を付ける', () => {
+  let dir: string;
+  let dbPath: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'houki-nta-issue18-'));
+    dbPath = join(dir, 'cache.db');
+    const db = new Database(dbPath);
+    initSchema(db);
+    const tsutatsuId = (
+      db
+        .prepare(
+          `INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?) RETURNING id`
+        )
+        .get('法人税基本通達', '法基通', 'https://x/') as { id: number }
+    ).id;
+    db.prepare(
+      `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      tsutatsuId,
+      '9-2-1',
+      'https://x/09/02.htm',
+      9,
+      2,
+      '役員の範囲',
+      '役員の範囲\n法第2条第15号に規定する役員には、経営に従事している者が含まれる。',
+      '[]'
+    );
+    db.close();
+  });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('2 文字語でヒットしたときは hits と search_notes の両方を返す', async () => {
+    const r = (await searchTsutatsu({ keyword: '役員' }, { dbPath })) as {
+      count?: number;
+      hits: Array<{ clauseNumber: string; snippet: string }>;
+      search_notes?: string[];
+    };
+    expect(r.count).toBe(1);
+    expect(r.hits[0].clauseNumber).toBe('9-2-1');
+    expect(r.hits[0].snippet).toContain('<b>役員</b>');
+    expect(r.search_notes?.[0]).toContain('LIKE');
+  });
+
+  it('2 文字語で 0 件のときも search_notes で仕様起因と分かる', async () => {
+    const r = (await searchTsutatsu({ keyword: '社宅' }, { dbPath })) as {
+      hits: unknown[];
+      message?: string;
+      search_notes?: string[];
+    };
+    expect(r.hits).toEqual([]);
+    expect(r.message).toContain('社宅');
+    expect(r.search_notes?.[0]).toContain('3 文字未満');
+  });
+
+  it('3 文字以上の語だけなら search_notes は付かない', async () => {
+    const r = (await searchTsutatsu({ keyword: '経営に従事' }, { dbPath })) as {
+      count?: number;
+      search_notes?: string[];
+    };
+    expect(r.count).toBe(1);
+    expect(r.search_notes).toBeUndefined();
   });
 });
 

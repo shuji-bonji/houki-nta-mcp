@@ -6,7 +6,25 @@
  */
 
 import { TSUTATSU_LEGAL_STATUS } from '../constants.js';
-import type { TsutatsuClause, TsutatsuSection } from '../types/tsutatsu.js';
+import type { TsutatsuClause, TsutatsuParagraph, TsutatsuSection } from '../types/tsutatsu.js';
+
+/**
+ * Issue #17 (v0.10.1): 本文に画像 (算式の GIF 等) が含まれるときの注記。
+ * 利用側 (LLM / Skill 層) が「この clause の本文は画像の分だけ不完全」と判定できるように文で返す。
+ * 画像が無ければ空配列。
+ */
+export function describeImageNotes(
+  paragraphs: ReadonlyArray<Pick<TsutatsuParagraph, 'images'>>
+): string[] {
+  const images = paragraphs.flatMap((p) => p.images ?? []);
+  if (images.length === 0) return [];
+  const alts = images.map((i) => i.alt).filter((a) => a.length > 0);
+  return [
+    `本文に画像が ${images.length} 箇所含まれています（算式などが GIF 画像で掲載されている箇所）。画像の内容は取得できないため、本文には alt テキストを [画像: …] として同じ位置に残しています${
+      alts.length > 0 ? `（${alts.map((a) => `"${a}"`).join(' / ')}）` : ''
+    }。算式の正確な内容は出典 URL の原ページで確認してください`,
+  ];
+}
 
 /** 単一 clause を Markdown に整形する */
 export function renderClauseMarkdown(
@@ -25,6 +43,11 @@ export function renderClauseMarkdown(
     } else {
       lines.push(`> > ${p.text}`);
     }
+    lines.push('');
+  }
+
+  for (const note of describeImageNotes(clause.paragraphs)) {
+    lines.push(`> 注意: ${note}`);
     lines.push('');
   }
 

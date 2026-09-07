@@ -22,7 +22,7 @@ export const tools: Tool[] = [
         keyword: {
           type: 'string',
           description:
-            '検索キーワード。例: "軽減税率", "電子帳簿", "棚卸資産"。略称も可（例: "電帳法"）',
+            '検索キーワード。例: "軽減税率", "電子帳簿", "棚卸資産"。略称も可（例: "電帳法"）。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
         },
         type: {
           type: 'string',
@@ -78,7 +78,8 @@ export const tools: Tool[] = [
       properties: {
         keyword: {
           type: 'string',
-          description: '検索キーワード。例: "社内会議 軽減税率", "テレワーク 必要経費"',
+          description:
+            '検索キーワード。例: "社内会議 軽減税率", "テレワーク 必要経費"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
         },
         domain: {
           type: 'string',
@@ -150,7 +151,8 @@ export const tools: Tool[] = [
       properties: {
         keyword: {
           type: 'string',
-          description: '検索キーワード。例: "ふるさと納税", "医療費控除"',
+          description:
+            '検索キーワード。例: "ふるさと納税", "医療費控除"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
         },
         limit: {
           type: 'number',
@@ -197,7 +199,8 @@ export const tools: Tool[] = [
       properties: {
         keyword: {
           type: 'string',
-          description: '検索キーワード。例: "電子帳簿", "インボイス", "軽減税率"',
+          description:
+            '検索キーワード。例: "電子帳簿", "インボイス", "軽減税率"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
         },
         taxonomy: {
           type: 'string',
@@ -249,7 +252,8 @@ export const tools: Tool[] = [
       properties: {
         keyword: {
           type: 'string',
-          description: '検索キーワード。例: "書面添付", "重加算税"',
+          description:
+            '検索キーワード。例: "書面添付", "重加算税"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
         },
         taxonomy: {
           type: 'string',
@@ -300,7 +304,8 @@ export const tools: Tool[] = [
       properties: {
         keyword: {
           type: 'string',
-          description: '検索キーワード。例: "電子帳簿", "適格請求書", "災害損失"',
+          description:
+            '検索キーワード。例: "電子帳簿", "適格請求書", "災害損失"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
         },
         taxonomy: {
           type: 'string',

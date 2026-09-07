@@ -25,6 +25,7 @@ import { makeError, NEXT_ACTIONS } from '../errors.js';
 import { writeBackLiveSection } from '../services/bulk-downloader.js';
 import type { ClauseRow } from '../services/db-search.js';
 import {
+  describeSearchNotes,
   getClauseFromDb,
   hasAnyClause,
   listAvailableClauses,
@@ -44,7 +45,7 @@ import { parseQaJirei } from '../services/qa-parser.js';
 import { parseTaxAnswer } from '../services/tax-answer-parser.js';
 import { renderQaMarkdown, renderTaxAnswerMarkdown } from '../services/tax-answer-render.js';
 import { parseTsutatsuSection, TsutatsuParseError } from '../services/tsutatsu-parser.js';
-import { renderClauseMarkdown } from '../services/tsutatsu-render.js';
+import { describeImageNotes, renderClauseMarkdown } from '../services/tsutatsu-render.js';
 import type {
   GetQaArgs,
   GetTaxAnswerArgs,
@@ -94,12 +95,15 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
 
     const limit = Math.min(Math.max(args.limit ?? 10, 1), 50);
     const hits = searchClauseFts(db, keyword, { limit });
+    // Issue #18: 3 文字未満の語を LIKE で補完した / 外した ことを応答に明示する
+    const searchNotes = describeSearchNotes(keyword);
 
     if (hits.length === 0) {
       return {
         keyword,
         hits: [],
         message: `"${keyword}" にマッチする clause はありません`,
+        ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
       };
     }
 
@@ -119,6 +123,7 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
+      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   } finally {
@@ -316,6 +321,7 @@ export async function getTsutatsu(
       sourceUrl: section.sourceUrl,
       fetchedAt: section.fetchedAt,
       source: 'live' as const,
+      ...contentNotesFor(clause.paragraphs),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   }
@@ -323,6 +329,12 @@ export async function getTsutatsu(
     sourceUrl: section.sourceUrl,
     fetchedAt: section.fetchedAt,
   });
+}
+
+/** Issue #17: 画像を含む clause の JSON 応答に `content_notes` を付ける（無ければ何も付けない） */
+function contentNotesFor(paragraphs: Parameters<typeof describeImageNotes>[0]) {
+  const notes = describeImageNotes(paragraphs);
+  return notes.length > 0 ? { content_notes: notes } : {};
 }
 
 /**
@@ -342,6 +354,7 @@ function renderDbHit(row: ClauseRow, format: GetTsutatsuArgs['format'], tsutatsu
       sourceUrl: row.sourceUrl,
       fetchedAt: row.fetchedAt,
       source: 'db' as const,
+      ...contentNotesFor(row.paragraphs),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   }
@@ -372,10 +385,12 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
     if (args.domain) opts.taxonomy = args.domain;
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const hits = searchDocumentFts(db, args.keyword, opts);
+    const searchNotes = describeSearchNotes(args.keyword); // Issue #18
     if (hits.length === 0) {
       return {
         results: [],
         keyword: args.keyword,
+        ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
         hint: '該当なし。`--bulk-download-qa` で DB 投入済みか確認してください',
         legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       };
@@ -400,6 +415,7 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
+      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   } finally {
@@ -504,10 +520,12 @@ export async function handleNtaSearchTaxAnswer(
     };
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const hits = searchDocumentFts(db, args.keyword, opts);
+    const searchNotes = describeSearchNotes(args.keyword); // Issue #18
     if (hits.length === 0) {
       return {
         results: [],
         keyword: args.keyword,
+        ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
         hint: '該当なし。`--bulk-download-tax-answer` で DB 投入済みか確認してください',
         legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       };
@@ -531,6 +549,7 @@ export async function handleNtaSearchTaxAnswer(
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
+      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   } finally {
@@ -685,11 +704,13 @@ export async function handleNtaSearchKaiseiTsutatsu(
     if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const hits = searchDocumentFts(db, args.keyword, opts);
+    const searchNotes = describeSearchNotes(args.keyword); // Issue #18
 
     if (hits.length === 0) {
       return {
         results: [],
         keyword: args.keyword,
+        ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
         hint:
           '該当なし。`--bulk-download-kaisei` で DB 投入済みか確認してください。' +
           ' 別キーワードで再試行も推奨',
@@ -718,6 +739,7 @@ export async function handleNtaSearchKaiseiTsutatsu(
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
+      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   } finally {
@@ -807,11 +829,13 @@ export async function handleNtaSearchJimuUnei(
     if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const hits = searchDocumentFts(db, args.keyword, opts);
+    const searchNotes = describeSearchNotes(args.keyword); // Issue #18
 
     if (hits.length === 0) {
       return {
         results: [],
         keyword: args.keyword,
+        ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
         hint: '該当なし。`--bulk-download-jimu-unei` で DB 投入済みか確認してください',
         legal_status: TSUTATSU_LEGAL_STATUS,
       };
@@ -838,6 +862,7 @@ export async function handleNtaSearchJimuUnei(
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
+      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   } finally {
@@ -944,10 +969,12 @@ export async function handleNtaSearchBunshokaitou(
     if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const hits = searchDocumentFts(db, args.keyword, opts);
+    const searchNotes = describeSearchNotes(args.keyword); // Issue #18
     if (hits.length === 0) {
       return {
         results: [],
         keyword: args.keyword,
+        ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
         hint: '該当なし。`--bulk-download-bunshokaitou` で DB 投入済みか確認してください',
         // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
         legal_status: BUNSHOKAITOU_LEGAL_STATUS,
@@ -974,6 +1001,7 @@ export async function handleNtaSearchBunshokaitou(
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
       ...(freshness ? { freshness } : {}),
+      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
       // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
       legal_status: BUNSHOKAITOU_LEGAL_STATUS,
     };

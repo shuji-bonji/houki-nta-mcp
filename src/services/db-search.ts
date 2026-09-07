@@ -14,6 +14,93 @@ import { computeRelevance, type DocTypeForScoring, sortByScoreDesc } from './rel
 import { normalizeClauseNumber, normalizeSearchQuery } from './text-normalize.js';
 
 /**
+ * Issue #18 (v0.10.1): trigram tokenizer が索引する最小文字数。
+ * これ未満の語は FTS5 の MATCH に乗らない (0 件になる) ので、本文の LIKE で補完する。
+ */
+export const FTS_MIN_TOKEN_LENGTH = 3;
+/** LIKE で補完する短い語の最小文字数 (1 文字はノイズが多すぎるため検索条件から外す) */
+export const SHORT_TOKEN_MIN_LENGTH = 2;
+
+/** キーワードを FTS5 向け / LIKE 補完向け / 除外 の 3 種に分けた結果 */
+export interface KeywordAnalysis {
+  /** 3 文字以上の語 (FTS5 MATCH に渡す) */
+  ftsTokens: string[];
+  /** 2 文字の語 (trigram では引けないので本文 LIKE で補完する) */
+  shortTokens: string[];
+  /** 1 文字の語 (検索条件から外す) */
+  droppedTokens: string[];
+}
+
+/**
+ * 半角化 → FTS5 メタ文字除去 → 空白で分割し、語の長さで 3 種に振り分ける。
+ */
+export function analyzeKeyword(raw: string): KeywordAnalysis {
+  const result: KeywordAnalysis = { ftsTokens: [], shortTokens: [], droppedTokens: [] };
+  if (!raw) return result;
+  const cleaned = normalizeSearchQuery(raw)
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/["*:()]/g, ' ')
+    .trim();
+  for (const t of cleaned.split(/\s+/).filter((t) => t.length >= 1)) {
+    if (t.length >= FTS_MIN_TOKEN_LENGTH) result.ftsTokens.push(t);
+    else if (t.length >= SHORT_TOKEN_MIN_LENGTH) result.shortTokens.push(t);
+    else result.droppedTokens.push(t);
+  }
+  return result;
+}
+
+/**
+ * Issue #18: 検索結果に添える注記。短い語を LIKE で補完した / 1 文字を外した ことを
+ * 利用側 (LLM / Skill 層) が「仕様上ヒットしなかった」と区別できるように文で返す。
+ * 注記が不要なら空配列。
+ */
+export function describeSearchNotes(keyword: string): string[] {
+  const a = analyzeKeyword(keyword);
+  const notes: string[] = [];
+  if (a.shortTokens.length > 0) {
+    const words = a.shortTokens.map((t) => `"${t}"`).join(' / ');
+    notes.push(
+      a.ftsTokens.length > 0
+        ? `${words} は ${FTS_MIN_TOKEN_LENGTH} 文字未満のため FTS5 (trigram) の索引に乗りません。3 文字以上の語で全文検索したうえで、本文に ${words} を含むものに絞り込みました`
+        : `${words} は ${FTS_MIN_TOKEN_LENGTH} 文字未満のため FTS5 (trigram) では検索できません。代わりに本文とタイトルの部分一致 (LIKE) で検索しました。0 件でも「該当なし」とは限らないので、3 文字以上の語 (例: "役員退職" "役員給与") での再検索を推奨します`
+    );
+  }
+  if (a.droppedTokens.length > 0) {
+    notes.push(
+      `${a.droppedTokens.map((t) => `"${t}"`).join(' / ')} は 1 文字のため検索条件から外しました`
+    );
+  }
+  return notes;
+}
+
+/** LIKE 用にメタ文字をエスケープする */
+function escapeLike(token: string): string {
+  return `%${token.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+}
+
+/**
+ * LIKE 補完で拾った行の snippet を JS で作る (FTS5 の snippet() は使えないため)。
+ * 最初に見つかった短い語の前後 `width` 文字を切り出し `<b>` で囲む。
+ */
+export function makeLikeSnippet(text: string, tokens: string[], width = 16): string {
+  for (const t of tokens) {
+    const i = text.indexOf(t);
+    if (i < 0) continue;
+    const start = Math.max(0, i - width);
+    const end = Math.min(text.length, i + t.length + width);
+    const head = start > 0 ? ' … ' : '';
+    const tail = end < text.length ? ' … ' : '';
+    return `${head}${text.slice(start, i)}<b>${t}</b>${text.slice(i + t.length, end)}${tail}`;
+  }
+  return text.slice(0, width * 2);
+}
+
+/** 短い語を全て含むか (AND 意味論)。title と full_text のどちらに含まれてもよい */
+function includesAllShortTokens(title: string, fullText: string, tokens: string[]): boolean {
+  return tokens.every((t) => title.includes(t) || fullText.includes(t));
+}
+
+/**
  * Phase 6-1: re-rank 用に FTS5 から取得する件数の倍率。
  * 要求 limit より多く取って JS で score 順に並べ替えてから limit 件返す。
  */
@@ -97,40 +184,77 @@ export function searchClauseFts(
   const built = buildFtsQueryWithAbbreviation(keyword, {
     enableExpansion: options.enableAbbreviationExpansion,
   });
-  if (!built.query) return [];
+  // Issue #18: 略称展開で formal に置き換わった場合、短い語は展開に吸収されたとみなす
+  const shortTokens =
+    built.expandedFrom && !built.query.includes(' OR ') ? [] : analyzeKeyword(keyword).shortTokens;
+  if (!built.query && shortTokens.length === 0) return [];
 
   // Phase 6-1: re-rank のために要求 limit より多めに取る
   const fetchLimit = Math.min(limit * RERANK_FETCH_MULTIPLIER, RERANK_MAX_FETCH);
 
-  const params: Array<string | number> = [built.query];
-  let where = `clause_fts MATCH ?`;
+  const params: Array<string | number> = [];
+  const conds: string[] = [];
+  const useFts = built.query !== '';
+  if (useFts) {
+    conds.push('clause_fts MATCH ?');
+    params.push(built.query);
+  } else {
+    // 短い語だけのクエリ: 本文 / タイトルの LIKE で補完 (AND 意味論)
+    for (const t of shortTokens) {
+      conds.push(`(c.full_text LIKE ? ESCAPE '\\' OR c.title LIKE ? ESCAPE '\\')`);
+      params.push(escapeLike(t), escapeLike(t));
+    }
+  }
   if (options.formalName) {
-    where += ` AND t.formal_name = ?`;
+    conds.push('t.formal_name = ?');
     params.push(options.formalName);
   }
   params.push(fetchLimit);
 
-  const sql = `
+  const sql = useFts
+    ? `
     SELECT
       t.formal_name AS tsutatsu,
       t.abbr        AS abbr,
       c.clause_number AS clauseNumber,
       c.title       AS title,
+      c.full_text   AS fullText,
       snippet(clause_fts, 2, '<b>', '</b>', ' … ', 16) AS snippet,
       c.source_url  AS sourceUrl,
       clause_fts.rank AS rank
     FROM clause_fts
     JOIN clause c ON c.id = clause_fts.rowid
     JOIN tsutatsu t ON t.id = c.tsutatsu_id
-    WHERE ${where}
+    WHERE ${conds.join(' AND ')}
     ORDER BY clause_fts.rank
+    LIMIT ?
+  `
+    : `
+    SELECT
+      t.formal_name AS tsutatsu,
+      t.abbr        AS abbr,
+      c.clause_number AS clauseNumber,
+      c.title       AS title,
+      c.full_text   AS fullText,
+      '' AS snippet,
+      c.source_url  AS sourceUrl,
+      -1 AS rank
+    FROM clause c
+    JOIN tsutatsu t ON t.id = c.tsutatsu_id
+    WHERE ${conds.join(' AND ')}
+    ORDER BY c.id
     LIMIT ?
   `;
 
-  const rawHits = db.prepare(sql).all(...params) as ClauseSearchHit[];
+  type Row = ClauseSearchHit & { fullText: string };
+  let rawRows = db.prepare(sql).all(...params) as Row[];
+  if (useFts && shortTokens.length > 0) {
+    // FTS ヒットのうち、短い語を本文に含むものだけ残す
+    rawRows = rawRows.filter((r) => includesAllShortTokens(r.title, r.fullText, shortTokens));
+  }
 
   // Phase 6-1: relevance score を計算して降順で並べ替え、要求 limit 件に絞る
-  const scored = rawHits.map((hit) => {
+  const scored = rawRows.map(({ fullText, ...hit }) => {
     const { score, scoreReasons } = computeRelevance({
       rank: hit.rank,
       docType: 'tsutatsu',
@@ -140,7 +264,15 @@ export function searchClauseFts(
     if (built.expandedFrom && scoreReasons) {
       scoreReasons.push(`abbreviation expanded: ${built.expandedFrom} → ${built.expandedTo}`);
     }
-    return { ...hit, score, scoreReasons };
+    if (shortTokens.length > 0 && scoreReasons) {
+      scoreReasons.push(
+        useFts
+          ? `short token filter (LIKE): ${shortTokens.join(', ')}`
+          : `short token search (LIKE, no FTS rank): ${shortTokens.join(', ')}`
+      );
+    }
+    const snippet = useFts ? hit.snippet : makeLikeSnippet(fullText, shortTokens);
+    return { ...hit, snippet, score, scoreReasons };
   });
   return sortByScoreDesc(scored).slice(0, limit);
 }
@@ -152,7 +284,8 @@ export function searchClauseFts(
  *   ASCII 化して、bulk-downloader で投入時に同じ正規化を通した DB と整合させる
  *   （Normalize-everywhere）
  * - 改行・FTS5 メタ文字を除去
- * - 完全に空 / 短すぎる場合は空文字を返す（呼び出し側で空配列を返す）
+ * - 3 文字未満の語は trigram の索引に乗らないため MATCH 式から外す (Issue #18)。
+ *   3 文字以上の語が 1 つも無ければ空文字を返す（呼び出し側は LIKE 補完に回す）
  * - trigram tokenizer は文字列を 3-gram に分解するので、フレーズ検索は `"..."` でラップ
  */
 export function sanitizeFtsQuery(raw: string): string {
@@ -164,18 +297,11 @@ export function sanitizeFtsQuery(raw: string): string {
  * 半角化 → メタ文字除去 → 半角空白で AND 結合。
  */
 function buildSanitizedPhrase(raw: string): string {
-  if (!raw) return '';
-  // 1) 全角→半角の正規化（DB 投入時と同じルール）
-  const normalized = normalizeSearchQuery(raw);
-  // 2) 制御文字・FTS5 メタ文字をスペース化
-  const cleaned = normalized
-    .replace(/[\r\n\t]+/g, ' ')
-    .replace(/["*:()]/g, ' ')
-    .trim();
-  if (cleaned.length < 2) return '';
-  const tokens = cleaned.split(/\s+/).filter((t) => t.length >= 1);
-  if (tokens.length === 0) return '';
-  return tokens.map((t) => `"${t}"`).join(' AND ');
+  // Issue #18: trigram に乗らない 3 文字未満の語は MATCH 式に入れない
+  // (2 文字語は searchClauseFts / searchDocumentFts が LIKE で補完する)
+  const { ftsTokens } = analyzeKeyword(raw);
+  if (ftsTokens.length === 0) return '';
+  return ftsTokens.map((t) => `"${t}"`).join(' AND ');
 }
 
 /**
@@ -214,7 +340,6 @@ export function buildFtsQueryWithAbbreviation(
   const enable = options.enableExpansion !== false;
   const trimmed = keyword?.trim() ?? '';
   const main = buildSanitizedPhrase(trimmed);
-  if (!main) return { query: '' };
   if (!enable) return { query: main };
 
   const abbr = resolveAbbreviation(trimmed);
@@ -227,6 +352,11 @@ export function buildFtsQueryWithAbbreviation(
 
   const formalPhrase = buildSanitizedPhrase(abbr.formal);
   if (!formalPhrase) return { query: main };
+
+  // Issue #18: 「消法」のように略称自体が 3 文字未満で trigram に乗らない場合は formal だけで検索する
+  if (!main) {
+    return { query: formalPhrase, expandedFrom: trimmed, expandedTo: abbr.formal };
+  }
 
   return {
     query: `(${main}) OR (${formalPhrase})`,
@@ -272,8 +402,12 @@ export interface ClauseRow {
   title: string;
   /** 連結本文（FTS5 検索対象でもある） */
   fullText: string;
-  /** 本文を構造化した paragraphs 配列（JSON パース済み） */
-  paragraphs: Array<{ indent: 1 | 2 | 3; text: string }>;
+  /** 本文を構造化した paragraphs 配列（JSON パース済み）。images は Issue #17 (v0.10.1) 以降の投入分にだけ入る */
+  paragraphs: Array<{
+    indent: 1 | 2 | 3;
+    text: string;
+    images?: Array<{ alt: string; src: string }>;
+  }>;
   /** 取得元 URL */
   sourceUrl: string;
   /** その節の最後の取得時刻 */
@@ -419,31 +553,50 @@ export function searchDocumentFts(
   const built = buildFtsQueryWithAbbreviation(keyword, {
     enableExpansion: options.enableAbbreviationExpansion,
   });
-  if (!built.query) return [];
+  // Issue #18: 略称展開で formal に置き換わった場合、短い語は展開に吸収されたとみなす
+  const shortTokens =
+    built.expandedFrom && !built.query.includes(' OR ') ? [] : analyzeKeyword(keyword).shortTokens;
+  if (!built.query && shortTokens.length === 0) return [];
 
   // Phase 6-1: re-rank のために要求 limit より多めに取る
   const fetchLimit = Math.min(limit * RERANK_FETCH_MULTIPLIER, RERANK_MAX_FETCH);
 
-  const params: Array<string | number> = [built.query];
-  let where = `document_fts MATCH ?`;
+  const params: Array<string | number> = [];
+  const conds: string[] = [];
+  const useFts = built.query !== '';
+  if (useFts) {
+    conds.push('document_fts MATCH ?');
+    params.push(built.query);
+  } else {
+    // 短い語だけのクエリ: 本文 / タイトルの LIKE で補完 (AND 意味論)
+    for (const t of shortTokens) {
+      conds.push(`(d.full_text LIKE ? ESCAPE '\\' OR d.title LIKE ? ESCAPE '\\')`);
+      params.push(escapeLike(t), escapeLike(t));
+    }
+  }
   if (options.docType) {
-    where += ` AND d.doc_type = ?`;
+    conds.push('d.doc_type = ?');
     params.push(options.docType);
   }
   if (options.taxonomy) {
-    where += ` AND d.taxonomy = ?`;
+    conds.push('d.taxonomy = ?');
     params.push(options.taxonomy);
   }
   if (options.hasPdf === true) {
     // PDF を持つ文書だけ。NULL / '[]' / '' は全て除外
-    where += ` AND d.attached_pdfs_json IS NOT NULL AND d.attached_pdfs_json != '[]' AND d.attached_pdfs_json != ''`;
+    conds.push(
+      `d.attached_pdfs_json IS NOT NULL AND d.attached_pdfs_json != '[]' AND d.attached_pdfs_json != ''`
+    );
   } else if (options.hasPdf === false) {
     // PDF を持たない文書だけ
-    where += ` AND (d.attached_pdfs_json IS NULL OR d.attached_pdfs_json = '[]' OR d.attached_pdfs_json = '')`;
+    conds.push(
+      `(d.attached_pdfs_json IS NULL OR d.attached_pdfs_json = '[]' OR d.attached_pdfs_json = '')`
+    );
   }
   params.push(fetchLimit);
 
-  const sql = `
+  const sql = useFts
+    ? `
     SELECT
       d.doc_type AS docType,
       d.doc_id   AS docId,
@@ -451,19 +604,40 @@ export function searchDocumentFts(
       d.title    AS title,
       d.issued_at AS issuedAt,
       d.source_url AS sourceUrl,
+      d.full_text AS fullText,
       snippet(document_fts, 3, '<b>', '</b>', ' … ', 16) AS snippet,
       document_fts.rank AS rank
     FROM document_fts
     JOIN document d ON d.id = document_fts.rowid
-    WHERE ${where}
+    WHERE ${conds.join(' AND ')}
     ORDER BY document_fts.rank
+    LIMIT ?
+  `
+    : `
+    SELECT
+      d.doc_type AS docType,
+      d.doc_id   AS docId,
+      d.taxonomy AS taxonomy,
+      d.title    AS title,
+      d.issued_at AS issuedAt,
+      d.source_url AS sourceUrl,
+      d.full_text AS fullText,
+      '' AS snippet,
+      -1 AS rank
+    FROM document d
+    WHERE ${conds.join(' AND ')}
+    ORDER BY d.id
     LIMIT ?
   `;
 
-  const rawHits = db.prepare(sql).all(...params) as DocumentSearchHit[];
+  type Row = DocumentSearchHit & { fullText: string };
+  let rawRows = db.prepare(sql).all(...params) as Row[];
+  if (useFts && shortTokens.length > 0) {
+    rawRows = rawRows.filter((r) => includesAllShortTokens(r.title, r.fullText, shortTokens));
+  }
 
   // Phase 6-1: relevance score を計算して降順で並べ替え、要求 limit 件に絞る
-  const scored = rawHits.map((hit) => {
+  const scored = rawRows.map(({ fullText, ...hit }) => {
     const { score, scoreReasons } = computeRelevance({
       rank: hit.rank,
       docType: dbDocTypeToScoring(hit.docType),
@@ -472,7 +646,15 @@ export function searchDocumentFts(
     if (built.expandedFrom && scoreReasons) {
       scoreReasons.push(`abbreviation expanded: ${built.expandedFrom} → ${built.expandedTo}`);
     }
-    return { ...hit, score, scoreReasons };
+    if (shortTokens.length > 0 && scoreReasons) {
+      scoreReasons.push(
+        useFts
+          ? `short token filter (LIKE): ${shortTokens.join(', ')}`
+          : `short token search (LIKE, no FTS rank): ${shortTokens.join(', ')}`
+      );
+    }
+    const snippet = useFts ? hit.snippet : makeLikeSnippet(fullText, shortTokens);
+    return { ...hit, snippet, score, scoreReasons };
   });
   return sortByScoreDesc(scored).slice(0, limit);
 }
