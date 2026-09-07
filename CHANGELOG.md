@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-(none)
+### Fixed
+
+- **`--refresh` が `--bulk-download` / `--bulk-download-all` に効いていなかった** — `--help` には「既存 DB を消去して再 DL」と書いてあるが、CLI が parse した `refresh` を `bulkDownloadTsutatsu()` の `forceReload` に渡していなかったため、通常の差分更新（`If-Modified-Since` + content_hash 比較）として動いていた。v0.10.1 の再投入手順で気づいた。`forceReload: args.refresh` を渡すように修正（`--refresh-stale --apply` の経路は従来どおり差分更新）
+- `search_notes` の 0 件応答で、再検索の例文が固定（"役員退職" "役員給与"）だったのを、検索したキーワードに合わせた文に変更
 
 ## [0.10.1] - 2026-09-07
 

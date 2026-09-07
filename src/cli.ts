@@ -608,6 +608,7 @@ async function runBulkDownloadAll(args: CliArgs): Promise<void> {
         const result = await bulkDownloadTsutatsu(db, {
           formalName,
           abbr: deriveAbbr(formalName),
+          forceReload: args.refresh,
           onProgress: (p) => {
             if (p.current && p.total) {
               process.stderr.write(`  ${p.message}\n`);
@@ -649,6 +650,7 @@ async function runBulkDownload(args: CliArgs): Promise<void> {
     const result = await bulkDownloadTsutatsu(db, {
       formalName: args.tsutatsu,
       abbr: deriveAbbr(args.tsutatsu),
+      forceReload: args.refresh,
       onProgress: (p) => {
         if (p.current && p.total) {
           process.stderr.write(`  ${p.message}\n`);
