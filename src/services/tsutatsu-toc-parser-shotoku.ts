@@ -16,8 +16,8 @@
  * 消基通の `parseTsutatsuToc` とは別 parser として実装。出力型は同じ `TsutatsuToc`。
  */
 
-import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
+import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 
 import type { TsutatsuToc, TsutatsuTocChapter } from '../types/tsutatsu-toc.js';

@@ -5,9 +5,9 @@
  * DB 投入と検索クエリで同じ関数を通すことが前提。
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { normalizeJpText, normalizeClauseNumber, normalizeSearchQuery } from './text-normalize.js';
+import { normalizeClauseNumber, normalizeJpText, normalizeSearchQuery } from './text-normalize.js';
 
 describe('normalizeJpText', () => {
   it('全角ハイフン → ASCII', () => {

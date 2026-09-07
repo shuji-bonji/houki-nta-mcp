@@ -5,11 +5,11 @@
  * （h1 / div.page-header）を入れた回帰防止用。
  */
 
-import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
 
-import { parseTsutatsuSection, extractClauseNumber } from './tsutatsu-parser.js';
+import { extractClauseNumber, parseTsutatsuSection } from './tsutatsu-parser.js';
 
 const fixturesDir = resolve(import.meta.dirname ?? __dirname, '../../tests/fixtures');
 

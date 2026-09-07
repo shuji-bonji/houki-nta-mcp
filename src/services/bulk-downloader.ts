@@ -19,11 +19,11 @@ import { TSUTATSU_TOC_STYLES, TSUTATSU_URL_ROOTS } from '../constants.js';
 import { logger } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotClauseTable } from './db-snapshot.js';
-import { fetchNtaPage } from './nta-scraper.js';
-import { parseTsutatsuSection } from './tsutatsu-parser.js';
-import { normalizeJpText } from './text-normalize.js';
 import type { BaselineDocType, BulkRunRecord } from './health-store.js';
 import type { HealthEvaluation } from './health-thresholds.js';
+import { fetchNtaPage } from './nta-scraper.js';
+import { normalizeJpText } from './text-normalize.js';
+import { parseTsutatsuSection } from './tsutatsu-parser.js';
 
 /** 通達略称 → BaselineDocType / taxonomy の対応 */
 const ABBR_TO_TAXONOMY: Record<string, 'shohi' | 'shotoku' | 'hojin' | 'sozoku'> = {
@@ -58,9 +58,10 @@ function computeSectionContentHash(
   }
   return h.digest('hex');
 }
+
 import { parseTsutatsuToc } from './tsutatsu-toc-parser.js';
-import { parseTsutatsuTocShotoku } from './tsutatsu-toc-parser-shotoku.js';
 import { parseTsutatsuTocHojin } from './tsutatsu-toc-parser-hojin.js';
+import { parseTsutatsuTocShotoku } from './tsutatsu-toc-parser-shotoku.js';
 import { parseTsutatsuTocSozoku } from './tsutatsu-toc-parser-sozoku.js';
 
 /** bulk DL 進捗イベント */

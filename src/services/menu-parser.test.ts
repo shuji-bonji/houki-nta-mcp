@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { parseTsutatsuMenu, extractKihonSegments, MenuParseError } from './menu-parser.js';
+import { extractKihonSegments, MenuParseError, parseTsutatsuMenu } from './menu-parser.js';
 
 const MENU_URL = 'https://www.nta.go.jp/law/tsutatsu/menu.htm';
 

@@ -6,8 +6,8 @@
  */
 
 import { NTA_GENERAL_INFO_LEGAL_STATUS } from '../constants.js';
-import type { TaxAnswer } from '../types/tax-answer.js';
 import type { QaJirei } from '../types/qa.js';
+import type { TaxAnswer } from '../types/tax-answer.js';
 
 /** タックスアンサーを Markdown に整形 */
 export function renderTaxAnswerMarkdown(t: TaxAnswer): string {

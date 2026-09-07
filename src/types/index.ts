@@ -4,7 +4,7 @@
  * AbbreviationEntry は @shuji-bonji/houki-abbreviations から re-export。
  */
 
-import type { Domain, OutputFormat, NtaCategory } from '../constants.js';
+import type { Domain, NtaCategory, OutputFormat } from '../constants.js';
 
 // houki-abbreviations から re-export
 export type { AbbreviationEntry } from '@shuji-bonji/houki-abbreviations';

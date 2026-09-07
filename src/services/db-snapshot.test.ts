@@ -1,9 +1,7 @@
+import type DatabaseT from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-
 import { closeDb, openDb } from '../db/index.js';
 import { snapshotClauseTable, snapshotDocumentTable } from './db-snapshot.js';
-
-import type DatabaseT from 'better-sqlite3';
 
 describe('snapshotDocumentTable', () => {
   let db: DatabaseT.Database;

@@ -13,9 +13,9 @@
  *   3. **ok**: 上記のいずれにも該当しない
  */
 
-import { parseTsutatsuMenu, extractKihonSegments, type MenuEntry } from './menu-parser.js';
-import { fetchNtaPage, type FetchNtaPageOptions } from './nta-scraper.js';
 import { CANARY_TARGETS } from './health-check.js';
+import { extractKihonSegments, type MenuEntry, parseTsutatsuMenu } from './menu-parser.js';
+import { type FetchNtaPageOptions, fetchNtaPage } from './nta-scraper.js';
 
 const TSUTATSU_MENU_URL = 'https://www.nta.go.jp/law/tsutatsu/menu.htm';
 

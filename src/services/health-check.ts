@@ -10,15 +10,14 @@
  * 設計詳細: docs/RESILIENCE.md §5.6
  */
 
-import { fetchNtaPage } from './nta-scraper.js';
-import { parseTsutatsuSection } from './tsutatsu-parser.js';
-import { parseKaiseiIndex } from './kaisei-toc-parser.js';
-import { parseJimuUneiIndex } from './jimu-unei-parser.js';
 import { parseBunshoMainIndex } from './bunshokaitou-parser.js';
-import { parseTaxAnswer } from './tax-answer-parser.js';
-import { parseQaJirei } from './qa-parser.js';
-
 import type { BaselineDocType } from './health-store.js';
+import { parseJimuUneiIndex } from './jimu-unei-parser.js';
+import { parseKaiseiIndex } from './kaisei-toc-parser.js';
+import { fetchNtaPage } from './nta-scraper.js';
+import { parseQaJirei } from './qa-parser.js';
+import { parseTaxAnswer } from './tax-answer-parser.js';
+import { parseTsutatsuSection } from './tsutatsu-parser.js';
 
 /** Canary 対象。doc_type ごとに代表 URL + parser を hardcode */
 export interface CanaryTarget {

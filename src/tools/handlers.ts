@@ -7,7 +7,7 @@
  */
 
 import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
-
+import type { QaTopic } from '../constants.js';
 import {
   BUNSHOKAITOU_LEGAL_STATUS,
   LEGAL_STATUS_BY_DOCTYPE,
@@ -20,42 +20,41 @@ import {
   TSUTATSU_LEGAL_STATUS,
   TSUTATSU_URL_ROOTS,
 } from '../constants.js';
-import type { QaTopic } from '../constants.js';
 import { closeDb, openDb } from '../db/index.js';
+import { makeError, NEXT_ACTIONS } from '../errors.js';
+import { writeBackLiveSection } from '../services/bulk-downloader.js';
+import type { ClauseRow } from '../services/db-search.js';
 import {
   getClauseFromDb,
   hasAnyClause,
   listAvailableClauses,
   searchClauseFts,
 } from '../services/db-search.js';
-import type { ClauseRow } from '../services/db-search.js';
-import { writeBackLiveSection } from '../services/bulk-downloader.js';
 import {
   summarizeFreshnessFromDocument,
   summarizeFreshnessFromSection,
 } from '../services/freshness.js';
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
-import { parseQaJirei } from '../services/qa-parser.js';
-import { parseTaxAnswer } from '../services/tax-answer-parser.js';
 import {
   buildReaderHintExamples,
   fillMissingKinds,
   renderAttachedPdfsMarkdown,
 } from '../services/pdf-meta.js';
+import { parseQaJirei } from '../services/qa-parser.js';
+import { parseTaxAnswer } from '../services/tax-answer-parser.js';
 import { renderQaMarkdown, renderTaxAnswerMarkdown } from '../services/tax-answer-render.js';
 import { parseTsutatsuSection, TsutatsuParseError } from '../services/tsutatsu-parser.js';
 import { renderClauseMarkdown } from '../services/tsutatsu-render.js';
-import { buildSectionUrl, parseClauseNumber } from '../utils/clause.js';
 import type {
-  SearchTsutatsuArgs,
-  GetTsutatsuArgs,
-  SearchQaArgs,
   GetQaArgs,
-  SearchTaxAnswerArgs,
   GetTaxAnswerArgs,
+  GetTsutatsuArgs,
   InspectPdfMetaArgs,
+  SearchQaArgs,
+  SearchTaxAnswerArgs,
+  SearchTsutatsuArgs,
 } from '../types/index.js';
-import { makeError, NEXT_ACTIONS } from '../errors.js';
+import { buildSectionUrl, parseClauseNumber } from '../utils/clause.js';
 
 // NOT_IMPLEMENTED は v0.5.0-alpha.1 で全 search 系ハンドラが本実装になり、未使用に。
 // 将来また「未実装スタブ」を作る際は復活させる。
@@ -258,7 +257,7 @@ export async function getTsutatsu(
     throw err;
   }
 
-  let section;
+  let section: ReturnType<typeof parseTsutatsuSection>;
   try {
     section = parseTsutatsuSection(html, sourceUrl, fetchedAt);
   } catch (err) {
@@ -457,7 +456,7 @@ export async function getQa(args: GetQaArgs, options: { fetchImpl?: typeof fetch
     throw err;
   }
 
-  let qa;
+  let qa: ReturnType<typeof parseQaJirei>;
   try {
     qa = parseQaJirei({
       html,
@@ -597,7 +596,7 @@ export async function getTaxAnswer(
     throw err;
   }
 
-  let taxAnswer;
+  let taxAnswer: ReturnType<typeof parseTaxAnswer>;
   try {
     taxAnswer = parseTaxAnswer(html, sourceUrl, fetchedAt);
   } catch (err) {
@@ -656,17 +655,17 @@ export async function handleResolveAbbreviation(args: { abbr: string }) {
 /* -------------------------------------------------------------------------- */
 
 import {
-  searchDocumentFts,
   getDocumentFromDb,
   listAvailableDocIds,
+  searchDocumentFts,
 } from '../services/db-search.js';
 import type {
-  GetKaiseiTsutatsuArgs,
-  SearchKaiseiTsutatsuArgs,
-  GetJimuUneiArgs,
-  SearchJimuUneiArgs,
   GetBunshokaitouArgs,
+  GetJimuUneiArgs,
+  GetKaiseiTsutatsuArgs,
   SearchBunshokaitouArgs,
+  SearchJimuUneiArgs,
+  SearchKaiseiTsutatsuArgs,
 } from '../types/index.js';
 
 /**

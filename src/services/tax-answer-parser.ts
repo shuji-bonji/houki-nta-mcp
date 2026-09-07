@@ -18,8 +18,8 @@
  *     ...
  */
 
-import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
+import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 
 import type { TaxAnswer, TaxAnswerSection } from '../types/tax-answer.js';

@@ -18,16 +18,16 @@
  */
 
 import {
-  type StalenessLevel,
-  STALENESS_THRESHOLDS,
   computeDaysSince,
   judgeStaleness,
+  STALENESS_THRESHOLDS,
+  type StalenessLevel,
 } from '@shuji-bonji/houki-abbreviations';
 import type DatabaseT from 'better-sqlite3';
 
 // v0.9.3: houki-abbreviations から re-export して既存利用者の互換性を保つ
 export type { StalenessLevel };
-export { STALENESS_THRESHOLDS, judgeStaleness };
+export { judgeStaleness, STALENESS_THRESHOLDS };
 
 /**
  * @deprecated v0.9.3+: 互換性のため残置。新規実装は

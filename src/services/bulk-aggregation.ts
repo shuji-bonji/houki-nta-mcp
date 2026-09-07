@@ -14,10 +14,10 @@ import { logger } from '../utils/logger.js';
 
 import {
   appendBaseline,
-  loadBaseline,
   type BaselineDocType,
   type BulkRunRecord,
   type DocTypeBaseline,
+  loadBaseline,
 } from './health-store.js';
 import { evaluateHealth, type HealthEvaluation } from './health-thresholds.js';
 

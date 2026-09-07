@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.10.0] - 2026-09-07
+
+**MCP SDK v2 移行リリース** — houki-egov-mcp v0.4.0 / v0.5.3 と同じ構成に揃え、houki-hub family 全 server が SDK v2 / Node 22 / TypeScript 7 / Biome になった。ツール一覧・各ツールの正常応答は v0.9.5 から変わらない。変わるのは `tools/call` のエラー応答の形式（下記 Changed の 2 点目）。
+
+### Changed
+
+- **MCP SDK を v2 に移行** — `@modelcontextprotocol/sdk ^1.29` → `@modelcontextprotocol/server ^2.0.0`（2026-07-28 公開）。
+  - サーバー本体を `src/server.ts` の `createServer()`（factory）に切り出し、bin エントリ `src/index.ts` は `serveStdio(createServer)` で起動する。`serveStdio` が stdio transport を所有し、protocol version の交渉を行う。stdin が閉じると exit 0
+  - 低レベル `Server` を維持。`setRequestHandler` のキーは Zod スキーマからメソッド名文字列（`'tools/list'` / `'tools/call'`）に変更
+  - `Tool` 型の import 元を `@modelcontextprotocol/server` に変更（`inputSchema` は JSON Schema のまま）
+  - SIGINT / SIGTERM で `handle.close()` を呼び、transport とサーバーを閉じてから終了する
+- **`tools/call` のエラー応答を houki-hub family error contract に統一** — v0.9.5 までは、ツール名不明と handler 例外を `{ "error": "<message>" }` だけで返し、handler が `LawServiceError` を返しても `isError` は付けていなかった。v0.10.0 からは次のとおり（houki-egov-mcp v0.5.3 と同じ）:
+  - ツール名が `tools/list` にない → `UNKNOWN_TOOL`（`hint` に利用可能なツール名一覧、`next_actions: list_tools`）+ `isError: true`
+  - 引数が `tools/list` の `inputSchema` に合わない → `INVALID_ARGUMENT` + `isError: true`。SDK v2 の `fromJsonSchema(tool.inputSchema)` で `tools/call` の前に検証し、handler は呼ばない。`detail.issues[]` に `{ path, message }`（例: `{ "path": "name", "message": "must be string" }`）、`tool` に対象ツール名
+  - handler が例外を投げた → `INTERNAL_ERROR`（`retryable: true`、`detail.cause` に例外メッセージ、`tool` に対象ツール名）+ `isError: true`
+  - handler が `LawServiceError` を返した → 本文はそのまま、`isError: true` を付ける
+  - `src/errors.ts` の `LawErrorCode` に `UNKNOWN_TOOL` を追加、`detail.issues` を追加
+- **Node.js の下限を 22 に引き上げ**（`engines.node >=22.0.0`。Node 20 は 2026-04-30 に EOL）。CI マトリクスは 22 / 24
+- **TypeScript 7.0（tsgo）に更新** — `tsconfig.json` の変更なし。ビルドは従来どおり `tsc && chmod +x dist/index.js`
+- **lint / フォーマットを ESLint + Prettier から Biome 2.5 に置き換え** — `eslint.config.js` / `.prettierrc` / `.prettierignore` を削除し `biome.json` を追加（houki-egov-mcp と同一設定）。フォーマット規則は従来の Prettier 設定と同一で、既存コードの再フォーマットは import 順の整列が中心
+  - scripts: `lint` = `biome lint src`、`format` = `biome format --write src`、`format:check` = `biome format src`、`check` = `biome check --write src`。`typecheck` は削除（`build` の `tsc` が兼ねる）
+  - Biome 指摘の修正: `handlers.ts` の `let section` / `let qa` / `let taxAnswer` に `ReturnType<...>` の型注釈（`noImplicitAnyLet`）、`health-store.test.ts` の `forEach` コールバックを値を返さない形に（`useIterableCallbackReturn`）、`tsutatsu-parser.ts` の `buildClauseFromFollowing` から未使用の `$` 引数を削除
+- `@types/node` を `^24` に更新。`.claude-plugin/plugin.json` の `version` を同期
+
+### Added
+
+- **新規 `src/server.test.ts`**（8 ケース） — `@modelcontextprotocol/client` の `InMemoryTransport` で `createServer()` を in-process 起動し、initialize の name / version、`tools/list` の一覧と JSON Schema、`UNKNOWN_TOOL` / `INVALID_ARGUMENT`（型違反・必須欠落・enum 違反）/ `LawServiceError` / handler 例外（`INTERNAL_ERROR`）の各経路が `isError: true` になることを MCP 経由で検証。国税庁サイトにも SQLite にも触れない
+
+### Removed
+
+- devDependencies: `eslint` / `@eslint/js` / `typescript-eslint` / `eslint-config-prettier` / `prettier`
+
 ## [0.9.5] - 2026-07-14
 
 🔌 **patch リリース** — Claude Code の **plugin manifest** (`.claude-plugin/plugin.json`) を追加。`/plugin` から houki-nta-mcp をワンステップでインストールできるようになった。機能・API に変更はない。

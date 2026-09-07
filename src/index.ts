@@ -5,63 +5,16 @@
  *
  * 引数なしの場合は MCP サーバを stdio で起動。
  * `--bulk-download` 等のサブコマンドが指定された場合は CLI モードで動作（src/cli.ts）。
+ *
+ * v0.10.0 で MCP SDK v2 (`@modelcontextprotocol/server`) に移行。
+ * サーバー本体は `src/server.ts` の `createServer()`。
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { runCliIfRequested } from './cli.js';
-import { tools } from './tools/definitions.js';
-import { toolHandlers } from './tools/handlers.js';
 import { PACKAGE_INFO } from './config.js';
+import { createServer } from './server.js';
 import { logger } from './utils/logger.js';
-
-// Server instance
-const server = new Server(
-  {
-    name: PACKAGE_INFO.name,
-    version: PACKAGE_INFO.version,
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
-  }
-);
-
-// List tools
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools };
-});
-
-// Execute tool
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
-  try {
-    const handler = toolHandlers[name];
-    if (!handler) {
-      throw new Error(`Unknown tool: ${name}`);
-    }
-
-    const result = await handler(args);
-    return {
-      content: [
-        {
-          type: 'text',
-          text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
-        },
-      ],
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      content: [{ type: 'text', text: JSON.stringify({ error: message }, null, 2) }],
-      isError: true,
-    };
-  }
-});
 
 // Start server (or run CLI subcommand)
 async function main() {
@@ -69,11 +22,17 @@ async function main() {
   const handled = await runCliIfRequested(process.argv.slice(2));
   if (handled) return;
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  // MCP server モード。serveStdio が transport を所有し、protocol version の交渉も行う。
+  // factory は接続ごとに呼ばれる（stdio では 1 プロセス 1 接続）。stdin が閉じると exit 0。
+  const handle = serveStdio(createServer);
+  const shutdown = () => {
+    void handle.close();
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (Phase 4 self-feedback: kind 別 reader_hints + extract_tables 推奨 + 「新旧対応表」表記ゆれ対応 / Phase 4-2: has_pdf filter / nta_inspect_pdf_meta / Phase 4-1: PDF kind classification / Phase 5: Resilience + Lv-3a soft-404 detection + Lv-3b menu.htm baseline drift)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (MCP SDK v2 / Phase 4 self-feedback: kind 別 reader_hints + extract_tables 推奨 + 「新旧対応表」表記ゆれ対応 / Phase 4-2: has_pdf filter / nta_inspect_pdf_meta / Phase 4-1: PDF kind classification / Phase 5: Resilience + Lv-3a soft-404 detection + Lv-3b menu.htm baseline drift)`
   );
 }
 

@@ -4,9 +4,9 @@
  * ライブ取得した clauses を DB に書き戻し、次回以降 DB lookup でヒットすることを確認。
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import Database from 'better-sqlite3';
 import type DatabaseT from 'better-sqlite3';
+import Database from 'better-sqlite3';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { initSchema } from '../db/schema.js';
 import { writeBackLiveSection } from './bulk-downloader.js';

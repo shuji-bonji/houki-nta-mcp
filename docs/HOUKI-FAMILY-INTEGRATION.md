@@ -89,7 +89,7 @@ graph TB
 
 ### 3.1 前提
 
-- **Node.js >= 20** (houki-nta-mcp の `engines` 要件)
+- **Node.js >= 22** (houki-nta-mcp v0.10.0 以降の `engines` 要件。Node 20 は 2026-04-30 に EOL)
 - **Claude Desktop** または **Claude Code** または互換 MCP クライアント
 - インターネット接続 (各 MCP の起動時に npm レジストリから取得 + houki-nta-mcp の bulk DL 時に国税庁 HP から HTML を取得)
 

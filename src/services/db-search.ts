@@ -9,10 +9,9 @@
 
 import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
 import type DatabaseT from 'better-sqlite3';
-
-import { type DocTypeForScoring, computeRelevance, sortByScoreDesc } from './relevance-scoring.js';
-import { normalizeClauseNumber, normalizeSearchQuery } from './text-normalize.js';
 import type { AttachedPdf, DocType, NtaDocument } from '../types/document.js';
+import { computeRelevance, type DocTypeForScoring, sortByScoreDesc } from './relevance-scoring.js';
+import { normalizeClauseNumber, normalizeSearchQuery } from './text-normalize.js';
 
 /**
  * Phase 6-1: re-rank 用に FTS5 から取得する件数の倍率。
@@ -315,7 +314,8 @@ export function getClauseFromDb(
   // 例: "1－4－13の2"（全角ハイフン）→ "1-4-13の2"（DB 内の正規化済み形式）
   const normalizedClauseNumber = normalizeClauseNumber(clauseNumber);
   const row = db.prepare(sql).get(formalName, normalizedClauseNumber) as
-    (Omit<ClauseRow, 'paragraphs'> & { paragraphsJson: string }) | undefined;
+    | (Omit<ClauseRow, 'paragraphs'> & { paragraphsJson: string })
+    | undefined;
   if (!row) return null;
 
   let paragraphs: ClauseRow['paragraphs'] = [];

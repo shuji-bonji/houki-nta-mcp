@@ -14,8 +14,8 @@
  *     <p>消基通 5-1-9 等</p>
  */
 
-import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
+import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 
 import type { QaTopic } from '../constants.js';

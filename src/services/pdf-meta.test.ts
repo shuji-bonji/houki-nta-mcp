@@ -7,8 +7,8 @@ import {
   fillMissingKinds,
   PDF_KIND_EMOJI,
   PDF_KIND_LABEL,
-  renderAttachedPdfsMarkdown,
   type PdfKind,
+  renderAttachedPdfsMarkdown,
 } from './pdf-meta.js';
 
 describe('extractPdfKind', () => {

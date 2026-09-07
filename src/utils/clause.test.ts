@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { parseClauseNumber, buildSectionUrl } from './clause.js';
+import { describe, expect, it } from 'vitest';
+import { buildSectionUrl, parseClauseNumber } from './clause.js';
 
 describe('parseClauseNumber', () => {
   it('"1-4-1" を {1, 4, "1"} に分解する', () => {

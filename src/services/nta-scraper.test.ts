@@ -1,12 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
 import { encode as iconvEncode } from 'iconv-lite';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
-  fetchNtaPage,
   detectCharset,
-  normalizeCharset,
-  NtaFetchError,
+  fetchNtaPage,
   isNtaSoft404,
+  NtaFetchError,
+  normalizeCharset,
 } from './nta-scraper.js';
 
 /* -------------------------------------------------------------------------- */

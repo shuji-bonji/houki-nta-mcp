@@ -9,10 +9,9 @@
  */
 
 import { createHash } from 'node:crypto';
-
-import * as cheerio from 'cheerio';
 import type DatabaseT from 'better-sqlite3';
-
+import * as cheerio from 'cheerio';
+import type { AttachedPdf, NtaDocument } from '../types/document.js';
 import { logger } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotDocumentTable } from './db-snapshot.js';
@@ -23,13 +22,12 @@ import {
   updateDocumentFetchedAt,
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
-import { fetchNtaPage } from './nta-scraper.js';
-import { parseTaxAnswer } from './tax-answer-parser.js';
-import { extractPdfKind } from './pdf-meta.js';
-import { normalizeJpText } from './text-normalize.js';
-import type { NtaDocument, AttachedPdf } from '../types/document.js';
 import type { BulkRunRecord } from './health-store.js';
 import type { HealthEvaluation } from './health-thresholds.js';
+import { fetchNtaPage } from './nta-scraper.js';
+import { extractPdfKind } from './pdf-meta.js';
+import { parseTaxAnswer } from './tax-answer-parser.js';
+import { normalizeJpText } from './text-normalize.js';
 
 /** タックスアンサー索引 URL */
 export const TAX_ANSWER_INDEX_URL = 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/code/';

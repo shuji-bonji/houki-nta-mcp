@@ -9,12 +9,11 @@
  */
 
 import { createHash } from 'node:crypto';
-
-import * as cheerio from 'cheerio';
 import type DatabaseT from 'better-sqlite3';
-
-import { QA_TOPICS } from '../constants.js';
+import * as cheerio from 'cheerio';
 import type { QaTopic } from '../constants.js';
+import { QA_TOPICS } from '../constants.js';
+import type { NtaDocument } from '../types/document.js';
 import { logger } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotDocumentTable } from './db-snapshot.js';
@@ -25,12 +24,11 @@ import {
   updateDocumentFetchedAt,
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
+import type { BulkRunRecord } from './health-store.js';
+import type { HealthEvaluation } from './health-thresholds.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { parseQaJirei } from './qa-parser.js';
 import { normalizeJpText } from './text-normalize.js';
-import type { NtaDocument } from '../types/document.js';
-import type { BulkRunRecord } from './health-store.js';
-import type { HealthEvaluation } from './health-thresholds.js';
 
 export interface BulkQaProgress {
   phase: 'topic-index' | 'doc' | 'done';

@@ -13,26 +13,26 @@
  *       CLI モードでは stdout に出力して OK。
  */
 
-import { closeDb, defaultDbPath, openDb } from './db/index.js';
-import { bulkDownloadTsutatsu } from './services/bulk-downloader.js';
-import { bulkDownloadKaisei, KAISEI_INDEX_URLS } from './services/kaisei-bulk-downloader.js';
-import { bulkDownloadJimuUnei } from './services/jimu-unei-bulk-downloader.js';
-import { bulkDownloadBunshokaitou } from './services/bunshokaitou-bulk-downloader.js';
-import { bulkDownloadTaxAnswer } from './services/tax-answer-bulk-downloader.js';
-import { bulkDownloadQa } from './services/qa-bulk-downloader.js';
+import { PACKAGE_INFO } from './config.js';
 import type { QaTopic } from './constants.js';
-import { findStaleSections } from './services/db-search.js';
+import { TSUTATSU_URL_ROOTS } from './constants.js';
+import { closeDb, defaultDbPath, openDb } from './db/index.js';
+import { detectBaselineDrift } from './services/baseline-drift.js';
 import {
   computeBulkAggregation,
-  recordBulkRun,
   type DocSnapshot,
+  recordBulkRun,
 } from './services/bulk-aggregation.js';
+import { bulkDownloadTsutatsu } from './services/bulk-downloader.js';
+import { bulkDownloadBunshokaitou } from './services/bunshokaitou-bulk-downloader.js';
+import { findStaleSections } from './services/db-search.js';
 import { snapshotDocumentTable } from './services/db-snapshot.js';
 import { runHealthCheck } from './services/health-check.js';
-import { detectBaselineDrift } from './services/baseline-drift.js';
 import { loadBaseline } from './services/health-store.js';
-import { PACKAGE_INFO } from './config.js';
-import { TSUTATSU_URL_ROOTS } from './constants.js';
+import { bulkDownloadJimuUnei } from './services/jimu-unei-bulk-downloader.js';
+import { bulkDownloadKaisei, KAISEI_INDEX_URLS } from './services/kaisei-bulk-downloader.js';
+import { bulkDownloadQa } from './services/qa-bulk-downloader.js';
+import { bulkDownloadTaxAnswer } from './services/tax-answer-bulk-downloader.js';
 
 interface CliArgs {
   bulkDownload: boolean;

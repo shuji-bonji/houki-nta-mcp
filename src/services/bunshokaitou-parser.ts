@@ -22,16 +22,15 @@
  *     <p>本文…</p>
  */
 
-import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
+import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
-
+import type { AttachedPdf, KaiseiIndexEntry, NtaDocument } from '../types/document.js';
+import { parsePdfSizeKb } from './kaisei-parser.js';
+import { extractIssuedAt } from './kaisei-toc-parser.js';
+import { extractPdfKind } from './pdf-meta.js';
 import { normalizeJpText } from './text-normalize.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
-import { extractIssuedAt } from './kaisei-toc-parser.js';
-import { parsePdfSizeKb } from './kaisei-parser.js';
-import { extractPdfKind } from './pdf-meta.js';
-import type { AttachedPdf, NtaDocument, KaiseiIndexEntry } from '../types/document.js';
 
 /** 税目別索引 URL のエントリ */
 export interface BunshoTaxonomyEntry {

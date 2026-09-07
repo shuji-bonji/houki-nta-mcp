@@ -16,8 +16,8 @@
  *     <p class="indent3">第2款　<a href="...">役員に対するみなし譲渡</a></p>
  */
 
-import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
+import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 
 import type {

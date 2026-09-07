@@ -1,10 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-
 import { encode as iconvEncode } from 'iconv-lite';
+import { describe, expect, it, vi } from 'vitest';
 
-import { openDb, closeDb } from '../db/index.js';
+import { closeDb, openDb } from '../db/index.js';
 import { bulkDownloadTsutatsu } from './bulk-downloader.js';
 
 const fixturesDir = resolve(import.meta.dirname ?? __dirname, '../../tests/fixtures');
@@ -138,7 +137,8 @@ describe('bulkDownloadTsutatsu — 消基通 (fixture モック)', () => {
           `SELECT clause_number, source_url, title FROM clause WHERE tsutatsu_id = ? AND clause_number = ?`
         )
         .get(r.tsutatsuId, '1-4-13の2') as
-        { clause_number: string; source_url: string; title: string } | undefined;
+        | { clause_number: string; source_url: string; title: string }
+        | undefined;
       expect(lookup).toBeDefined();
       expect(lookup?.source_url).toBe('https://www.nta.go.jp/law/tsutatsu/kihon/shohi/01/04.htm');
       expect(lookup?.title).toContain('分割があった場合');

@@ -17,9 +17,8 @@
  */
 
 import type DatabaseT from 'better-sqlite3';
-
-import type { FetchNtaPageOptions } from './nta-scraper.js';
 import type { DocType } from '../types/document.js';
+import type { FetchNtaPageOptions } from './nta-scraper.js';
 
 /** DB から取得した document の condition state */
 export interface DocumentConditionState {

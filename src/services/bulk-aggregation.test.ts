@@ -6,9 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   computeBulkAggregation,
+  type DocSnapshot,
   diffKeys,
   recordBulkRun,
-  type DocSnapshot,
 } from './bulk-aggregation.js';
 import { loadBaseline } from './health-store.js';
 

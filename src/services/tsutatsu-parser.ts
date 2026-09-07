@@ -13,8 +13,8 @@
  *  - PDF 形式の通達 → 別 service
  */
 
-import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
+import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 
 import type {
@@ -158,7 +158,7 @@ function extractClauses($: CheerioAPI, $body: cheerio.Cheerio<Element>): Tsutats
       return true;
     }
 
-    const result = buildClauseFromFollowing($, followingEls);
+    const result = buildClauseFromFollowing(followingEls);
     if (!result) return true;
 
     const { clauseNumber, paragraphs } = result;
@@ -215,7 +215,6 @@ function collectUntilNextH2(
  * 番号取得に失敗したら null を返してその clause を skip する。
  */
 function buildClauseFromFollowing(
-  $: CheerioAPI,
   followingEls: cheerio.Cheerio<Element>[]
 ): { clauseNumber: string; paragraphs: TsutatsuParagraph[] } | null {
   // 最初に出てくる p.indent1 を本文と見なす

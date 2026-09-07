@@ -5,11 +5,11 @@
  * 形式に拡張した結果、既存 parser がそのまま動くことを fixtures で恒久的に保証する。
  */
 
-import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
 
-import { parseTsutatsuSection, extractClauseNumber } from './tsutatsu-parser.js';
+import { extractClauseNumber, parseTsutatsuSection } from './tsutatsu-parser.js';
 
 const fixturesDir = resolve(import.meta.dirname ?? __dirname, '../../tests/fixtures');
 

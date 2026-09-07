@@ -6,13 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   appendBaseline,
+  type BulkRunRecord,
   defaultBaselinePath,
   getLastRun,
   getMedianFailRate,
   getMedianTotal,
   HISTORY_LIMIT,
   loadBaseline,
-  type BulkRunRecord,
 } from './health-store.js';
 
 describe('health-store', () => {
@@ -190,9 +190,9 @@ describe('health-store', () => {
 
     it('returns the middle value for odd count', () => {
       const path = pathFor('qa-jirei');
-      [1800, 1841, 1850, 1820, 1900].forEach((total) =>
-        appendBaseline('qa-jirei', makeRecord({ totalEntries: total }), path)
-      );
+      [1800, 1841, 1850, 1820, 1900].forEach((total) => {
+        appendBaseline('qa-jirei', makeRecord({ totalEntries: total }), path);
+      });
       const baseline = loadBaseline('qa-jirei', path);
       // sorted: 1800, 1820, 1841, 1850, 1900 → median = 1841
       expect(getMedianTotal(baseline)).toBe(1841);
@@ -200,9 +200,9 @@ describe('health-store', () => {
 
     it('returns the average of two middle values for even count', () => {
       const path = pathFor('qa-jirei');
-      [100, 200, 300, 400].forEach((total) =>
-        appendBaseline('qa-jirei', makeRecord({ totalEntries: total }), path)
-      );
+      [100, 200, 300, 400].forEach((total) => {
+        appendBaseline('qa-jirei', makeRecord({ totalEntries: total }), path);
+      });
       const baseline = loadBaseline('qa-jirei', path);
       expect(getMedianTotal(baseline)).toBe(250);
     });
@@ -216,9 +216,9 @@ describe('health-store', () => {
 
     it('returns the middle failRate for odd count', () => {
       const path = pathFor('qa-jirei');
-      [0, 0, 0.01, 0, 0].forEach((failRate) =>
-        appendBaseline('qa-jirei', makeRecord({ failRate }), path)
-      );
+      [0, 0, 0.01, 0, 0].forEach((failRate) => {
+        appendBaseline('qa-jirei', makeRecord({ failRate }), path);
+      });
       const baseline = loadBaseline('qa-jirei', path);
       // sorted: 0, 0, 0, 0, 0.01 → median = 0
       expect(getMedianFailRate(baseline)).toBe(0);
@@ -226,9 +226,9 @@ describe('health-store', () => {
 
     it('returns the average for even count', () => {
       const path = pathFor('qa-jirei');
-      [0, 0.02, 0.04, 0].forEach((failRate) =>
-        appendBaseline('qa-jirei', makeRecord({ failRate }), path)
-      );
+      [0, 0.02, 0.04, 0].forEach((failRate) => {
+        appendBaseline('qa-jirei', makeRecord({ failRate }), path);
+      });
       const baseline = loadBaseline('qa-jirei', path);
       // sorted: 0, 0, 0.02, 0.04 → middle = (0 + 0.02) / 2 = 0.01
       expect(getMedianFailRate(baseline)).toBe(0.01);

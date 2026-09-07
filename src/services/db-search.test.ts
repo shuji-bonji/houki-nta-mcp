@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import Database from 'better-sqlite3';
 import type DatabaseT from 'better-sqlite3';
+import Database from 'better-sqlite3';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { initSchema } from '../db/schema.js';
 import { hasAnyClause, sanitizeFtsQuery, searchClauseFts, searchDocumentFts } from './db-search.js';

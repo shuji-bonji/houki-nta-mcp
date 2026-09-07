@@ -19,6 +19,7 @@ export type LawErrorCode =
   // 引数・入力 (クライアント責任)
   | 'INVALID_ARGUMENT'
   | 'OUT_OF_SCOPE'
+  | 'UNKNOWN_TOOL'
   // リソース未発見
   | 'TSUTATSU_NOT_FOUND'
   | 'ARTICLE_NOT_FOUND'
@@ -64,6 +65,8 @@ export interface LawServiceError {
     status?: number;
     url?: string;
     cause?: string;
+    /** INVALID_ARGUMENT: inputSchema 違反の一覧 (path は `a.b` 形式、未特定なら空文字) */
+    issues?: Array<{ path: string; message: string }>;
   };
   /** houki-nta-mcp 固有: 略称解決結果 */
   resolved?: unknown;

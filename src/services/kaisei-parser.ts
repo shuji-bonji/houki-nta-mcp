@@ -17,15 +17,14 @@
  *     <a href="...pdf">別紙（PDF/470KB）</a>            ← 添付 PDF
  */
 
-import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
+import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
-
-import { normalizeJpText } from './text-normalize.js';
-import { TsutatsuParseError } from './tsutatsu-parser.js';
+import type { AttachedPdf, NtaDocument } from '../types/document.js';
 import { extractIssuedAt } from './kaisei-toc-parser.js';
 import { extractPdfKind } from './pdf-meta.js';
-import type { AttachedPdf, NtaDocument } from '../types/document.js';
+import { normalizeJpText } from './text-normalize.js';
+import { TsutatsuParseError } from './tsutatsu-parser.js';
 
 /** 個別改正通達ページをパースして NtaDocument を返す。 */
 export function parseKaiseiPage(

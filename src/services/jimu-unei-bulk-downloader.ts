@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 
 import type DatabaseT from 'better-sqlite3';
-
+import type { NtaDocument } from '../types/document.js';
 import { logger } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotDocumentTable } from './db-snapshot.js';
@@ -17,12 +17,11 @@ import {
   updateDocumentFetchedAt,
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
-import { fetchNtaPage } from './nta-scraper.js';
-import { parseJimuUneiIndex, parseJimuUneiPage } from './jimu-unei-parser.js';
-import { normalizeJpText } from './text-normalize.js';
-import type { NtaDocument } from '../types/document.js';
 import type { BulkRunRecord } from './health-store.js';
 import type { HealthEvaluation } from './health-thresholds.js';
+import { parseJimuUneiIndex, parseJimuUneiPage } from './jimu-unei-parser.js';
+import { fetchNtaPage } from './nta-scraper.js';
+import { normalizeJpText } from './text-normalize.js';
 
 /** 事務運営指針 索引 URL */
 export const JIMU_UNEI_INDEX_URL = 'https://www.nta.go.jp/law/jimu-unei/jimu.htm';

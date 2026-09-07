@@ -2,15 +2,15 @@
  * 改正通達索引 (kaisei_a.htm) parser のテスト。
  */
 
-import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
 
 import {
-  parseKaiseiIndex,
-  extractIssuedAt,
   extractDocIdFromUrl,
+  extractIssuedAt,
   extractTaxonomyFromUrl,
+  parseKaiseiIndex,
 } from './kaisei-toc-parser.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 

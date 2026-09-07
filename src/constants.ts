@@ -5,9 +5,9 @@
  * から re-export している。Single Source of Truth はそちら。
  */
 
+export type { Category, Domain, SourceMcpHint } from '@shuji-bonji/houki-abbreviations';
 // houki-abbreviations から共有定数を re-export
-export { DOMAINS, CATEGORIES, SOURCE_MCP_HINTS } from '@shuji-bonji/houki-abbreviations';
-export type { Domain, Category, SourceMcpHint } from '@shuji-bonji/houki-abbreviations';
+export { CATEGORIES, DOMAINS, SOURCE_MCP_HINTS } from '@shuji-bonji/houki-abbreviations';
 
 /** このMCPが管轄する source_mcp_hint */
 export const NTA_HINT = 'houki-nta' as const;

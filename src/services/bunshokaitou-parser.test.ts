@@ -2,16 +2,16 @@
  * 文書回答事例 parser のテスト。
  */
 
-import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
 
 import {
-  parseBunshoMainIndex,
-  parseBunshoTaxonomyIndex,
-  parseBunshoPage,
   extractDocIdFromBunshoUrl,
   extractTaxonomyFromBunshoUrl,
+  parseBunshoMainIndex,
+  parseBunshoPage,
+  parseBunshoTaxonomyIndex,
 } from './bunshokaitou-parser.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 

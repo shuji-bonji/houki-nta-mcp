@@ -4,7 +4,7 @@
  * `--bulk-download-all` / `--refresh-stale=<日数>` / `--apply` などのパース確認。
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { parseArgs } from './cli.js';
 

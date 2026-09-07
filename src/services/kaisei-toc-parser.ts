@@ -19,10 +19,9 @@
  */
 
 import * as cheerio from 'cheerio';
-
-import { TsutatsuParseError } from './tsutatsu-parser.js';
-import { normalizeJpText } from './text-normalize.js';
 import type { KaiseiIndexEntry } from '../types/document.js';
+import { normalizeJpText } from './text-normalize.js';
+import { TsutatsuParseError } from './tsutatsu-parser.js';
 
 /** 改正通達索引の HTML をパースして個別ページ URL のリストを返す */
 export function parseKaiseiIndex(html: string, sourceUrl: string): KaiseiIndexEntry[] {

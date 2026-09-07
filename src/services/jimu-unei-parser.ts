@@ -16,16 +16,15 @@
  *   `/jimu-unei/sozoku/170111_1/01.htm`            → doc_id = "sozoku/170111_1"
  */
 
-import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
+import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
-
+import type { AttachedPdf, KaiseiIndexEntry, NtaDocument } from '../types/document.js';
+import { parsePdfSizeKb } from './kaisei-parser.js';
+import { extractIssuedAt } from './kaisei-toc-parser.js';
+import { extractPdfKind } from './pdf-meta.js';
 import { normalizeJpText } from './text-normalize.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
-import { extractIssuedAt } from './kaisei-toc-parser.js';
-import { parsePdfSizeKb } from './kaisei-parser.js';
-import { extractPdfKind } from './pdf-meta.js';
-import type { AttachedPdf, NtaDocument, KaiseiIndexEntry } from '../types/document.js';
 
 /**
  * 索引 (`jimu.htm`) から個別ページのリンク一覧を返す。

@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import Database from 'better-sqlite3';
 import type DatabaseT from 'better-sqlite3';
+import Database from 'better-sqlite3';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { SCHEMA_VERSION, clearAllData, getSchemaVersion, initSchema } from './schema.js';
+import { clearAllData, getSchemaVersion, initSchema, SCHEMA_VERSION } from './schema.js';
 
 describe('initSchema', () => {
   let db: DatabaseT.Database;

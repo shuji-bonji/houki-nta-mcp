@@ -4,8 +4,8 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  DOC_TYPE_WEIGHT,
   computeRelevance,
+  DOC_TYPE_WEIGHT,
   extractClauseNumberFromQuery,
   rankToBaseScore,
   sortByScoreDesc,

@@ -1,9 +1,8 @@
-import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-
-import { parseTsutatsuTocHojin } from './tsutatsu-toc-parser-hojin.js';
+import { describe, expect, it } from 'vitest';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
+import { parseTsutatsuTocHojin } from './tsutatsu-toc-parser-hojin.js';
 
 const fixturesDir = resolve(import.meta.dirname ?? __dirname, '../../tests/fixtures');
 

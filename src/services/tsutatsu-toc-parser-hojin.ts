@@ -35,8 +35,8 @@
  * として連番化して登録（DB は flat 構造で構わない）する。
  */
 
-import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
+import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 
 import type { TsutatsuToc, TsutatsuTocChapter } from '../types/tsutatsu-toc.js';

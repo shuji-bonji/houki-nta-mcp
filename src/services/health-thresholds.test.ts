@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
-
+import type { BulkRunRecord, DocTypeBaseline } from './health-store.js';
 import {
   COUNT_DRIFT_RATIO,
   evaluateHealth,
   FAIL_THRESHOLDS,
+  STRUCTURAL_RATIO,
   shouldWarnCountDrift,
   shouldWarnFailRate,
   shouldWarnStructuralChange,
-  STRUCTURAL_RATIO,
 } from './health-thresholds.js';
-import type { BulkRunRecord, DocTypeBaseline } from './health-store.js';
 
 function makeRecord(overrides: Partial<BulkRunRecord> = {}): BulkRunRecord {
   return {

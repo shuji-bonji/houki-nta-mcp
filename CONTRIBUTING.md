@@ -78,8 +78,9 @@ houki-abbreviations 側で `category: 'kihon-tsutatsu'` または `'kobetsu-tsut
 
 ```sh
 npm install
-npm run lint        # ESLint
-npm run format      # Prettier 整形
+npm run lint        # Biome lint
+npm run format      # Biome 整形
+npm run check       # Biome lint + 整形 (--write)
 npm test            # vitest
 npm run build       # tsc
 ```
@@ -127,12 +128,12 @@ git push origin main --tags
 
 ## コーディング規約
 
-- TypeScript 5.x / ESM / Node.js >= 20
+- TypeScript 7.x (tsgo) / ESM / Node.js >= 22
+- MCP SDK v2 (`@modelcontextprotocol/server`)。サーバー本体は `src/server.ts` の `createServer()`、bin エントリ `src/index.ts` は `serveStdio(createServer)`
 - インポートは `.js` 拡張子を明示（TS ファイル内でも）
 - `console.log` 禁止（stdio MCP プロトコル保護のため）。ログは `src/utils/logger.ts` 経由
 - テストは `vitest`
-- フォーマットは `prettier`
-- ESLint flat config (`eslint.config.js`)
+- lint / フォーマットは Biome (`biome.json`)。規則は single quote / trailing comma es5 / semicolon / 幅 100 / 2 スペース
 
 ## 質問・議論
 

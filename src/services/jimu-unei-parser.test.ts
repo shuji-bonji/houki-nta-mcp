@@ -2,16 +2,16 @@
  * 事務運営指針 parser のテスト。
  */
 
-import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
 
 import {
+  extractDocIdFromJimuUrl,
+  extractIssuedAtFromUrlFolder,
+  extractTaxonomyFromJimuUrl,
   parseJimuUneiIndex,
   parseJimuUneiPage,
-  extractDocIdFromJimuUrl,
-  extractTaxonomyFromJimuUrl,
-  extractIssuedAtFromUrlFolder,
 } from './jimu-unei-parser.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 

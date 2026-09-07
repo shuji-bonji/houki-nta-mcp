@@ -8,7 +8,7 @@
  * - get 系: DB lookup → 未投入時はライブ fetch（write-through cache）
  */
 
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { Tool } from '@modelcontextprotocol/server';
 import { DOMAINS, LIMITS, OUTPUT_FORMATS } from '../constants.js';
 
 export const tools: Tool[] = [

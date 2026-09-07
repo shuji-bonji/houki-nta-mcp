@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/shuji-bonji/houki-nta-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/shuji-bonji/houki-nta-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/Node-%3E%3D20-brightgreen)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/Node-%3E%3D22-brightgreen)](https://nodejs.org/)
 
 国税庁（NTA）公式サイトの **基本通達・改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例** をローカル SQLite に取得し、FTS5 で全文検索する MCP server。
 
@@ -406,6 +406,16 @@ npm test
 - [`docs/ERROR-HANDLING.md`](https://github.com/shuji-bonji/houki-research-skill/blob/main/docs/ERROR-HANDLING.md) — 解釈ポリシー / next_actions テンプレ
 
 実装は **[houki-egov-mcp の `src/errors.ts`](https://github.com/shuji-bonji/houki-egov-mcp/blob/main/src/errors.ts) をリファレンス**としつつ、本 MCP では共通パッケージ (`houki-abbreviations` 等) への依存を持たず独立して実装します。
+
+v0.10.0 以降、`tools/call` の応答は次の 3 経路でも同じ形式になり、いずれも `isError: true` が付きます（houki-egov-mcp v0.5.3 と同じ）。
+
+| 経路 | `code` | 内容 |
+|------|--------|------|
+| ツール名が `tools/list` にない | `UNKNOWN_TOOL` | `hint` に利用可能なツール名一覧 |
+| 引数が `tools/list` の `inputSchema` に合わない（型・必須・enum） | `INVALID_ARGUMENT` | `detail.issues[]` に `path` と `message`。handler は呼ばれません |
+| handler が例外を投げた | `INTERNAL_ERROR` | `retryable: true`、`detail.cause` に例外メッセージ |
+
+handler が `LawServiceError`（上の JSON 形式）を返した場合も `isError: true` が付きます。
 
 ```json
 {

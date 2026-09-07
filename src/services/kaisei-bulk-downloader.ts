@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto';
 
 import type DatabaseT from 'better-sqlite3';
-
+import type { NtaDocument } from '../types/document.js';
 import { logger } from '../utils/logger.js';
 import {
   buildConditionalFetchOptions,
@@ -23,11 +23,10 @@ import {
   updateDocumentFetchedAt,
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
-import { fetchNtaPage } from './nta-scraper.js';
-import { parseKaiseiIndex } from './kaisei-toc-parser.js';
 import { parseKaiseiPage } from './kaisei-parser.js';
+import { parseKaiseiIndex } from './kaisei-toc-parser.js';
+import { fetchNtaPage } from './nta-scraper.js';
 import { normalizeJpText } from './text-normalize.js';
-import type { NtaDocument } from '../types/document.js';
 
 /** 4 通達の改正索引 URL（v0.4.0-alpha.1 の対象） */
 export const KAISEI_INDEX_URLS: Readonly<Record<string, string>> = {

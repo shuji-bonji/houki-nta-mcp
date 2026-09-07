@@ -2,8 +2,8 @@
  * Tests for src/services/document-conditional-fetch.ts (Phase 6-2 / v0.9.0)
  */
 
-import Database from 'better-sqlite3';
 import type DatabaseT from 'better-sqlite3';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { initSchema } from '../db/schema.js';

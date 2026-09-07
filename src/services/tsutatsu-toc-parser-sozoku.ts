@@ -30,8 +30,8 @@
  * 既存の TsutatsuToc 型をそのまま使う。subsections は使用しない。
  */
 
-import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
+import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 
 import type { TsutatsuToc, TsutatsuTocChapter } from '../types/tsutatsu-toc.js';
