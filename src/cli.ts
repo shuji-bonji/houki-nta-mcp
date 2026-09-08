@@ -371,6 +371,7 @@ async function runBulkDownloadTaxAnswer(args: CliArgs): Promise<void> {
   const db = openDb(dbPath);
   try {
     const result = await bulkDownloadTaxAnswer(db, {
+      forceReload: args.refresh,
       taxonomies: args.taxAnswerTaxonomies,
       onProgress: (p) => {
         if (p.current && p.total) process.stderr.write(`  ${p.message}\n`);
@@ -393,6 +394,7 @@ async function runBulkDownloadQa(args: CliArgs): Promise<void> {
   const db = openDb(dbPath);
   try {
     const result = await bulkDownloadQa(db, {
+      forceReload: args.refresh,
       topics: args.qaTopics,
       onProgress: (p) => {
         if (p.current && p.total) process.stderr.write(`  ${p.message}\n`);
@@ -419,6 +421,7 @@ async function runBulkDownloadBunshokaitou(args: CliArgs): Promise<void> {
   const db = openDb(dbPath);
   try {
     const result = await bulkDownloadBunshokaitou(db, {
+      forceReload: args.refresh,
       taxonomies: args.bunshoTaxonomies,
       onProgress: (p) => {
         if (p.current && p.total) {
@@ -443,6 +446,7 @@ async function runBulkDownloadJimuUnei(args: CliArgs): Promise<void> {
   const db = openDb(dbPath);
   try {
     const result = await bulkDownloadJimuUnei(db, {
+      forceReload: args.refresh,
       onProgress: (p) => {
         if (p.current && p.total) {
           process.stderr.write(`  ${p.message}\n`);
@@ -482,6 +486,7 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
       process.stderr.write(`\n[bulk-download-kaisei] ===== ${formalName} =====\n`);
       try {
         const result = await bulkDownloadKaisei(db, {
+          forceReload: args.refresh,
           indexUrl,
           onProgress: (p) => {
             if (p.current && p.total) {

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.10.4] - 2026-09-08
+
+**patch リリース** — `--refresh` が基本通達以外の 5 種別に効いていなかった問題の修正。v0.10.3 の文書回答事例の再投入で `--bulk-download-everything --refresh` を実行したところ、文書回答事例 510 件がすべて `304 Not Modified` で parse をスキップし、新しいパーサーが一度も走らなかったことで発覚しました。ツール一覧・応答の形は変わりません。
+
+### Fixed
+
+- **`--refresh` が改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例に渡っていなかった** — v0.10.2 で `forceReload: args.refresh` を渡すようにしたのは `bulkDownloadTsutatsu()` の 3 呼び出しだけで、`bulkDownloadKaisei()` / `bulkDownloadJimuUnei()` / `bulkDownloadBunshokaitou()` / `bulkDownloadTaxAnswer()` / `bulkDownloadQa()` には渡していなかった（downloader 側は 5 つとも `forceReload` を受け取れる作りだった）。そのため `--refresh` を付けても条件付き取得（`If-Modified-Since`）のままで、国税庁サイトが `304` を返す文書は再解析されなかった。5 か所すべてに `forceReload: args.refresh` を渡すように修正
+- `src/cli.test.ts` に 5 種別 × `--refresh` あり / なし と `--bulk-download-everything --refresh` の 11 件を追加（合計 **532 tests**）
+
+### 再投入について
+
+v0.10.3 の文書回答事例の本文（表と別紙）を DB に入れるには、**v0.10.4 で** `houki-nta-mcp --bulk-download-bunshokaitou --refresh` を実行してください。v0.10.3 で `--refresh` を付けて実行した場合も、文書回答事例は更新されていません（`304: 510, 更新: 0` のログが出ていればそれです）。
+
 ## [0.10.3] - 2026-09-08
 
 **patch リリース** — 文書回答事例（`nta_get_bunshokaitou` / `nta_search_bunshokaitou`）の本文が「〔照会〕」「〔回答〕」の見出しだけになっていた問題の修正。ツール一覧・引数・応答の形は変わりません。`fullText` の中身と `issuedAt` が変わります。houki-hub のツールリファレンス用に応答を実測して見つかりました。
