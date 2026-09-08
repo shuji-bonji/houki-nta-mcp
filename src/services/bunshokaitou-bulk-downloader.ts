@@ -17,6 +17,8 @@ import type { NtaDocument } from '../types/document.js';
 import { logger } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import {
+  type BunshoAppendix,
+  extractBunshoAppendixUrls,
   parseBunshoMainIndex,
   parseBunshoPage,
   parseBunshoTaxonomyIndex,
@@ -183,7 +185,23 @@ export async function bulkDownloadBunshokaitou(
         continue;
       }
 
-      const doc = parseBunshoPage(fetched.html, fetched.sourceUrl, fetched.fetchedAt);
+      // 別紙 (another.htm) を追加取得。照会の趣旨・事実関係・理由の本文はここにある (v0.10.3)。
+      // index.htm が 304 のときはここに来ないので、別紙だけが更新された場合は --refresh で拾う。
+      const appendices: BunshoAppendix[] = [];
+      for (const appendixUrl of extractBunshoAppendixUrls(fetched.html, fetched.sourceUrl)) {
+        await sleep(requestIntervalMs);
+        try {
+          const appendix = await fetchNtaPage(appendixUrl, fetchImpl ? { fetchImpl } : {});
+          appendices.push({ url: appendix.sourceUrl, html: appendix.html });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.warn('bunsho-bulk', `別紙の取得に失敗 (本文だけで続行): ${appendixUrl}`, {
+            error: msg,
+          });
+        }
+      }
+
+      const doc = parseBunshoPage(fetched.html, fetched.sourceUrl, fetched.fetchedAt, appendices);
       const issuedAt = doc.issuedAt ?? t.issuedAt;
       const hash = computeDocumentHash(doc);
 

@@ -123,6 +123,12 @@ clause 番号は **Normalize-everywhere** で全角→半角統一されてい�
 
 v0.10.0 以前に構築した DB には画像のプレースホルダが入っていません。`houki-nta-mcp --bulk-download-all --refresh` で通達を再投入してください（`--refresh` なしでは、国税庁サイトが `304 Not Modified` を返す節は再解析されません）。
 
+### 文書回答事例の本文と別紙（v0.10.3）
+
+文書回答事例のページは、照会者・関係する法令条項等・回答年月日・回答者・回答内容が表（`<table class="kaito">`）に入り、照会の趣旨・事実関係・理由は「別紙」（同じディレクトリの `another.htm`）にあります。v0.10.2 までは `<p>` しか読んでいなかったため、`fullText` が「〔照会〕」「〔回答〕」の見出しだけになり、`issuedAt` も `null` でした。v0.10.3 からは表の各行を「見出し: 値」の形で取り込み、回答年月日を `issuedAt` にし、`--bulk-download-bunshokaitou` で別紙も取得して `【別紙】` として本文の末尾に連結します（文書あたり 1 リクエスト増えます）。
+
+v0.10.2 以前に構築した DB の文書回答事例には本文が入っていません。`houki-nta-mcp --bulk-download-bunshokaitou --refresh` で再投入してください。
+
 ## 使い方の例
 
 ```jsonc

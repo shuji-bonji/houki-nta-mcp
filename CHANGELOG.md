@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.10.3] - 2026-09-08
+
+**patch リリース** — 文書回答事例（`nta_get_bunshokaitou` / `nta_search_bunshokaitou`）の本文が「〔照会〕」「〔回答〕」の見出しだけになっていた問題の修正。ツール一覧・引数・応答の形は変わりません。`fullText` の中身と `issuedAt` が変わります。houki-hub のツールリファレンス用に応答を実測して見つかりました。
+
+### Fixed
+
+- **文書回答事例の本文が取り込まれていなかった** — 国税庁の個別事例ページは `〔照会〕` `〔回答〕` の見出しの下が `<table class="kaito">` で、照会者・関係する法令条項等・添付書類・回答年月日・回答者・回答内容はすべて `<th>` / `<td>` に入っている。パーサーは `<p>` / `<h2>` / `<h3>` しか集めていなかったため、`fullText` が見出し 2 行だけになり、`nta_search_bunshokaitou` は題名の語でしか当たらなかった（「適格請求書」「電子帳簿」で 0 件）。表の各行を「見出し: 値」の 1 行にして取り込むようにした。2008 年の文書（`shotoku/081102`）と 2025 年の文書（`shotoku/250416`）で同じ構造を確認
+- **`issuedAt` が `null` だった** — 回答の表の「回答年月日」（例: 令和7年4月7日）から取るようにした（`2025-04-07`）。表に無いときは従来どおり先頭段落・タイトルから
+- **「別紙」（`another.htm`）を読んでいなかった** — 照会の趣旨・事実関係・理由は表に「別紙のとおり」とだけあり、本文は同じディレクトリの `another.htm` にある。`--bulk-download-bunshokaitou` で `index.htm` の後に `another.htm` を 1 回取得し（文書あたり 1 リクエスト増、同じ間隔で待つ）、`【別紙】` の見出しを付けて `fullText` の末尾に連結する。別紙内の PDF も `attachedPdfs` に加える。別紙の取得に失敗したときは本文だけで続行し、warn ログを出す
+
+### Changed
+
+- `parseBunshoPage()` に第 4 引数 `appendices: BunshoAppendix[]` を追加（省略可、既定は空）。`extractBunshoAppendixUrls()` を新設
+- fixture に `shotoku/250416` の `another.htm` と `shotoku/081102` の `index.htm` を追加し、`bunshokaitou-parser.test.ts` に 9 件追加（合計 **521 tests**）
+
+### 再投入について
+
+v0.10.2 以前に構築した DB の文書回答事例には表と別紙の本文が入っていません。`houki-nta-mcp --bulk-download-bunshokaitou --refresh` で再投入してください（`--refresh` なしでは、国税庁サイトが `304 Not Modified` を返す文書は再解析されません）。
+
 ## [0.10.2] - 2026-09-07
 
 **patch リリース** — v0.10.1 の plugin 試用と所基通の再投入で見つかった 2 点の修正。ツール一覧・応答の形は変わりません。

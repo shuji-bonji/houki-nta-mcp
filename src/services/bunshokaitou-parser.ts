@@ -12,14 +12,23 @@
  *   - 本庁系: `{税目}/{ID}` 例: `'shotoku/250416'`
  *   - 国税局系: `{国税局}/{税目}/{ID}` 例: `'tokyo/shotoku/260218'`
  *
- * 個別事例ページの本文は概ね以下の構造（kaisei/jimu-unei と類似）:
- *   <div class="imp-cnt-tsutatsu" id="bodyArea">
+ * 個別事例ページの本文は「表 + 別紙」でできている（2008 年の 081102 と 2025 年の 250416 で同じ）:
+ *   <div class="imp-cnt imp-data" id="bodyArea">
  *     <h1>タイトル</h1>
- *     <p>取引等に係る税務上の取扱い等に関する照会…</p>
- *     <p>〔照会〕</p>  ←  本文セクション 1
- *     <p>本文…</p>
- *     <p>〔回答〕</p>  ←  本文セクション 2
- *     <p>本文…</p>
+ *     <p>取引等に係る税務上の取扱い等に関する照会（同業者団体等用）</p>
+ *     <p>〔照会〕</p>
+ *     <table class="table table-bordered kaito">   ← 照会者 / 照会の内容 / 関係する法令条項等 / 添付書類
+ *       <tr><th>…</th><td>…</td></tr>               照会の趣旨・事実関係・理由は「<a href="another.htm">別紙</a>のとおり」
+ *     </table>
+ *     <p>〔回答〕</p>
+ *     <table class="table table-bordered kaito">   ← 回答年月日 / 回答者 / 回答内容
+ *     </table>
+ *   別紙 (同ディレクトリの another.htm) は <p> / <h2> / <h3> 主体で、照会文の本文がある。
+ *
+ * v0.10.2 までは <p> / <h2> / <h3> しか集めていなかったため、fullText が
+ * 「〔照会〕」「〔回答〕」の見出しだけになり、issuedAt も null だった（houki-hub 側の実測で発見）。
+ * v0.10.3 から表の行を「見出し: 値」の 1 行にして取り込み、回答年月日から issuedAt を取り、
+ * 別紙は呼び出し側 (bulk downloader) が取得して appendices に渡すと【別紙】として末尾に連結する。
  */
 
 import type { CheerioAPI } from 'cheerio';
@@ -167,10 +176,41 @@ export function parseBunshoTaxonomyIndex(html: string, sourceUrl: string): Kaise
 }
 
 /** 個別事例ページをパースして NtaDocument を返す。 */
+/** 別紙ページ (another.htm) の取得結果。呼び出し側が取得して渡す */
+export interface BunshoAppendix {
+  url: string;
+  html: string;
+}
+
+/**
+ * index.htm から別紙 (同じディレクトリの another*.htm) の URL を集める。重複は除く。
+ * 「別紙」リンクは表の中に 3 回出るが同じ URL を指す。
+ */
+export function extractBunshoAppendixUrls(html: string, sourceUrl: string): string[] {
+  const $ = cheerio.load(html);
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  $('#bodyArea a[href]').each((_, a) => {
+    const href = $(a).attr('href');
+    if (!href || !/another[^/]*\.htm(\?|$)/i.test(href)) return;
+    let abs: string;
+    try {
+      abs = new URL(href, sourceUrl).toString();
+    } catch {
+      return;
+    }
+    if (seen.has(abs)) return;
+    seen.add(abs);
+    urls.push(abs);
+  });
+  return urls;
+}
+
 export function parseBunshoPage(
   html: string,
   sourceUrl: string,
-  fetchedAt: string = new Date().toISOString()
+  fetchedAt: string = new Date().toISOString(),
+  appendices: BunshoAppendix[] = []
 ): NtaDocument {
   const $ = cheerio.load(html);
   $('br').replaceWith('\n');
@@ -194,27 +234,30 @@ export function parseBunshoPage(
     throw new TsutatsuParseError('文書回答事例のタイトル（h1）が見つかりません', sourceUrl);
   }
 
-  // 段落を順に収集（h1 / nav 系を除く）
-  const paragraphs: string[] = [];
-  $body.find('p, h2, h3').each((_, el) => {
-    const tag = el.tagName;
-    const t = cleanText($(el).text());
-    if (!t) return;
-    if (/^ページの先頭へ戻る$/.test(t)) return;
-    if (/^法令等$/.test(t)) return;
-    if (/^サイトマップ/.test(t)) return;
-    if (tag === 'h2' || tag === 'h3') {
-      paragraphs.push(`【${t}】`);
-    } else {
-      paragraphs.push(t);
-    }
-  });
+  // 段落と表を文書順に収集（h1 / nav 系を除く）
+  const { paragraphs, answeredAt } = collectBodyText($, $body);
+
+  // 別紙 (another.htm) を【別紙】として末尾に連結。別紙内の PDF も添付に加える
+  const appendixPdfs: AttachedPdf[] = [];
+  for (const appendix of appendices) {
+    const $$ = cheerio.load(appendix.html);
+    $$('br').replaceWith('\n');
+    const $$body = $$('#bodyArea').first();
+    if ($$body.length === 0) continue;
+    $$body.find('ol.breadcrumb, .page-top-link').remove();
+    const { paragraphs: appendixParagraphs } = collectBodyText($$, $$body);
+    if (appendixParagraphs.length === 0) continue;
+    paragraphs.push('【別紙】');
+    paragraphs.push(...appendixParagraphs);
+    appendixPdfs.push(...extractAttachedPdfs($$, $$body, appendix.url));
+  }
 
   const fullText = normalizeJpText(paragraphs.join('\n'));
 
-  const issuedAt = extractIssuedAt(paragraphs[0] ?? '') ?? extractIssuedAt(title);
+  // 回答年月日（回答の表）を最優先。無ければ従来どおり先頭段落・タイトルから
+  const issuedAt = answeredAt ?? extractIssuedAt(paragraphs[0] ?? '') ?? extractIssuedAt(title);
   const issuer = extractIssuer(paragraphs.slice(0, 8), sourceUrl);
-  const attachedPdfs = extractAttachedPdfs($, $body, sourceUrl);
+  const attachedPdfs = mergePdfs(extractAttachedPdfs($, $body, sourceUrl), appendixPdfs);
 
   return {
     docType: 'bunshokaitou',
@@ -228,6 +271,75 @@ export function parseBunshoPage(
     fullText,
     attachedPdfs,
   };
+}
+
+/**
+ * 本文を文書順に集める。
+ *   - <p> / <h2> / <h3>: そのまま（h2/h3 は【】で囲む）
+ *   - <table>: 各行を「見出し: 値」の 1 行にする（th を見出し、td を値として空白で連結）
+ *     表の中の <p> は行として取り込まれるので、個別には拾わない（二重取りを防ぐ）
+ * 回答の表の「回答年月日」行が見つかれば、その値を ISO 日付にして answeredAt で返す。
+ */
+function collectBodyText(
+  $: CheerioAPI,
+  $body: cheerio.Cheerio<Element>
+): { paragraphs: string[]; answeredAt: string | undefined } {
+  const paragraphs: string[] = [];
+  let answeredAt: string | undefined;
+  $body.find('p, h2, h3, table').each((_, el) => {
+    const tag = el.tagName;
+    if (tag === 'table') {
+      $(el)
+        .find('tr')
+        .each((__, tr) => {
+          const heads = $(tr)
+            .find('th')
+            .map((___, th) => cleanText($(th).text()))
+            .get()
+            .filter(Boolean);
+          const values = $(tr)
+            .find('td')
+            .map((___, td) => cleanText($(td).text()))
+            .get()
+            .filter(Boolean);
+          if (heads.length === 0 && values.length === 0) return;
+          const head = heads.join(' ');
+          const value = values.join(' ');
+          if (/回答年月日/.test(head) && value) {
+            answeredAt ??= extractIssuedAt(value);
+          }
+          paragraphs.push(head && value ? `${head}: ${value}` : head || value);
+        });
+      return;
+    }
+    // 表の中の p / h は表の行として取り込み済み
+    if ($(el).closest('table').length > 0) return;
+    const t = cleanText($(el).text());
+    if (!t) return;
+    if (/^ページの先頭へ戻る$/.test(t)) return;
+    if (/^法令等$/.test(t)) return;
+    if (/^サイトマップ/.test(t)) return;
+    if (tag === 'h2' || tag === 'h3') {
+      paragraphs.push(`【${t}】`);
+    } else {
+      paragraphs.push(t);
+    }
+  });
+  return { paragraphs, answeredAt };
+}
+
+/** URL で重複を除いて連結 */
+function mergePdfs(...lists: AttachedPdf[][]): AttachedPdf[] {
+  const seen = new Set<string>();
+  const out: AttachedPdf[] = [];
+  for (const list of lists) {
+    for (const pdf of list) {
+      if (seen.has(pdf.url)) continue;
+      seen.add(pdf.url);
+      out.push(pdf);
+    }
+  }
+  return out;
 }
 
 function extractAttachedPdfs(
