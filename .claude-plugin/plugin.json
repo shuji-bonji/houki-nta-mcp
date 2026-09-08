@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/.claude-plugin/plugin.schema.json",
   "name": "houki-nta-mcp",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "国税庁 (NTA) の通達・質疑応答事例・タックスアンサー・文書回答事例・事務運営指針を取得する MCP server。houki-hub family の一員。",
   "author": {
     "name": "shuji-bonji",
@@ -11,22 +11,11 @@
   "homepage": "https://github.com/shuji-bonji/houki-nta-mcp",
   "repository": "https://github.com/shuji-bonji/houki-nta-mcp",
   "license": "MIT",
-  "keywords": [
-    "japan",
-    "tax",
-    "nta",
-    "tsutatsu",
-    "houki",
-    "mcp",
-    "mcp-server"
-  ],
+  "keywords": ["japan", "tax", "nta", "tsutatsu", "houki", "mcp", "mcp-server"],
   "mcpServers": {
     "houki-nta": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@shuji-bonji/houki-nta-mcp@latest"
-      ]
+      "args": ["-y", "@shuji-bonji/houki-nta-mcp@latest"]
     }
   }
 }
