@@ -15,8 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **国税局系の文書回答事例で回答年月日と別紙が取れていなかった**（v0.10.3 の実機確認で発覚）— 国税局系のページは回答の行が `<td>回答年月日</td><td>令和7年10月17日</td><td>回答者</td><td>…</td>` と `<td>` だけで書かれ、本庁系の `<th>` / `<td>` 対を前提にした判定では `issuedAt` が取れなかった。`<th>` と `<td>` を文書順に並べ、「回答年月日」の次のセルから取るようにした。また別紙が `another.htm` ではなく `01.htm#a01` 〜 `#a03` の形（1 ページ・アンカー違い）なので、`extractBunshoAppendixUrls()` を「リンクの文字に別紙が入っている同一ディレクトリの .htm」で拾い、フラグメントを落として重複を除くようにした
+- **別紙の本文が `<ol>` / `<li>` で書かれている場合に落ちていた** — 国税局系の別紙は照会の趣旨・事実関係が箇条書きで、`<p>` しか集めていなかったため 380 文字しか取れなかった。入れ子の `ol` / `ul` を除いた各 `li` の自分の文を段落として集めるようにした（親項目の導入文と子項目が両方残る）。ページ下部の案内リンクのような「中身がリンク 1 本だけ」の `li` は落とす
 - **`--refresh` が改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例に渡っていなかった** — v0.10.2 で `forceReload: args.refresh` を渡すようにしたのは `bulkDownloadTsutatsu()` の 3 呼び出しだけで、`bulkDownloadKaisei()` / `bulkDownloadJimuUnei()` / `bulkDownloadBunshokaitou()` / `bulkDownloadTaxAnswer()` / `bulkDownloadQa()` には渡していなかった（downloader 側は 5 つとも `forceReload` を受け取れる作りだった）。そのため `--refresh` を付けても条件付き取得（`If-Modified-Since`）のままで、国税庁サイトが `304` を返す文書は再解析されなかった。5 か所すべてに `forceReload: args.refresh` を渡すように修正
-- `src/cli.test.ts` に 5 種別 × `--refresh` あり / なし と `--bulk-download-everything --refresh` の 11 件を追加（合計 **532 tests**）
+- `src/cli.test.ts` に 5 種別 × `--refresh` あり / なし と `--bulk-download-everything --refresh` の 11 件を追加。`bunshokaitou-parser.test.ts` に国税局系（`tokyo/shohi/251017` の `index.htm` + `01.htm`）の 4 件を追加（合計 **536 tests**）
+
+### 再投入したときのログの読み方
+
+パーサーを変えた後の `--refresh` では全文書の `content_hash` が変わるため、集計が `updatedDocs=487/510 (95.5% 一斉更新)` のようになり、health check が「構造変質の疑い」を warn します。これは国税庁側の異常ではなく、こちらの解析結果が変わったことを見ているだけです。`failRate: 0` で `304: 0` なら想定どおりで、逆に `304` が総数のままなら `--refresh` が効いていません。
 
 ### 再投入について
 

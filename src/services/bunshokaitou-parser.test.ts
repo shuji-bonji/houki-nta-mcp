@@ -215,3 +215,45 @@ describe('extractTaxonomyFromBunshoUrl', () => {
     ).toBe('hojin');
   });
 });
+
+describe('parseBunshoPage — 国税局系の回答表と別紙 (tokyo/shohi/251017)', () => {
+  // 国税局系は回答の行が <td>回答年月日</td><td>令和7年10月17日</td>… と td だけで書かれ、
+  // 別紙も another.htm ではなく 01.htm#a01 形式。v0.10.3 の実機確認で見つかった
+  const indexHtml = loadFixture(
+    'www.nta.go.jp_about_organization_tokyo_bunshokaito_shohi_251017_index.htm'
+  );
+  const appendixHtml = loadFixture(
+    'www.nta.go.jp_about_organization_tokyo_bunshokaito_shohi_251017_01.htm'
+  );
+  const url = 'https://www.nta.go.jp/about/organization/tokyo/bunshokaito/shohi/251017/index.htm';
+  const appendixUrl =
+    'https://www.nta.go.jp/about/organization/tokyo/bunshokaito/shohi/251017/01.htm';
+
+  it('td だけの行からも回答年月日を取る (令和7年10月17日 → 2025-10-17)', () => {
+    const doc = parseBunshoPage(indexHtml, url);
+    expect(doc.issuedAt).toBe('2025-10-17');
+  });
+
+  it('別紙リンク (01.htm#a01 〜 #a03) はフラグメントを落として 1 件になる', () => {
+    expect(extractBunshoAppendixUrls(indexHtml, url)).toEqual([appendixUrl]);
+  });
+
+  it('別紙の照会本文が【別紙】の後ろに入る', () => {
+    const doc = parseBunshoPage(indexHtml, url, '2026-09-08T00:00:00.000Z', [
+      { url: appendixUrl, html: appendixHtml },
+    ]);
+    const at = doc.fullText.indexOf('【別紙】');
+    expect(at).toBeGreaterThan(0);
+    const appendix = doc.fullText.slice(at);
+    expect(appendix).toContain('人工衛星打上げ輸送サービス');
+    expect(appendix).toContain('事前照会の趣旨');
+    expect(appendix.length).toBeGreaterThan(2000);
+  });
+
+  it('index の回答内容は【別紙】より前にある', () => {
+    const doc = parseBunshoPage(indexHtml, url, '2026-09-08T00:00:00.000Z', [
+      { url: appendixUrl, html: appendixHtml },
+    ]);
+    expect(doc.fullText.indexOf('回答内容:')).toBeLessThan(doc.fullText.indexOf('【別紙】'));
+  });
+});

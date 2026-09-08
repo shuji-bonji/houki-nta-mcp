@@ -183,22 +183,35 @@ export interface BunshoAppendix {
 }
 
 /**
- * index.htm から別紙 (同じディレクトリの another*.htm) の URL を集める。重複は除く。
- * 「別紙」リンクは表の中に 3 回出るが同じ URL を指す。
+ * index.htm から別紙ページの URL を集める。
+ *
+ * 別紙の置き場所は 2 通りある:
+ *   本庁系   `another.htm`（「別紙」リンクが 3 本とも同じ URL）
+ *   国税局系 `01.htm#a01` / `#a02` / `#a03`（1 ページに 3 項目、アンカーで分かれる）
+ * どちらも「リンクの文字に別紙が入っている」「同じディレクトリの .htm」で拾える。
+ * フラグメントは落として重複を除くので、返るのは実際に取得すべきページだけ。
  */
 export function extractBunshoAppendixUrls(html: string, sourceUrl: string): string[] {
   const $ = cheerio.load(html);
+  const dir = sourceUrl.replace(/[^/]*$/, '');
   const urls: string[] = [];
   const seen = new Set<string>();
   $('#bodyArea a[href]').each((_, a) => {
     const href = $(a).attr('href');
-    if (!href || !/another[^/]*\.htm(\?|$)/i.test(href)) return;
+    if (!href) return;
+    const text = cleanText($(a).text());
+    const looksLikeAppendix = /別紙|another/i.test(text) || /another[^/]*\.htm/i.test(href);
+    if (!looksLikeAppendix) return;
     let abs: string;
     try {
       abs = new URL(href, sourceUrl).toString();
     } catch {
       return;
     }
+    abs = abs.replace(/#.*$/, '');
+    // 同じディレクトリの .htm だけ。自分自身と、他ディレクトリへの参照は除く
+    if (!abs.startsWith(dir) || !/\.html?$/i.test(abs)) return;
+    if (abs === sourceUrl.replace(/#.*$/, '')) return;
     if (seen.has(abs)) return;
     seen.add(abs);
     urls.push(abs);
@@ -286,7 +299,7 @@ function collectBodyText(
 ): { paragraphs: string[]; answeredAt: string | undefined } {
   const paragraphs: string[] = [];
   let answeredAt: string | undefined;
-  $body.find('p, h2, h3, table').each((_, el) => {
+  $body.find('p, h2, h3, li, table').each((_, el) => {
     const tag = el.tagName;
     if (tag === 'table') {
       $(el)
@@ -305,15 +318,46 @@ function collectBodyText(
           if (heads.length === 0 && values.length === 0) return;
           const head = heads.join(' ');
           const value = values.join(' ');
-          if (/回答年月日/.test(head) && value) {
-            answeredAt ??= extractIssuedAt(value);
+
+          // 回答年月日は 2 通りの並びで書かれている:
+          //   本庁系   <th>回答年月日</th><td>令和7年4月7日</td>
+          //   国税局系 <td>回答年月日</td><td>令和7年10月17日</td><td>回答者</td><td>…</td>
+          // どちらも「回答年月日 の次のセル」を見れば取れるので、th/td を文書順に並べて探す。
+          if (answeredAt === undefined) {
+            const cells = $(tr)
+              .find('th, td')
+              .map((___, c) => cleanText($(c).text()))
+              .get();
+            const at = cells.findIndex((c) => /回答年月日/.test(c));
+            if (at >= 0) {
+              // 「回答年月日」と同じセルに日付が入っている場合もあるので、次のセル → 同じセルの順で見る
+              answeredAt = extractIssuedAt(cells[at + 1] ?? '') ?? extractIssuedAt(cells[at]);
+            }
           }
+
           paragraphs.push(head && value ? `${head}: ${value}` : head || value);
         });
       return;
     }
-    // 表の中の p / h は表の行として取り込み済み
+    // 表の中の p / h / li は表の行として取り込み済み
     if ($(el).closest('table').length > 0) return;
+
+    // <li>: 別紙 (01.htm) の照会本文は ol/li で書かれている。
+    // 入れ子の ol/ul は各 li として別に拾うので、ここでは自分の直下の文だけを取る
+    // （親 li の「(1) 本件サービスについて」と子 li の「イ ロケットの準備…」が両方残る）。
+    // パンくず以外にもページ下部の案内リンクが li で並ぶので、
+    // 「中身がリンク 1 本だけ」の li はナビゲーションとみなして落とす。
+    if (tag === 'li') {
+      const $li = $(el).clone();
+      $li.find('ol, ul').remove();
+      const own = cleanText($li.text());
+      if (!own) return;
+      const $links = $li.find('a');
+      if ($links.length === 1 && cleanText($links.first().text()) === own) return;
+      paragraphs.push(own);
+      return;
+    }
+
     const t = cleanText($(el).text());
     if (!t) return;
     if (/^ページの先頭へ戻る$/.test(t)) return;
