@@ -135,7 +135,12 @@ v0.10.2 以前に構築した DB の文書回答事例には本文が入って�
 // nta_get_tsutatsu — DB-first lookup（bulk DL 済みなら即時応答 ~10ms）
 { "name": "消基通", "clause": "1-4-13の2" }
 // → "## 1-4-13の2（分割があった場合の課税事業者選択届出書の効力等）..."
-//    + 出典 URL + 取得時刻 + legal_status の note + source: 'db' | 'live'
+//    + 出典 URL + 取得時刻 + 解釈の対象になる法律 + legal_status の note + source: 'db' | 'live'
+// format: "json" では base_laws と next_actions（houki-egov-mcp の get_law への案内）が付く
+//   "base_laws": ["消費税法", "消費税法施行令", "消費税法施行規則"],
+//   "next_actions": [{ "action": "delegate_to_mcp",
+//     "reason": "通達は国民・裁判所を拘束しない。根拠は法律本文で確認する",
+//     "example": { "mcp": "houki-egov", "tool": "get_law", "law_name": "消費税法" } }]
 
 // 所基通（2 階層 clause / の付き）
 { "name": "所基通", "clause": "2-4の2" }
@@ -148,7 +153,9 @@ v0.10.2 以前に構築した DB の文書回答事例には本文が入って�
 
 // nta_search_tsutatsu — FTS5 全文検索（4 通達横断、freshness 付き）
 { "keyword": "電子帳簿", "limit": 10 }
-// → { hits: [...], freshness: { staleness, oldest_fetched_at, ... }, legal_status: ... }
+// → { hits: [...], freshness: { staleness, oldest_fetched_at, ... }, legal_status: ...,
+//      base_laws_by_tsutatsu: { "消費税法基本通達": ["消費税法", "消費税法施行令", "消費税法施行規則"] },
+//      next_actions: [通達ごとに get_law への案内 1 件] }
 
 // nta_get_kaisei_tsutatsu — 改正通達取得
 { "docId": "0026003-067" }
@@ -356,6 +363,20 @@ cron 設定例:
 ```
 
 各レスポンスには `legal_status` フィールドが付与され、種別ごとの拘束力（`binds_citizens` / `binds_courts` / `binds_tax_office`）が明示されます。LLM はこの情報を尊重して回答を組み立てる前提です。
+
+通達は国民・裁判所を拘束しないので、根拠は法律の条文で確かめる必要があります。v0.11.0 から、基本通達が解釈している法律・政令・省令と、その法律を houki-egov-mcp の `get_law` で読むための `next_actions` が応答に付きます。
+
+- `nta_get_tsutatsu`: `base_laws`（配列）
+- `nta_search_tsutatsu`: `base_laws_by_tsutatsu`（検索結果に現れた通達 → 配列の対応表）。対応は通達単位の事実なので、hit ごとではなく応答に 1 回だけ置きます
+
+| 基本通達 | `base_laws` |
+| --- | --- |
+| 消費税法基本通達 | 消費税法、消費税法施行令、消費税法施行規則 |
+| 所得税基本通達 | 所得税法、所得税法施行令、所得税法施行規則 |
+| 法人税基本通達 | 法人税法、法人税法施行令、法人税法施行規則 |
+| 相続税法基本通達 | 相続税法、相続税法施行令、相続税法施行規則 |
+
+条番号は付けません。通達の項と法律の条の対応は一律ではなく、推測で付けると誤った引用につながるためです。
 
 ## なぜ通達まで取得するのか
 

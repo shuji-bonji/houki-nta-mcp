@@ -17,11 +17,12 @@ import {
   QA_TOPICS,
   TAX_ANSWER_BASE_URL,
   TAX_ANSWER_FOLDER_MAP,
+  TSUTATSU_BASE_LAWS,
   TSUTATSU_LEGAL_STATUS,
   TSUTATSU_URL_ROOTS,
 } from '../constants.js';
 import { closeDb, openDb } from '../db/index.js';
-import { makeError, NEXT_ACTIONS } from '../errors.js';
+import { makeError, NEXT_ACTIONS, type NextAction } from '../errors.js';
 import { writeBackLiveSection } from '../services/bulk-downloader.js';
 import type { ClauseRow } from '../services/db-search.js';
 import {
@@ -125,6 +126,7 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
       ...(freshness ? { freshness } : {}),
       ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
+      ...searchBaseLawFields(hits.map((h) => h.tsutatsu)),
     };
   } finally {
     closeDb(db);
@@ -323,12 +325,46 @@ export async function getTsutatsu(
       source: 'live' as const,
       ...contentNotesFor(clause.paragraphs),
       legal_status: TSUTATSU_LEGAL_STATUS,
+      ...baseLawFields(resolved.formal),
     };
   }
   return renderClauseMarkdown(clause, {
     sourceUrl: section.sourceUrl,
     fetchedAt: section.fetchedAt,
+    baseLaws: TSUTATSU_BASE_LAWS[resolved.formal],
   });
+}
+
+/**
+ * Issue #20: 通達の応答に、解釈の対象になる法律（`base_laws`）と、その法律本文を
+ * houki-egov-mcp の `get_law` で読むための `next_actions` を付ける。
+ * 対応表に無い通達（将来の個別通達など）では何も付けない。
+ */
+function baseLawFields(formal: string) {
+  const laws = TSUTATSU_BASE_LAWS[formal];
+  if (!laws || laws.length === 0) return {};
+  return { base_laws: laws, next_actions: [NEXT_ACTIONS.readBaseLaw(laws[0])] };
+}
+
+/**
+ * Issue #20: 検索結果に現れた通達について、解釈の対象になる法律の対応表
+ * （`base_laws_by_tsutatsu`）と、通達ごとに 1 件の `next_actions` を付ける。
+ *
+ * 対応は通達単位の事実なので、hit ごとではなく応答に 1 回だけ置く。hit ごとに置くと
+ * 「その条項がこの法令に基づく」と読めてしまい、条単位の対応を持たない方針（#20）と食い違う。
+ * `nta_get_tsutatsu` の `base_laws`（配列）と型が違うため、名前も分けている。
+ * hits の出現順、同じ通達は 1 回だけ。対応表に無い通達しか無ければ何も付けない。
+ */
+function searchBaseLawFields(tsutatsuNames: string[]) {
+  const byTsutatsu: Record<string, readonly string[]> = {};
+  const actions: NextAction[] = [];
+  for (const name of tsutatsuNames) {
+    const laws = TSUTATSU_BASE_LAWS[name];
+    if (!laws || laws.length === 0 || name in byTsutatsu) continue;
+    byTsutatsu[name] = laws;
+    actions.push(NEXT_ACTIONS.readBaseLaw(laws[0]));
+  }
+  return actions.length > 0 ? { base_laws_by_tsutatsu: byTsutatsu, next_actions: actions } : {};
 }
 
 /** Issue #17: 画像を含む clause の JSON 応答に `content_notes` を付ける（無ければ何も付けない） */
@@ -356,6 +392,7 @@ function renderDbHit(row: ClauseRow, format: GetTsutatsuArgs['format'], tsutatsu
       source: 'db' as const,
       ...contentNotesFor(row.paragraphs),
       legal_status: TSUTATSU_LEGAL_STATUS,
+      ...baseLawFields(tsutatsu),
     };
   }
   return renderClauseMarkdown(
@@ -365,7 +402,7 @@ function renderDbHit(row: ClauseRow, format: GetTsutatsuArgs['format'], tsutatsu
       paragraphs: row.paragraphs,
       fullText: row.fullText,
     },
-    { sourceUrl: row.sourceUrl, fetchedAt: row.fetchedAt }
+    { sourceUrl: row.sourceUrl, fetchedAt: row.fetchedAt, baseLaws: TSUTATSU_BASE_LAWS[tsutatsu] }
   );
 }
 

@@ -35,6 +35,10 @@ export type LawErrorCode =
 /**
  * 次に取るべきアクションの提案。
  * LLM がこれを読んで自律的に次のツールを呼ぶことを想定。
+ *
+ * エラー応答だけでなく成功時の応答にも載せる（v0.11.0 / Issue #20: 通達の応答から
+ * houki-egov-mcp の `get_law` へ誘導する）。houki-egov-mcp も `search_fulltext` の
+ * `api-fallback` 応答（エラーではない）で `next_actions` を返しており、family の前例がある。
  */
 export interface NextAction {
   /** 推奨アクション (tool 名 or 自然言語) */
@@ -170,5 +174,11 @@ export const NEXT_ACTIONS = {
     action: 'delegate_to_mcp',
     reason: `${mcpHint} の管轄リソースです。該当 MCP に切り替えてください`,
     example: { mcp: mcpHint },
+  }),
+  /** Issue #20: 通達が解釈している法律の本文を houki-egov-mcp で読むよう案内する（成功時の応答用） */
+  readBaseLaw: (lawName: string): NextAction => ({
+    action: 'delegate_to_mcp',
+    reason: '通達は国民・裁判所を拘束しない。根拠は法律本文で確認する',
+    example: { mcp: 'houki-egov', tool: 'get_law', law_name: lawName },
   }),
 } as const;

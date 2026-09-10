@@ -84,6 +84,25 @@ export const TSUTATSU_LEGAL_STATUS = {
 } as const;
 
 /**
+ * 基本通達 4 種が解釈の対象にしている法律・政令・省令（Issue #20）。
+ *
+ * 通達は国民・裁判所を拘束しない（`TSUTATSU_LEGAL_STATUS`）ので、根拠は法律の条文で
+ * 確かめる必要がある。`nta_get_tsutatsu` / `nta_search_tsutatsu` の応答に `base_laws` として載せ、
+ * houki-egov-mcp の `get_law` へ誘導する `next_actions` の引数にも使う。
+ *
+ * - 値は houki-egov-mcp の `get_law` に `law_name` としてそのまま渡せる正式名
+ *   （2026-09-10 に houki-egov-mcp の `search_law` で 12 件とも 1 件目に一致することを確認）
+ * - 並びは 法律 → 政令（施行令）→ 省令（施行規則）。先頭を `next_actions` の案内先にする
+ * - 条番号は持たない。通達の項と法律の条の対応は一律ではなく、推測で付けると誤った引用になる
+ */
+export const TSUTATSU_BASE_LAWS: Readonly<Record<string, readonly string[]>> = {
+  消費税法基本通達: ['消費税法', '消費税法施行令', '消費税法施行規則'],
+  所得税基本通達: ['所得税法', '所得税法施行令', '所得税法施行規則'],
+  法人税基本通達: ['法人税法', '法人税法施行令', '法人税法施行規則'],
+  相続税法基本通達: ['相続税法', '相続税法施行令', '相続税法施行規則'],
+} as const;
+
+/**
  * タックスアンサーのカテゴリ ベース URL。
  */
 export const TAX_ANSWER_BASE_URL = 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/';

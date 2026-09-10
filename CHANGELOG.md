@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.11.0] - 2026-09-11
+
+**minor リリース** — 基本通達の応答から、その通達が解釈している法律の条文へたどれるようにします（Issue #20）。応答にフィールドが増えます。既存のフィールドと引数は変わりません。
+
+### Added
+
+- **`base_laws`**: `nta_get_tsutatsu`（`format: "json"`、DB 経路・ライブ経路の両方）に、基本通達 4 種が解釈している法律・政令・省令を配列で載せる（例: 消費税法基本通達 → `["消費税法", "消費税法施行令", "消費税法施行規則"]`）。値は houki-egov-mcp の `get_law` に `law_name` としてそのまま渡せる正式名で、2026-09-10 に houki-egov-mcp の `search_law` で 12 件とも見つかることを確認した。対応表は `src/constants.ts` の `TSUTATSU_BASE_LAWS`。条番号は付けない（通達の項と法律の条の対応は一律ではないため）
+- **`base_laws_by_tsutatsu`**: `nta_search_tsutatsu` の応答に、検索結果に現れた通達 → 法律・政令・省令の対応表を 1 回だけ載せる（例: `{ "法人税基本通達": [...], "所得税基本通達": [...] }`）。対応は通達単位の事実なので hit ごとには付けない。hit ごとに置くと「その条項がこの法令に基づく」と読めてしまううえ、応答の文字数が 2〜3 割増える（limit 30・1 通達の試算で +21%。対応表なら +3%）。`nta_get_tsutatsu` の `base_laws`（配列）と型が違うので名前を分けた
+- **成功時の `next_actions`**: 上の 2 ツールの成功時の応答に、houki-egov-mcp の `get_law` を案内する `{ action: "delegate_to_mcp", reason: "通達は国民・裁判所を拘束しない。根拠は法律本文で確認する", example: { mcp: "houki-egov", tool: "get_law", law_name } }` を付ける。`nta_get_tsutatsu` は 1 件（`base_laws` の先頭の法律）、`nta_search_tsutatsu` は hits に現れた通達ごとに 1 件（同じ法律は 1 回だけ）。0 件のときは付けない。これまで `next_actions` はエラー応答だけに付けていたが、houki-egov-mcp も `search_fulltext` の `api-fallback` 応答（エラーではない）で `next_actions` を返しており、family の前例に合わせた
+- **Markdown 応答**: `nta_get_tsutatsu` の既定（`format: "markdown"`）では、出典・取得日時の後に「解釈の対象になる法律: 消費税法 / 消費税法施行令 / 消費税法施行規則（houki-egov-mcp の get_law で本文を確認できます）」の行を入れる
+- `nta_search_tsutatsu` / `nta_get_tsutatsu` のツール説明（`tools/list` の `description`）に上の 2 フィールドを追記
+- テスト 7 件を追加（`handlers.test.ts` 5 件、`constants.test.ts` 2 件。合計 **543 tests**）
+
+### Not in this release
+
+- 質疑応答事例・タックスアンサーの `relatedLaws`（【関係法令通達】欄の文字列）を法令名と条番号に分けること（Issue #20 の提案 3）。表記ゆれが大きいため別に扱う
+
 ## [0.10.4] - 2026-09-08
 
 **patch リリース** — `--refresh` が基本通達以外の 5 種別に効いていなかった問題の修正。v0.10.3 の文書回答事例の再投入で `--bulk-download-everything --refresh` を実行したところ、文書回答事例 510 件がすべて `304 Not Modified` で parse をスキップし、新しいパーサーが一度も走らなかったことで発覚しました。ツール一覧・応答の形は変わりません。

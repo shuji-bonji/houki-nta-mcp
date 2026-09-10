@@ -29,7 +29,7 @@ export function describeImageNotes(
 /** 単一 clause を Markdown に整形する */
 export function renderClauseMarkdown(
   clause: TsutatsuClause,
-  meta?: { sourceUrl?: string; fetchedAt?: string }
+  meta?: { sourceUrl?: string; fetchedAt?: string; baseLaws?: readonly string[] }
 ): string {
   const lines: string[] = [];
   lines.push(`## ${clause.clauseNumber}（${clause.title}）`);
@@ -56,6 +56,12 @@ export function renderClauseMarkdown(
     lines.push(`出典: ${meta.sourceUrl}`);
     if (meta.fetchedAt) {
       lines.push(`取得: ${meta.fetchedAt}`);
+    }
+    // Issue #20: 通達が解釈している法律。本文は houki-egov-mcp の get_law で読む
+    if (meta.baseLaws && meta.baseLaws.length > 0) {
+      lines.push(
+        `解釈の対象になる法律: ${meta.baseLaws.join(' / ')}（houki-egov-mcp の get_law で本文を確認できます）`
+      );
     }
     lines.push('');
     lines.push(`> ${TSUTATSU_LEGAL_STATUS.note}`);

@@ -830,3 +830,148 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
     expect(r.reader_hints.examples.map((e) => e.kind)).toEqual(['comparison', 'attachment']);
   });
 });
+
+describe('Issue #20: 通達の応答に base_laws と houki-egov-mcp への next_actions を付ける', () => {
+  type NextActionLike = { action: string; reason: string; example?: Record<string, unknown> };
+
+  let dir: string;
+  let dbPath: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'houki-nta-issue20-'));
+    dbPath = join(dir, 'cache.db');
+    const db = new Database(dbPath);
+    initSchema(db);
+    const insertTsutatsu = db.prepare(
+      `INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?) RETURNING id`
+    );
+    const insertClause = db.prepare(
+      `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const hojin = (
+      insertTsutatsu.get('法人税基本通達', '法基通', 'https://x/hojin/') as { id: number }
+    ).id;
+    const shohi = (
+      insertTsutatsu.get('消費税法基本通達', '消基通', 'https://x/shohi/') as { id: number }
+    ).id;
+    const para = (t: string) => JSON.stringify([{ indent: 1, text: t }]);
+    insertClause.run(
+      hojin,
+      '9-2-1',
+      'https://x/hojin/09/02.htm',
+      9,
+      2,
+      '役員の範囲',
+      '役員の範囲 使用人兼務役員の取扱い',
+      para('使用人兼務役員の取扱い')
+    );
+    insertClause.run(
+      hojin,
+      '9-2-5',
+      'https://x/hojin/09/02.htm',
+      9,
+      2,
+      '使用人兼務役員',
+      '使用人兼務役員とされない役員',
+      para('使用人兼務役員とされない役員')
+    );
+    insertClause.run(
+      shohi,
+      '1-4-1',
+      'https://x/shohi/01/04.htm',
+      1,
+      4,
+      '免除',
+      '使用人兼務役員に関する消費税の取扱い',
+      para('使用人兼務役員に関する消費税の取扱い')
+    );
+    db.close();
+  });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('nta_search_tsutatsu: 対応表 base_laws_by_tsutatsu を 1 回だけ、通達ごとに 1 件の next_actions（重複なし）', async () => {
+    const r = (await searchTsutatsu({ keyword: '使用人兼務役員' }, { dbPath })) as {
+      hits: Array<{ tsutatsu: string; base_laws?: unknown }>;
+      base_laws_by_tsutatsu?: Record<string, string[]>;
+      next_actions?: NextActionLike[];
+    };
+    expect(r.hits.length).toBe(3);
+    // hit ごとには付けない（対応は通達単位の事実のため）
+    for (const h of r.hits) {
+      expect(h.base_laws).toBeUndefined();
+      expect(r.base_laws_by_tsutatsu?.[h.tsutatsu]).toBeDefined();
+    }
+    expect(r.base_laws_by_tsutatsu).toEqual({
+      法人税基本通達: ['法人税法', '法人税法施行令', '法人税法施行規則'],
+      消費税法基本通達: ['消費税法', '消費税法施行令', '消費税法施行規則'],
+    });
+    const lawNames = (r.next_actions ?? []).map((a) => a.example?.law_name);
+    expect(new Set(lawNames)).toEqual(new Set(['法人税法', '消費税法']));
+    expect(lawNames).toHaveLength(2);
+    for (const a of r.next_actions ?? []) {
+      expect(a.action).toBe('delegate_to_mcp');
+      expect(a.example).toMatchObject({ mcp: 'houki-egov', tool: 'get_law' });
+    }
+  });
+
+  it('nta_search_tsutatsu: 0 件のときは base_laws_by_tsutatsu も next_actions も付けない', async () => {
+    const r = (await searchTsutatsu({ keyword: '存在しない語句です' }, { dbPath })) as {
+      hits: unknown[];
+      base_laws_by_tsutatsu?: unknown;
+      next_actions?: unknown;
+    };
+    expect(r.hits).toEqual([]);
+    expect(r.base_laws_by_tsutatsu).toBeUndefined();
+    expect(r.next_actions).toBeUndefined();
+  });
+
+  it('nta_get_tsutatsu（DB 経路, json）: base_laws と get_law への next_actions', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('fetch should NOT be called');
+    }) as unknown as typeof fetch;
+    const r = (await getTsutatsu(
+      { name: '法基通', clause: '9-2-1', format: 'json' },
+      { fetchImpl, dbPath }
+    )) as { base_laws?: string[]; next_actions?: NextActionLike[]; source: string };
+    expect(r.source).toBe('db');
+    expect(r.base_laws).toEqual(['法人税法', '法人税法施行令', '法人税法施行規則']);
+    expect(r.next_actions).toEqual([
+      {
+        action: 'delegate_to_mcp',
+        reason: '通達は国民・裁判所を拘束しない。根拠は法律本文で確認する',
+        example: { mcp: 'houki-egov', tool: 'get_law', law_name: '法人税法' },
+      },
+    ]);
+  });
+
+  it('nta_get_tsutatsu（DB 経路, markdown）: 解釈の対象になる法律の行を含む', async () => {
+    const r = (await getTsutatsu({ name: '法基通', clause: '9-2-1' }, { dbPath })) as string;
+    expect(r).toContain(
+      '解釈の対象になる法律: 法人税法 / 法人税法施行令 / 法人税法施行規則（houki-egov-mcp の get_law で本文を確認できます）'
+    );
+  });
+
+  it('nta_get_tsutatsu（ライブ経路）: json / markdown とも base_laws を返す', async () => {
+    const fetchImpl = vi.fn(async () =>
+      sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
+    ) as unknown as typeof fetch;
+
+    const json = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-13の2', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as { source: string; base_laws?: string[]; next_actions?: NextActionLike[] };
+    expect(json.source).toBe('live');
+    expect(json.base_laws).toEqual(['消費税法', '消費税法施行令', '消費税法施行規則']);
+    expect(json.next_actions?.[0].example?.law_name).toBe('消費税法');
+
+    const md = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as string;
+    expect(md).toContain('解釈の対象になる法律: 消費税法 / 消費税法施行令 / 消費税法施行規則');
+    // legal_status の note より前に置く（出典ブロックの中）
+    expect(md.indexOf('解釈の対象になる法律')).toBeLessThan(md.indexOf('通達は行政内部文書'));
+  });
+});

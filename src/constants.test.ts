@@ -9,7 +9,9 @@ import {
   BUNSHOKAITOU_LEGAL_STATUS,
   LEGAL_STATUS_BY_DOCTYPE,
   NTA_GENERAL_INFO_LEGAL_STATUS,
+  TSUTATSU_BASE_LAWS,
   TSUTATSU_LEGAL_STATUS,
+  TSUTATSU_URL_ROOTS,
 } from './constants.js';
 
 describe('LEGAL_STATUS_BY_DOCTYPE — docType 別の legal_status (Issue #1)', () => {
@@ -71,5 +73,20 @@ describe('TSUTATSU_LEGAL_STATUS / NTA_GENERAL_INFO_LEGAL_STATUS / BUNSHOKAITOU_L
     expect(BUNSHOKAITOU_LEGAL_STATUS.binds_tax_office).toBe(false);
     expect(BUNSHOKAITOU_LEGAL_STATUS.note).toContain('文書回答事例');
     expect(BUNSHOKAITOU_LEGAL_STATUS.note).toContain('個別事案');
+  });
+});
+
+describe('TSUTATSU_BASE_LAWS — 基本通達と解釈の対象になる法律 (Issue #20)', () => {
+  it('ライブ取得対象の基本通達 4 種すべてに対応がある', () => {
+    expect(Object.keys(TSUTATSU_BASE_LAWS).sort()).toEqual(Object.keys(TSUTATSU_URL_ROOTS).sort());
+  });
+
+  it('各通達は 法律 → 施行令 → 施行規則 の順に 3 件', () => {
+    for (const laws of Object.values(TSUTATSU_BASE_LAWS)) {
+      expect(laws).toHaveLength(3);
+      const [act, order, rule] = laws;
+      expect(order).toBe(`${act}施行令`);
+      expect(rule).toBe(`${act}施行規則`);
+    }
   });
 });
