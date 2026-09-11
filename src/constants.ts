@@ -91,7 +91,7 @@ export const TSUTATSU_LEGAL_STATUS = {
  * houki-egov-mcp の `get_law` へ誘導する `next_actions` の引数にも使う。
  *
  * - 値は houki-egov-mcp の `get_law` に `law_name` としてそのまま渡せる正式名
- *   （2026-09-10 に houki-egov-mcp の `search_law` で 12 件とも 1 件目に一致することを確認）
+ *   （2026-09-11（JST）に houki-egov-mcp の `search_law` で 12 件とも 1 件目に一致することを確認）
  * - 並びは 法律 → 政令（施行令）→ 省令（施行規則）。先頭を `next_actions` の案内先にする
  * - 条番号は持たない。通達の項と法律の条の対応は一律ではなく、推測で付けると誤った引用になる
  */

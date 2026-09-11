@@ -5,12 +5,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initSchema } from '../db/schema.js';
 import {
   analyzeKeyword,
+  buildFtsQueryWithAbbreviation,
+  describeExpansionNotes,
   describeSearchNotes,
   hasAnyClause,
   makeLikeSnippet,
   sanitizeFtsQuery,
   searchClauseFts,
+  searchClauseFtsWithExpansion,
   searchDocumentFts,
+  searchDocumentFtsWithExpansion,
 } from './db-search.js';
 
 /* テスト用ヘルパ: tsutatsu と clause を 1 件ずつ INSERT */
@@ -577,5 +581,140 @@ describe('searchClauseFts — Issue #14: houki-egov 管轄エントリ経由の�
     expect(hits[0].scoreReasons!.some((s) => s.includes('abbreviation expanded'))).toBe(true);
     // 展開先が「消費税法」であること
     expect(hits[0].scoreReasons!.some((s) => s.includes('消費税法'))).toBe(true);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* v0.11.1 (Issue #21): 通称 (alias) は元の語で 0 件のときだけ展開する          */
+/* -------------------------------------------------------------------------- */
+
+describe('buildFtsQueryWithAbbreviation — Issue #21: expansionKind', () => {
+  it('略称そのもの ("消基通" / "消法") は abbreviation', () => {
+    expect(buildFtsQueryWithAbbreviation('消基通').expansionKind).toBe('abbreviation');
+    expect(buildFtsQueryWithAbbreviation('消法').expansionKind).toBe('abbreviation');
+  });
+
+  it('通称 ("適格請求書発行事業者" / "インボイス") は alias', () => {
+    const b = buildFtsQueryWithAbbreviation('適格請求書発行事業者');
+    expect(b.expansionKind).toBe('alias');
+    expect(b.expandedTo).toBe('消費税法');
+    expect(buildFtsQueryWithAbbreviation('インボイス').expansionKind).toBe('alias');
+  });
+
+  it('辞書に無い語は展開しない', () => {
+    expect(buildFtsQueryWithAbbreviation('使用人兼務役員').expansionKind).toBeUndefined();
+  });
+});
+
+describe('searchClauseFts — Issue #21: 通称の展開は 0 件のときだけ', () => {
+  let db: DatabaseT.Database;
+  beforeEach(() => {
+    db = new Database(':memory:');
+    initSchema(db);
+    seed(db, '消費税法基本通達', '消基通', [
+      {
+        clauseNumber: '1-7-2',
+        chapter: 1,
+        section: 7,
+        title: '登録番号の構成',
+        fullText: '適格請求書発行事業者登録簿に登載する登録番号は、次による',
+        sourceUrl: 'https://x/01/07.htm',
+      },
+      {
+        clauseNumber: '6-6-3',
+        chapter: 6,
+        section: 6,
+        title: '保険外併用療養費',
+        fullText: '厚生労働省告示「消費税法別表第二第6号に規定する…」に規定する療養',
+        sourceUrl: 'https://x/06/06.htm',
+      },
+      {
+        clauseNumber: '1-1-1',
+        chapter: 1,
+        section: 1,
+        title: '総則',
+        fullText: '消費税法基本通達の総則。消基通の読み方',
+        sourceUrl: 'https://x/01/01.htm',
+      },
+    ]);
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('元の語で当たるときは展開しない（「消費税法」だけの条項が混ざらない）', () => {
+    const { hits, expansion } = searchClauseFtsWithExpansion(db, '適格請求書発行事業者');
+    expect(hits.map((h) => h.clauseNumber)).toEqual(['1-7-2']);
+    expect(expansion).toBeUndefined();
+    expect(hits[0].scoreReasons!.some((s) => s.includes('abbreviation expanded'))).toBe(false);
+    expect(describeExpansionNotes(expansion)).toEqual([]);
+  });
+
+  it('元の語で 0 件のときは展開し、alias として返す（Issue #14 の回帰防止: インボイス）', () => {
+    const { hits, expansion } = searchClauseFtsWithExpansion(db, 'インボイス');
+    expect(hits.length).toBeGreaterThan(0);
+    expect(expansion).toEqual({ from: 'インボイス', to: '消費税法', kind: 'alias' });
+    expect(hits[0].scoreReasons!.some((s) => s.includes('abbreviation expanded'))).toBe(true);
+    const notes = describeExpansionNotes(expansion);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain('"インボイス" を含む文書は見つかりませんでした');
+    expect(notes[0]).toContain('"消費税法" を含む文書に広げて検索しました');
+  });
+
+  it('略称そのもの（消基通）は元の語で当たっても従来どおり展開する', () => {
+    const { hits, expansion } = searchClauseFtsWithExpansion(db, '消基通');
+    // "消基通" を含むのは 1-1-1 だけだが、"消費税法基本通達" でも当たる（同じ 1-1-1）
+    expect(hits.map((h) => h.clauseNumber)).toContain('1-1-1');
+    expect(expansion?.kind).toBe('abbreviation');
+    expect(describeExpansionNotes(expansion)).toEqual([]);
+  });
+
+  it('searchClauseFts（配列を返す従来の関数）も同じ結果', () => {
+    expect(searchClauseFts(db, '適格請求書発行事業者').map((h) => h.clauseNumber)).toEqual([
+      '1-7-2',
+    ]);
+  });
+});
+
+describe('searchDocumentFts — Issue #21: 通称の展開は 0 件のときだけ', () => {
+  let db: DatabaseT.Database;
+  beforeEach(() => {
+    db = new Database(':memory:');
+    initSchema(db);
+    seedDoc(db, {
+      docType: 'qa-jirei',
+      docId: 'shohi/02/44',
+      title: '政治資金パーティーと適格請求書について',
+      fullText: 'そもそも、適格請求書発行事業者として登録を受けていない場合',
+    });
+    seedDoc(db, {
+      docType: 'qa-jirei',
+      docId: 'shohi/15/01',
+      title: '免税期間の資産の譲渡に係る対価の返還等の取扱い',
+      fullText: '消費税法施行令第48条第1項、消費税法第38条',
+    });
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('元の語で当たるときは「消費税法」だけの事例を返さない', () => {
+    const { hits, expansion } = searchDocumentFtsWithExpansion(db, '適格請求書発行事業者', {
+      limit: 15,
+    });
+    expect(hits.map((h) => h.docId)).toEqual(['shohi/02/44']);
+    expect(expansion).toBeUndefined();
+  });
+
+  it('元の語で 0 件のときは展開して「消費税法」を含む事例を返す', () => {
+    const { hits, expansion } = searchDocumentFtsWithExpansion(db, 'インボイス');
+    expect(hits.map((h) => h.docId).sort()).toEqual(['shohi/15/01']);
+    expect(expansion?.kind).toBe('alias');
+  });
+
+  it('searchDocumentFts（配列を返す従来の関数）も同じ結果', () => {
+    expect(searchDocumentFts(db, '適格請求書発行事業者').map((h) => h.docId)).toEqual([
+      'shohi/02/44',
+    ]);
   });
 });

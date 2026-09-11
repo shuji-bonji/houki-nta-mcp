@@ -975,3 +975,67 @@ describe('Issue #20: 通達の応答に base_laws と houki-egov-mcp への next
     expect(md.indexOf('解釈の対象になる法律')).toBeLessThan(md.indexOf('通達は行政内部文書'));
   });
 });
+
+describe('Issue #21: 通称を 0 件のため展開したときだけ search_notes で知らせる', () => {
+  let dir: string;
+  let dbPath: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'houki-nta-issue21-'));
+    dbPath = join(dir, 'cache.db');
+    const db = new Database(dbPath);
+    initSchema(db);
+    const id = (
+      db
+        .prepare(
+          `INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?) RETURNING id`
+        )
+        .get('消費税法基本通達', '消基通', 'https://x/shohi/') as { id: number }
+    ).id;
+    const insert = db.prepare(
+      `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    insert.run(
+      id,
+      '1-7-2',
+      'https://x/shohi/01/07.htm',
+      1,
+      7,
+      '登録番号の構成',
+      '適格請求書発行事業者登録簿に登載する登録番号',
+      '[]'
+    );
+    insert.run(
+      id,
+      '1-4-1',
+      'https://x/shohi/01/04.htm',
+      1,
+      4,
+      '納税義務が免除される課税期間',
+      '法第9条第1項本文（消費税法の小規模事業者に係る納税義務の免除）',
+      '[]'
+    );
+    db.close();
+  });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('元の語で当たるとき: 展開せず、注記も付けない', async () => {
+    const r = (await searchTsutatsu({ keyword: '適格請求書発行事業者' }, { dbPath })) as {
+      hits: Array<{ clauseNumber: string }>;
+      search_notes?: string[];
+    };
+    expect(r.hits.map((h) => h.clauseNumber)).toEqual(['1-7-2']);
+    expect(r.search_notes).toBeUndefined();
+  });
+
+  it('元の語で 0 件のとき: 法令名に広げ、search_notes で知らせる', async () => {
+    const r = (await searchTsutatsu({ keyword: 'インボイス' }, { dbPath })) as {
+      hits: Array<{ clauseNumber: string }>;
+      search_notes?: string[];
+    };
+    expect(r.hits.map((h) => h.clauseNumber)).toEqual(['1-4-1']);
+    expect(r.search_notes?.[0]).toContain('"消費税法" を含む文書に広げて検索しました');
+  });
+});

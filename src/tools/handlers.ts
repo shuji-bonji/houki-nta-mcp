@@ -26,11 +26,12 @@ import { makeError, NEXT_ACTIONS, type NextAction } from '../errors.js';
 import { writeBackLiveSection } from '../services/bulk-downloader.js';
 import type { ClauseRow } from '../services/db-search.js';
 import {
+  describeExpansionNotes,
   describeSearchNotes,
   getClauseFromDb,
   hasAnyClause,
   listAvailableClauses,
-  searchClauseFts,
+  searchClauseFtsWithExpansion,
 } from '../services/db-search.js';
 import {
   summarizeFreshnessFromDocument,
@@ -95,9 +96,10 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
     }
 
     const limit = Math.min(Math.max(args.limit ?? 10, 1), 50);
-    const hits = searchClauseFts(db, keyword, { limit });
+    const { hits, expansion } = searchClauseFtsWithExpansion(db, keyword, { limit });
     // Issue #18: 3 文字未満の語を LIKE で補完した / 外した ことを応答に明示する
-    const searchNotes = describeSearchNotes(keyword);
+    // Issue #21: 通称を 0 件のため法令名に広げたときも明示する
+    const searchNotes = [...describeSearchNotes(keyword), ...describeExpansionNotes(expansion)];
 
     if (hits.length === 0) {
       return {
@@ -421,8 +423,12 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
     };
     if (args.domain) opts.taxonomy = args.domain;
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
-    const hits = searchDocumentFts(db, args.keyword, opts);
-    const searchNotes = describeSearchNotes(args.keyword); // Issue #18
+    const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
+    // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
+    const searchNotes = [
+      ...describeSearchNotes(args.keyword),
+      ...describeExpansionNotes(expansion),
+    ];
     if (hits.length === 0) {
       return {
         results: [],
@@ -556,8 +562,12 @@ export async function handleNtaSearchTaxAnswer(
       limit,
     };
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
-    const hits = searchDocumentFts(db, args.keyword, opts);
-    const searchNotes = describeSearchNotes(args.keyword); // Issue #18
+    const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
+    // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
+    const searchNotes = [
+      ...describeSearchNotes(args.keyword),
+      ...describeExpansionNotes(expansion),
+    ];
     if (hits.length === 0) {
       return {
         results: [],
@@ -713,7 +723,7 @@ export async function handleResolveAbbreviation(args: { abbr: string }) {
 import {
   getDocumentFromDb,
   listAvailableDocIds,
-  searchDocumentFts,
+  searchDocumentFtsWithExpansion,
 } from '../services/db-search.js';
 import type {
   GetBunshokaitouArgs,
@@ -740,8 +750,12 @@ export async function handleNtaSearchKaiseiTsutatsu(
     };
     if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
-    const hits = searchDocumentFts(db, args.keyword, opts);
-    const searchNotes = describeSearchNotes(args.keyword); // Issue #18
+    const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
+    // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
+    const searchNotes = [
+      ...describeSearchNotes(args.keyword),
+      ...describeExpansionNotes(expansion),
+    ];
 
     if (hits.length === 0) {
       return {
@@ -865,8 +879,12 @@ export async function handleNtaSearchJimuUnei(
     };
     if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
-    const hits = searchDocumentFts(db, args.keyword, opts);
-    const searchNotes = describeSearchNotes(args.keyword); // Issue #18
+    const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
+    // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
+    const searchNotes = [
+      ...describeSearchNotes(args.keyword),
+      ...describeExpansionNotes(expansion),
+    ];
 
     if (hits.length === 0) {
       return {
@@ -1005,8 +1023,12 @@ export async function handleNtaSearchBunshokaitou(
     };
     if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
-    const hits = searchDocumentFts(db, args.keyword, opts);
-    const searchNotes = describeSearchNotes(args.keyword); // Issue #18
+    const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
+    // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
+    const searchNotes = [
+      ...describeSearchNotes(args.keyword),
+      ...describeExpansionNotes(expansion),
+    ];
     if (hits.length === 0) {
       return {
         results: [],

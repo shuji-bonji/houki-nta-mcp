@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.11.1] - 2026-09-11
+
+**patch リリース** — 通称（「適格請求書発行事業者」「軽減税率」など）で検索したときに、キーワードを含まない文書が結果に混ざり、含む文書が押し出されていた問題の修正（Issue #21）。引数と応答のフィールドは変わりません。検索結果の中身と、`search_notes` の注記が変わります。
+
+### Fixed
+
+- **通称の OR 展開で関係の薄い文書が混ざっていた** — キーワードが houki-abbreviations の通称（`aliases`。例: 「適格請求書発行事業者」→ 消費税法）に当たると、`("適格請求書発行事業者") OR ("消費税法")` で検索していた。「消費税法」は通達・質疑応答事例の本文にほぼ必ず出てくるため、「消費税法」が出てくるだけの文書が混ざった。並べ替え（`computeRelevance()`）は元のキーワードを含むかを見ていないので、基本通達では含む条項より上に来ることもあった。実測（v0.11.0、2026-09-11）: `nta_search_tsutatsu` で「適格請求書発行事業者」を limit 30 で検索すると、含む条項 32 件のうち 9 件が外れ、含まない条項が 7 件入っていた。`nta_search_qa` では limit 15 のうち 3 件が含まない事例だった
+- 通称は **元の語で 0 件のときだけ** 正式名に展開するようにした（`searchWithAliasFallback()`）。展開が必要なのは「インボイス」のように本文に出てこない通称で 0 件になる場合（Issue #14）だけで、その場合の動きは変わらない
+- 略称そのもの（「消基通」→ 消費税法基本通達、「消法」→ 消費税法）は、同じものを指すのでこれまでどおり常に展開する。`buildFtsQueryWithAbbreviation()` の戻り値に `expansionKind`（`'abbreviation'` / `'alias'`）を足して区別する
+- 基本通達（`searchClauseFts()`）と、改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例（`searchDocumentFts()`）の両方に同じ規則を入れた。検索ツール 6 つすべてが対象
+- `scoreReasons` の `abbreviation expanded: … → …` は、実際に展開したときだけ付く。v0.11.0 までは通称に当たった時点で全 hit に付き、どの hit が展開で拾われたかを区別できなかった
+
+### Added
+
+- 通称を 0 件のため展開したときは、応答の `search_notes` に「"インボイス" を含む文書は見つかりませんでした。…"消費税法" を含む文書に広げて検索しました。…」と入れる（`describeExpansionNotes()`）。`search_notes` は v0.10.1（Issue #18）からあるフィールドで、応答の形は変わらない
+- ハンドラ用に `searchClauseFtsWithExpansion()` / `searchDocumentFtsWithExpansion()` を追加（hits と、実際に行った展開を返す）。`searchClauseFts()` / `searchDocumentFts()` は従来どおり配列を返す
+- テスト 12 件を追加（`db-search.test.ts` 10 件、`handlers.test.ts` 2 件。合計 **555 tests**）。「インボイス」で 0 件にならないこと（Issue #14 の回帰）を含む
+
+### Notes
+
+- v0.9.2 の CHANGELOG にある「Phase 6-1 の re-rank で『インボイス』自体を含む文書が score 上位に並ぶ」は、実装にその処理が無かった。v0.11.1 では、元の語で当たる文書があるときは展開しないことで同じ目的を満たす
+- v0.11.0 の CHANGELOG と `src/constants.ts` のコメントにある「2026-09-10 に確認」は、JST では 2026-09-11 の確認でした（UTC の日付を書いていた）。コメントを直した
+
 ## [0.11.0] - 2026-09-11
 
 **minor リリース** — 基本通達の応答から、その通達が解釈している法律の条文へたどれるようにします（Issue #20）。応答にフィールドが増えます。既存のフィールドと引数は変わりません。

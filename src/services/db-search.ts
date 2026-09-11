@@ -179,11 +179,30 @@ export function searchClauseFts(
   keyword: string,
   options: SearchClauseOptions = {}
 ): ClauseSearchHit[] {
+  return searchClauseFtsWithExpansion(db, keyword, options).hits;
+}
+
+/**
+ * `searchClauseFts` と同じ検索をし、実際に行った略称展開も返す（Issue #21）。
+ * ハンドラは `expansion` から `search_notes` の注記を作る。
+ */
+export function searchClauseFtsWithExpansion(
+  db: DatabaseT.Database,
+  keyword: string,
+  options: SearchClauseOptions = {}
+): SearchResultWithExpansion<ClauseSearchHit> {
+  return searchWithAliasFallback(keyword, options.enableAbbreviationExpansion, (built) =>
+    runClauseQuery(db, keyword, built, options)
+  );
+}
+
+function runClauseQuery(
+  db: DatabaseT.Database,
+  keyword: string,
+  built: BuiltFtsQuery,
+  options: SearchClauseOptions
+): ClauseSearchHit[] {
   const limit = Math.min(Math.max(options.limit ?? 10, 1), 50);
-  // Phase 6-1: 略称展開を含む FTS5 クエリ生成
-  const built = buildFtsQueryWithAbbreviation(keyword, {
-    enableExpansion: options.enableAbbreviationExpansion,
-  });
   // Issue #18: 略称展開で formal に置き換わった場合、短い語は展開に吸収されたとみなす
   const shortTokens =
     built.expandedFrom && !built.query.includes(' OR ') ? [] : analyzeKeyword(keyword).shortTokens;
@@ -305,6 +324,75 @@ function buildSanitizedPhrase(raw: string): string {
 }
 
 /**
+ * Issue #21 (v0.11.1): 略称展開の種類。
+ *
+ * - `abbreviation`: キーワードが略称そのもの（"消基通" → 消費税法基本通達、"消法" → 消費税法）。
+ *   展開先と同じものを指すので、従来どおり常に OR 展開する
+ * - `alias`: キーワードが通称（houki-abbreviations の `aliases`。"インボイス"・"軽減税率"・
+ *   "適格請求書発行事業者" → 消費税法）。展開先の法令名は通達・QA の本文にほぼ必ず出てくるので、
+ *   常に OR 展開すると「法令名が出てくるだけ」の文書が混ざり、キーワードを含む文書が limit から押し出される。
+ *   そのため **元の語で 0 件のときだけ** 展開する（本文に出てこない通称で 0 件になる問題 = Issue #14 は保つ）
+ */
+export type ExpansionKind = 'abbreviation' | 'alias';
+
+/** 検索で実際に行った略称展開 */
+export interface AbbreviationExpansion {
+  from: string;
+  to: string;
+  kind: ExpansionKind;
+}
+
+/** hits と、実際に展開したときはその内容 */
+export interface SearchResultWithExpansion<T> {
+  hits: T[];
+  expansion?: AbbreviationExpansion;
+}
+
+type BuiltFtsQuery = ReturnType<typeof buildFtsQueryWithAbbreviation>;
+
+/**
+ * Issue #21: 通称（alias）は元の語だけで先に検索し、0 件のときだけ展開して検索し直す。
+ * 略称そのもの（abbreviation）と、展開しない場合は 1 回だけ検索する。
+ */
+function searchWithAliasFallback<T>(
+  keyword: string,
+  enableExpansion: boolean | undefined,
+  run: (built: BuiltFtsQuery) => T[]
+): SearchResultWithExpansion<T> {
+  const built = buildFtsQueryWithAbbreviation(keyword, { enableExpansion });
+  const expansionOf = (b: BuiltFtsQuery): AbbreviationExpansion | undefined =>
+    b.expandedFrom && b.expandedTo && b.expansionKind
+      ? { from: b.expandedFrom, to: b.expandedTo, kind: b.expansionKind }
+      : undefined;
+
+  if (built.expansionKind !== 'alias') {
+    const hits = run(built);
+    const expansion = expansionOf(built);
+    return expansion ? { hits, expansion } : { hits };
+  }
+
+  const plain = buildFtsQueryWithAbbreviation(keyword, { enableExpansion: false });
+  const first = run(plain);
+  if (first.length > 0) return { hits: first };
+
+  const hits = run(built);
+  const expansion = expansionOf(built);
+  return hits.length > 0 && expansion ? { hits, expansion } : { hits };
+}
+
+/**
+ * Issue #21: 通称を 0 件のため展開したときに、応答の `search_notes` に添える注記。
+ * 略称そのものの展開（"消基通" → 消費税法基本通達）は同じものを指すので注記しない。
+ */
+export function describeExpansionNotes(expansion?: AbbreviationExpansion): string[] {
+  if (expansion?.kind !== 'alias') return [];
+  const { from, to } = expansion;
+  return [
+    `"${from}" を含む文書は見つかりませんでした。略称辞書で "${from}" は ${to} の通称として登録されているため、"${to}" を含む文書に広げて検索しました。"${to}" という語が出てくるだけの文書も含まれます`,
+  ];
+}
+
+/**
  * v0.9.2 (Issue #14 / smoketest #3): formal を OR 展開する条件で許可される
  * `source_mcp_hint` のセット。
  *
@@ -336,7 +424,13 @@ const EXPAND_FORMAL_FOR_HINTS: ReadonlySet<string> = new Set(['houki-nta', 'houk
 export function buildFtsQueryWithAbbreviation(
   keyword: string,
   options: { enableExpansion?: boolean } = {}
-): { query: string; expandedFrom?: string; expandedTo?: string } {
+): {
+  query: string;
+  expandedFrom?: string;
+  expandedTo?: string;
+  /** Issue #21: 略称そのもの（"消基通"・"消法"）か、通称（aliases。"インボイス"・"軽減税率"）か */
+  expansionKind?: ExpansionKind;
+} {
   const enable = options.enableExpansion !== false;
   const trimmed = keyword?.trim() ?? '';
   const main = buildSanitizedPhrase(trimmed);
@@ -352,16 +446,18 @@ export function buildFtsQueryWithAbbreviation(
 
   const formalPhrase = buildSanitizedPhrase(abbr.formal);
   if (!formalPhrase) return { query: main };
+  const expansionKind: ExpansionKind = abbr.abbr === trimmed ? 'abbreviation' : 'alias';
 
   // Issue #18: 「消法」のように略称自体が 3 文字未満で trigram に乗らない場合は formal だけで検索する
   if (!main) {
-    return { query: formalPhrase, expandedFrom: trimmed, expandedTo: abbr.formal };
+    return { query: formalPhrase, expandedFrom: trimmed, expandedTo: abbr.formal, expansionKind };
   }
 
   return {
     query: `(${main}) OR (${formalPhrase})`,
     expandedFrom: trimmed,
     expandedTo: abbr.formal,
+    expansionKind,
   };
 }
 
@@ -548,11 +644,29 @@ export function searchDocumentFts(
   keyword: string,
   options: SearchDocumentOptions = {}
 ): DocumentSearchHit[] {
+  return searchDocumentFtsWithExpansion(db, keyword, options).hits;
+}
+
+/**
+ * `searchDocumentFts` と同じ検索をし、実際に行った略称展開も返す（Issue #21）。
+ */
+export function searchDocumentFtsWithExpansion(
+  db: DatabaseT.Database,
+  keyword: string,
+  options: SearchDocumentOptions = {}
+): SearchResultWithExpansion<DocumentSearchHit> {
+  return searchWithAliasFallback(keyword, options.enableAbbreviationExpansion, (built) =>
+    runDocumentQuery(db, keyword, built, options)
+  );
+}
+
+function runDocumentQuery(
+  db: DatabaseT.Database,
+  keyword: string,
+  built: BuiltFtsQuery,
+  options: SearchDocumentOptions
+): DocumentSearchHit[] {
   const limit = Math.min(Math.max(options.limit ?? 10, 1), 50);
-  // Phase 6-1: 略称展開を含む FTS5 クエリ生成
-  const built = buildFtsQueryWithAbbreviation(keyword, {
-    enableExpansion: options.enableAbbreviationExpansion,
-  });
   // Issue #18: 略称展開で formal に置き換わった場合、短い語は展開に吸収されたとみなす
   const shortTokens =
     built.expandedFrom && !built.query.includes(' OR ') ? [] : analyzeKeyword(keyword).shortTokens;
