@@ -66,11 +66,29 @@ import type {
   GetTaxAnswerArgs,
   GetTsutatsuArgs,
   InspectPdfMetaArgs,
+  ResolveAbbreviationArgs,
   SearchQaArgs,
   SearchTaxAnswerArgs,
   SearchTsutatsuArgs,
 } from '../types/index.js';
 import { buildSectionUrl, parseClauseNumber } from '../utils/clause.js';
+import {
+  ntaGetBunshokaitouTool,
+  ntaGetJimuUneiTool,
+  ntaGetKaiseiTsutatsuTool,
+  ntaGetQaTool,
+  ntaGetTaxAnswerTool,
+  ntaGetTsutatsuTool,
+  ntaInspectPdfMetaTool,
+  ntaSearchBunshokaitouTool,
+  ntaSearchJimuUneiTool,
+  ntaSearchKaiseiTsutatsuTool,
+  ntaSearchQaTool,
+  ntaSearchTaxAnswerTool,
+  ntaSearchTsutatsuTool,
+  resolveAbbreviationTool,
+} from './definitions.js';
+import { bindTool, type ToolHandler } from './tool-args.js';
 
 // NOT_IMPLEMENTED は v0.5.0-alpha.1 で全 search 系ハンドラが本実装になり、未使用に。
 // 将来また「未実装スタブ」を作る際は復活させる。
@@ -918,7 +936,7 @@ export async function getTaxAnswer(
  * 自分の管轄（source_mcp_hint === 'houki-nta'）以外のエントリは、
  * 「正しい MCP に誘導するヒント」と共に返す。
  */
-export async function handleResolveAbbreviation(args: { abbr: string }) {
+export async function handleResolveAbbreviation(args: ResolveAbbreviationArgs) {
   const result = resolveAbbreviation(args.abbr);
 
   if (!result) {
@@ -1418,22 +1436,33 @@ export async function handleNtaInspectPdfMeta(
 }
 
 /**
- * Tool handlers map
+ * tools/call の受け口の表。
+ *
+ * 引数は unknown で受け、`bindTool()` が inputSchema で検証してから型付きで各 handler に渡す
+ * （v0.14.0。v0.13.0 までは `(args: any) => …` の表で、検証は server.ts が行っていた）。
+ * handler の第 2 引数（テスト用の dbPath など）を渡さないよう、`(args) => handler(args)` で包む。
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const toolHandlers: Record<string, (args: any) => Promise<unknown>> = {
-  nta_search_tsutatsu: handleNtaSearchTsutatsu,
-  nta_get_tsutatsu: handleNtaGetTsutatsu,
-  nta_search_qa: handleNtaSearchQa,
-  nta_get_qa: handleNtaGetQa,
-  nta_search_tax_answer: handleNtaSearchTaxAnswer,
-  nta_get_tax_answer: handleNtaGetTaxAnswer,
-  nta_search_kaisei_tsutatsu: handleNtaSearchKaiseiTsutatsu,
-  nta_get_kaisei_tsutatsu: handleNtaGetKaiseiTsutatsu,
-  nta_search_jimu_unei: handleNtaSearchJimuUnei,
-  nta_get_jimu_unei: handleNtaGetJimuUnei,
-  nta_search_bunshokaitou: handleNtaSearchBunshokaitou,
-  nta_get_bunshokaitou: handleNtaGetBunshokaitou,
-  nta_inspect_pdf_meta: handleNtaInspectPdfMeta,
-  resolve_abbreviation: handleResolveAbbreviation,
+export const toolHandlers: Record<string, ToolHandler> = {
+  nta_search_tsutatsu: bindTool(ntaSearchTsutatsuTool, (args) => handleNtaSearchTsutatsu(args)),
+  nta_get_tsutatsu: bindTool(ntaGetTsutatsuTool, (args) => handleNtaGetTsutatsu(args)),
+  nta_search_qa: bindTool(ntaSearchQaTool, (args) => handleNtaSearchQa(args)),
+  nta_get_qa: bindTool(ntaGetQaTool, (args) => handleNtaGetQa(args)),
+  nta_search_tax_answer: bindTool(ntaSearchTaxAnswerTool, (args) => handleNtaSearchTaxAnswer(args)),
+  nta_get_tax_answer: bindTool(ntaGetTaxAnswerTool, (args) => handleNtaGetTaxAnswer(args)),
+  nta_search_kaisei_tsutatsu: bindTool(ntaSearchKaiseiTsutatsuTool, (args) =>
+    handleNtaSearchKaiseiTsutatsu(args)
+  ),
+  nta_get_kaisei_tsutatsu: bindTool(ntaGetKaiseiTsutatsuTool, (args) =>
+    handleNtaGetKaiseiTsutatsu(args)
+  ),
+  nta_search_jimu_unei: bindTool(ntaSearchJimuUneiTool, (args) => handleNtaSearchJimuUnei(args)),
+  nta_get_jimu_unei: bindTool(ntaGetJimuUneiTool, (args) => handleNtaGetJimuUnei(args)),
+  nta_search_bunshokaitou: bindTool(ntaSearchBunshokaitouTool, (args) =>
+    handleNtaSearchBunshokaitou(args)
+  ),
+  nta_get_bunshokaitou: bindTool(ntaGetBunshokaitouTool, (args) => handleNtaGetBunshokaitou(args)),
+  nta_inspect_pdf_meta: bindTool(ntaInspectPdfMetaTool, (args) => handleNtaInspectPdfMeta(args)),
+  resolve_abbreviation: bindTool(resolveAbbreviationTool, (args) =>
+    handleResolveAbbreviation(args)
+  ),
 };

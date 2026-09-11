@@ -4,155 +4,70 @@
  * AbbreviationEntry は @shuji-bonji/houki-abbreviations から re-export。
  */
 
-import type { Domain, NtaCategory, OutputFormat, QaTopic } from '../constants.js';
+import type {
+  ntaGetBunshokaitouTool,
+  ntaGetJimuUneiTool,
+  ntaGetKaiseiTsutatsuTool,
+  ntaGetQaTool,
+  ntaGetTaxAnswerTool,
+  ntaGetTsutatsuTool,
+  ntaInspectPdfMetaTool,
+  ntaSearchBunshokaitouTool,
+  ntaSearchJimuUneiTool,
+  ntaSearchKaiseiTsutatsuTool,
+  ntaSearchQaTool,
+  ntaSearchTaxAnswerTool,
+  ntaSearchTsutatsuTool,
+  resolveAbbreviationTool,
+} from '../tools/definitions.js';
+import type { ArgsOf } from '../tools/tool-args.js';
 
 // houki-abbreviations から re-export
 export type { AbbreviationEntry } from '@shuji-bonji/houki-abbreviations';
 
-/** 通達検索引数 */
-export interface SearchTsutatsuArgs {
-  /** 検索キーワード */
-  keyword: string;
-  /** 通達種別で絞り込み */
-  type?: Extract<NtaCategory, 'kihon-tsutatsu' | 'kobetsu-tsutatsu'>;
-  /** 分野タグで絞り込み */
-  domain?: Domain;
-  /** 取得件数 */
-  limit?: number;
-}
-
-/** 通達取得引数 */
-export interface GetTsutatsuArgs {
-  /** 通達名または略称。例: "消基通", "所基通" */
-  name: string;
-  /** 通達番号。例: "5-1-9", "11-2-10"（章-項-号 形式） */
-  clause?: string;
-  /** 出力形式 */
-  format?: OutputFormat;
-}
-
-/** 質疑応答事例検索引数 */
-export interface SearchQaArgs {
-  /** 検索キーワード */
-  keyword: string;
-  /**
-   * 分野で絞り込み。質疑応答事例はすべて税務なので、"tax" は絞り込まず、それ以外は 0 件（Issue #23）
-   */
-  domain?: Domain;
-  /** 税目で絞り込み（Issue #23 / v0.13.0）。`--qa-topic` と同じ値 */
-  topic?: QaTopic;
-  /** 取得件数 */
-  limit?: number;
-  /**
-   * Phase 4-2 (v0.7.1): 添付 PDF を持つ事例だけに絞る。
-   * 現状の質疑応答事例は HTML のみで PDF は持たないため `true` 指定時は空配列になる
-   * （将来データソースが拡張された時のための一貫したインタフェース）。
-   */
-  hasPdf?: boolean;
-}
-
-/** 質疑応答事例取得引数 */
-export interface GetQaArgs {
-  /** 税目フォルダ。例: "shohi", "shotoku", "hojin" */
-  topic: string;
-  /** カテゴリ番号。例: "02"（章相当） */
-  category: string;
-  /** 事例番号。例: "19" */
-  id: string;
-  /** 出力形式 */
-  format?: OutputFormat;
-}
-
-/** タックスアンサー取得引数 */
-export interface GetTaxAnswerArgs {
-  /** タックスアンサー番号。例: "6101" */
-  no: string;
-  /** 出力形式 */
-  format?: OutputFormat;
-}
-
-/** タックスアンサー検索引数 */
-export interface SearchTaxAnswerArgs {
-  /** 検索キーワード */
-  keyword: string;
-  /** 取得件数 */
-  limit?: number;
-  /** Phase 4-2 (v0.7.1): 添付 PDF を持つ文書だけに絞る */
-  hasPdf?: boolean;
-}
-
-/** 改正通達検索引数 (Phase 3b) */
-export interface SearchKaiseiTsutatsuArgs {
-  /** 検索キーワード */
-  keyword: string;
-  /** 税目フォルダで絞り込み。例: 'shohi' / 'shotoku' / 'hojin' / 'sisan/sozoku' */
-  taxonomy?: string;
-  /** 取得件数 */
-  limit?: number;
-  /**
-   * Phase 4-2 (v0.7.1): 添付 PDF を持つ改正通達だけに絞る。
-   * 改正通達は新旧対照表 PDF を伴うことが多く、改正点だけ知りたい時に便利。
-   */
-  hasPdf?: boolean;
-}
-
-/** 改正通達取得引数 (Phase 3b) */
-export interface GetKaiseiTsutatsuArgs {
-  /** 文書 ID。例: '0026003-067' / '240401' */
-  docId: string;
-  /** 出力形式 */
-  format?: OutputFormat;
-}
-
-/** 事務運営指針検索引数 (Phase 3b alpha.2) */
-export interface SearchJimuUneiArgs {
-  /** 検索キーワード */
-  keyword: string;
-  /** 税目で絞り込み。'shotoku' / 'hojin' / 'sozoku' / 'shohi' 等 */
-  taxonomy?: string;
-  /** 取得件数 */
-  limit?: number;
-  /** Phase 4-2 (v0.7.1): 添付 PDF を持つ事務運営指針だけに絞る */
-  hasPdf?: boolean;
-}
-
-/** 事務運営指針取得引数 (Phase 3b alpha.2) */
-export interface GetJimuUneiArgs {
-  /** 文書 ID。例: 'shotoku/shinkoku/170331' / 'sozoku/170111_1' */
-  docId: string;
-  /** 出力形式 */
-  format?: OutputFormat;
-}
-
-/** 文書回答事例検索引数 (Phase 3b alpha.3) */
-export interface SearchBunshokaitouArgs {
-  /** 検索キーワード */
-  keyword: string;
-  /** 税目で絞り込み。'shotoku' / 'hojin' / 'sozoku' / 'gensen' / 'joto-sanrin' 等 */
-  taxonomy?: string;
-  /** 取得件数 */
-  limit?: number;
-  /** Phase 4-2 (v0.7.1): 添付 PDF を持つ事例だけに絞る */
-  hasPdf?: boolean;
-}
-
-/** 文書回答事例取得引数 (Phase 3b alpha.3) */
-export interface GetBunshokaitouArgs {
-  /** 文書 ID。例: 'shotoku/250416' / 'tokyo/shotoku/260218' */
-  docId: string;
-  /** 出力形式 */
-  format?: OutputFormat;
-}
-
 /**
- * PDF メタ取得引数 (Phase 4-2, v0.7.1)
- *
- * `nta_inspect_pdf_meta` 用。本文は含めずに添付 PDF メタだけを返す軽量 API。
- * 質疑応答事例 (qa-jirei) は PDF を持たないため対象外。
+ * ツールの引数の型（v0.14.0 から inputSchema から導く。手書きの interface はやめた）。
+ * inputSchema は src/tools/definitions.ts。導き方は src/tools/tool-args.ts の `ArgsOf`。
  */
-export interface InspectPdfMetaArgs {
-  /** 文書種別。kaisei / jimu-unei / bunshokaitou / tax-answer のいずれか */
-  docType: 'kaisei' | 'jimu-unei' | 'bunshokaitou' | 'tax-answer';
-  /** 文書 ID。各 docType の get/search 系 tool の結果から取得 */
-  docId: string;
-}
+
+/** 基本通達の検索 */
+export type SearchTsutatsuArgs = ArgsOf<typeof ntaSearchTsutatsuTool.inputSchema>;
+
+/** 基本通達の取得 */
+export type GetTsutatsuArgs = ArgsOf<typeof ntaGetTsutatsuTool.inputSchema>;
+
+/** 質疑応答事例の検索 */
+export type SearchQaArgs = ArgsOf<typeof ntaSearchQaTool.inputSchema>;
+
+/** 質疑応答事例の取得 */
+export type GetQaArgs = ArgsOf<typeof ntaGetQaTool.inputSchema>;
+
+/** タックスアンサーの取得 */
+export type GetTaxAnswerArgs = ArgsOf<typeof ntaGetTaxAnswerTool.inputSchema>;
+
+/** タックスアンサーの検索 */
+export type SearchTaxAnswerArgs = ArgsOf<typeof ntaSearchTaxAnswerTool.inputSchema>;
+
+/** 改正通達の検索 */
+export type SearchKaiseiTsutatsuArgs = ArgsOf<typeof ntaSearchKaiseiTsutatsuTool.inputSchema>;
+
+/** 改正通達の取得 */
+export type GetKaiseiTsutatsuArgs = ArgsOf<typeof ntaGetKaiseiTsutatsuTool.inputSchema>;
+
+/** 事務運営指針の検索 */
+export type SearchJimuUneiArgs = ArgsOf<typeof ntaSearchJimuUneiTool.inputSchema>;
+
+/** 事務運営指針の取得 */
+export type GetJimuUneiArgs = ArgsOf<typeof ntaGetJimuUneiTool.inputSchema>;
+
+/** 文書回答事例の検索 */
+export type SearchBunshokaitouArgs = ArgsOf<typeof ntaSearchBunshokaitouTool.inputSchema>;
+
+/** 文書回答事例の取得 */
+export type GetBunshokaitouArgs = ArgsOf<typeof ntaGetBunshokaitouTool.inputSchema>;
+
+/** 添付 PDF のメタ情報 */
+export type InspectPdfMetaArgs = ArgsOf<typeof ntaInspectPdfMetaTool.inputSchema>;
+
+/** 略称の解決 */
+export type ResolveAbbreviationArgs = ArgsOf<typeof resolveAbbreviationTool.inputSchema>;

@@ -112,6 +112,26 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(JSON.parse(firstText(res3)).code).toBe('INVALID_ARGUMENT');
   });
 
+  it('すべてのツールの inputSchema に additionalProperties: false が付く (v0.14.0)', async () => {
+    const res = await client.listTools();
+    for (const t of res.tools) {
+      expect(t.inputSchema.additionalProperties).toBe(false);
+    }
+  });
+
+  it('inputSchema に無い引数は INVALID_ARGUMENT で、detail.issues の path に引数名が入る (v0.14.0)', async () => {
+    // v0.13.0 までは nta_search_tsutatsu の inputSchema に type / domain があったが、絞り込みに使っていなかった
+    const res = await client.callTool({
+      name: 'nta_search_tsutatsu',
+      arguments: { keyword: '軽減税率', domain: 'tax' },
+    });
+    expect(res.isError).toBe(true);
+    const body = JSON.parse(firstText(res));
+    expect(body.code).toBe('INVALID_ARGUMENT');
+    expect(body.detail.issues[0].path).toBe('domain');
+    expect(body.tool).toBe('nta_search_tsutatsu');
+  });
+
   it('resolve_abbreviation が isError なしで JSON を返す', async () => {
     const res = await client.callTool({
       name: 'resolve_abbreviation',
