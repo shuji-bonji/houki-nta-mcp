@@ -154,8 +154,21 @@ v0.13.0 から、`nta_search_qa` は `topic`（`shotoku` / `gensen` / `joto` / `
 - 「所得税法第27条、第34条」の「第34条」のように法令名を省いた要素は、直前の法令の続きとして読みます。「、第9項」は直前の条の項、「、3-3」は直前の通達の番号です
 - 告示・説明文・「［参考］」など、法令と通達として読めない要素は入れません。推測で法令名を補うこともしません。`qa.relatedLaws`（欄の文字列そのまま）で確かめてください
 - 条約（「日米租税条約」など。e-Gov の法令名と一致しない通称）と改正前の法令（「旧所得税法」など）は、`related_laws` には入れますが `next_actions` では案内しません
+- 枝番号の号（「法人税法第2条第12号の8」）は、v0.14.0 から `item: "12の8"`（文字列）にし、`next_actions` にも入れます。`get_law` が文字列の `item` を受け付けるのは houki-egov-mcp v0.6.0 以上です
 - 分解できた割合: 2026-09-11 に、ローカル DB の質疑応答事例 1,834 件（【関係法令通達】欄あり）で測りました。欄を「、」と改行で区切った 5,059 要素のうち 4,767 要素（94.2%）を法令か通達として読み取れ、1,834 件のうち 1,652 件（90.1%）は欄の全要素を読み取れました。146 件は一部だけ、36 件は読み取れる要素がありませんでした（告示や通達の日付・番号だけが書かれた欄など）
 - v0.11.1 までは、ページ下部の「注記」が `relatedLaws`（【関係法令通達】欄の無いページでは `answer`）に混ざっていました。v0.12.0 から `qa.notice` に分けています
+
+### 文書回答事例の税目の別表記（v0.14.0）
+
+文書回答事例の `taxonomy` は URL の税目フォルダ名です。国税局のページは本庁と違うフォルダ名を使うことがあり、同じ税目が次のように分かれています。`taxonomy` にどちらを指定しても両方を検索し、応答の `search_notes` にその旨が入ります。DB の値は変えていないので、取り込み直しは要りません。
+
+| 税目 | 本庁の表記 | 国税局の表記 |
+| --- | --- | --- |
+| 相続税 | `sozoku` | `souzoku` |
+| 源泉所得税 | `gensen` | `gensenshotoku` |
+| 譲渡所得・山林所得 | `joto-sanrin` | `joto_sanrin` |
+
+`--bunsho-taxonomy` に渡すのは本庁の表記です。
 
 ### 略称と通称の展開（v0.11.1、Issue #21）
 
@@ -510,7 +523,7 @@ v0.10.0 以降、`tools/call` の応答は次の 3 経路でも同じ形式に�
 | 経路 | `code` | 内容 |
 |------|--------|------|
 | ツール名が `tools/list` にない | `UNKNOWN_TOOL` | `hint` に利用可能なツール名一覧 |
-| 引数が `tools/list` の `inputSchema` に合わない（型・必須・enum） | `INVALID_ARGUMENT` | `detail.issues[]` に `path` と `message`。handler は呼ばれません |
+| 引数が `tools/list` の `inputSchema` に合わない（型・必須・enum・inputSchema に無い引数。v0.14.0 から未知の引数もエラー） | `INVALID_ARGUMENT` | `detail.issues[]` に `path` と `message`。handler は呼ばれません |
 | handler が例外を投げた | `INTERNAL_ERROR` | `retryable: true`、`detail.cause` に例外メッセージ |
 
 handler が `LawServiceError`（上の JSON 形式）を返した場合も `isError: true` が付きます。

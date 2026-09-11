@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.14.0] - 2026-09-12
+
+**minor リリース** — ツールの引数を inputSchema で厳密に扱い（未知の引数はエラー）、`nta_search_tsutatsu` の使われていなかった `type` / `domain` を削除した。あわせて、文書回答事例の税目の別表記をまとめて検索し、質疑応答事例の枝番号の号を `next_actions` に渡すようにした。houki-egov-mcp v0.6.0 と同じ仕組み。
+
+### Changed
+
+- **inputSchema に無い引数は `INVALID_ARGUMENT`**: すべてのツールの inputSchema に `additionalProperties: false` を付けた。これまでは受け取って捨てていた。`detail.issues[].path` にその引数名が入る
+- **`nta_search_tsutatsu` の `type` / `domain` を inputSchema から削除**: `searchTsutatsu()` はどちらも使っておらず、指定しても絞り込まれなかった。v0.14.0 から送ると `INVALID_ARGUMENT`
+- **ツールの引数の型を inputSchema から導く**: `src/tools/tool-args.ts` を追加（houki-egov-mcp v0.6.0 と同じ形。INVALID_ARGUMENT に `tool` を入れる点だけ違う）。inputSchema を `as const` で書き、[json-schema-to-ts](https://github.com/ThomasAribart/json-schema-to-ts) の `FromSchema` で引数の型を導く。`src/types/index.ts` の手書きの引数の interface はやめた
+  - `toolHandlers` を `Record<string, (args: any) => …>` から `Record<string, ToolHandler>`（引数は `unknown`）にした。`bindTool()` が inputSchema で検証してから handler に渡す。server.ts の `validateArgs()` は `bindTool()` に移した
+  - biome の `noExplicitAny` の warning が 0 件になった
+  - `json-schema-to-ts` は型だけを使うので devDependencies
+- **文書回答事例の税目の別表記をまとめて検索**: 国税局のページ（`/about/organization/{局}/bunshokaito/…`）は本庁と違う税目フォルダ名を使うことがあり、同じ税目が `sozoku` と `souzoku`、`gensen` と `gensenshotoku`、`joto-sanrin` と `joto_sanrin` に分かれていた。`taxonomy` にどちらを指定しても両方を探し、`search_notes` にその旨を書く（`BUNSHO_TAXONOMY_GROUPS` / `expandBunshoTaxonomy()`）。DB の値は変えないので、取り込み直しは不要
+  - 税目の範囲に文書が無いときの `--bunsho-taxonomy=<値>` の案内は、国税局の表記を本庁の表記に直し（`souzoku` → `sozoku`）、本庁の索引に無い値（綴り間違いなど）では出さない（`bunshoMainTaxonomy()`）
+  - `countDocuments()` / `searchDocumentFts()` の `taxonomy` に配列も渡せるようにした
+- **質疑応答事例の枝番号の号を `item` に入れる**: 「法人税法第2条第12号の8」は `related_laws` の `item: "12の8"`（文字列）にし、`next_actions` の `get_law` にも渡す。v0.13.0 までは枝番号の号を `item` に入れていなかった。`get_law` が文字列の `item` を受け付けるのは **houki-egov-mcp v0.6.0 以上**。`related_laws[].item` の型は `number | string` になる
+
+### Tests
+
+- 10 件追加（server の `additionalProperties` / 未知の引数 2 件、税目の別表記 7 件、枝番号の号 1 件）。合計 **604 tests**（見込み）
+
+### 利用側への影響
+
+- inputSchema に無い引数を送っていた場合は `INVALID_ARGUMENT` になる。`nta_search_tsutatsu` に `type` / `domain` を送っていた場合は外す（もともと効いていなかった）
+- `related_laws[].item` が文字列のことがある（枝番号の号）。`get_law` に渡すときは houki-egov-mcp v0.6.0 以上を使う
+
 ## [0.13.0] - 2026-09-12
 
 **minor リリース** — 文書系の検索 5 ツールが 0 件のとき、その種別の文書が DB に無いのか、キーワードに合う文書が無いだけなのかを分けて返すようにした（Issue #23）。その種別の文書が DB に 1 件も無いときは、これまでの成功（`results: []`）ではなくエラー `DOC_NOT_FOUND` を返すため minor。あわせて、`nta_search_qa` の `domain` を指定すると必ず 0 件になっていた問題を直し、税目で絞る `topic` を追加した。
