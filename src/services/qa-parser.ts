@@ -20,6 +20,7 @@ import type { Element } from 'domhandler';
 
 import type { QaTopic } from '../constants.js';
 import type { QaJirei } from '../types/qa.js';
+import { extractIssuedAt } from './kaisei-toc-parser.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 
 export interface ParseQaInput {
@@ -67,9 +68,20 @@ export function parseQaJirei(input: ParseQaInput): QaJirei {
     cleanText($body.find('h1').first().text());
 
   // 各セクションを抽出
-  const question = extractSectionParagraphs($, $body, '【照会要旨】');
-  const answer = extractSectionParagraphs($, $body, '【回答要旨】');
-  const relatedLaws = extractSectionParagraphs($, $body, '【関係法令通達】');
+  // Issue #22: ページ下部の「注記」（<p class="red"><strong>注記<br>…）は後ろに h2 が無いので、
+  // 最後の節（ふつうは【関係法令通達】、それが無いページでは【回答要旨】）の段落として拾われていた。
+  // 節から外し、notice / basisDate に分ける
+  const q = splitNotice(extractSectionParagraphs($, $body, '【照会要旨】'));
+  const a = splitNotice(extractSectionParagraphs($, $body, '【回答要旨】'));
+  const r = splitNotice(extractSectionParagraphs($, $body, '【関係法令通達】'));
+  const question = q.body;
+  const answer = a.body;
+  const relatedLaws = r.body;
+  const notice = r.notice || a.notice || q.notice;
+  const basisMatch = notice.match(
+    /(令和|平成)\s*[0-9０-９元]+\s*年\s*[0-9０-９]+\s*月\s*[0-9０-９]+\s*日現在/
+  );
+  const basisDate = basisMatch ? extractIssuedAt(basisMatch[0]) : undefined;
 
   return {
     topic,
@@ -79,8 +91,24 @@ export function parseQaJirei(input: ParseQaInput): QaJirei {
     question,
     answer,
     relatedLaws,
+    ...(notice ? { notice } : {}),
+    ...(basisDate ? { basisDate } : {}),
     sourceUrl,
     fetchedAt,
+  };
+}
+
+/** 段落の並びを「注記」の手前（本文）と注記の本文に分ける。注記が無ければ notice は空文字 */
+function splitNotice(paragraphs: string[]): { body: string[]; notice: string } {
+  const at = paragraphs.findIndex((p) => /^注記(\s|$)/.test(p));
+  if (at < 0) return { body: paragraphs, notice: '' };
+  return {
+    body: paragraphs.slice(0, at),
+    notice: paragraphs
+      .slice(at)
+      .join('\n')
+      .replace(/^注記\s*/, '')
+      .trim(),
   };
 }
 

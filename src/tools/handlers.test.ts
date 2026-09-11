@@ -586,6 +586,53 @@ describe('getQa — 消費税 02/19 を取得', () => {
     expect(r).toContain('【回答要旨】');
     expect(r).toContain('【関係法令通達】');
     expect(r).toContain('参考解説資料');
+    // Issue #22: 注記は【関係法令通達】ではなく独立した節
+    expect(r).toContain('## 注記（国税庁）');
+    expect(r.indexOf('## 注記（国税庁）')).toBeGreaterThan(r.indexOf('## 【関係法令通達】'));
+    const related = r.slice(r.indexOf('## 【関係法令通達】'), r.indexOf('## 注記（国税庁）'));
+    expect(related).not.toContain('注記');
+  });
+
+  it('Issue #22: format=json で related_laws / related_tsutatsu / next_actions を返す', async () => {
+    const fetchImpl = vi.fn(async () =>
+      sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
+    ) as unknown as typeof fetch;
+    const r = (await getQa(
+      { topic: 'shohi', category: '02', id: '19', format: 'json' },
+      { fetchImpl }
+    )) as {
+      qa: { relatedLaws: string[]; notice?: string; basisDate?: string };
+      related_laws?: Array<Record<string, unknown>>;
+      related_tsutatsu?: Array<Record<string, unknown>>;
+      next_actions?: Array<{ action: string; example?: Record<string, unknown> }>;
+    };
+    expect(r.qa.relatedLaws).toEqual(['消費税法第2条第1項第8号、消費税法基本通達5-1-1']);
+    expect(r.qa.basisDate).toBe('2025-08-01');
+    expect(r.related_laws).toEqual([
+      { law_name: '消費税法', article: '2', paragraph: 1, item: 8, raw: '消費税法第2条第1項第8号' },
+    ]);
+    expect(r.related_tsutatsu).toEqual([
+      { name: '消費税法基本通達', clause: '5-1-1', raw: '消費税法基本通達5-1-1' },
+    ]);
+    expect(r.next_actions).toEqual([
+      {
+        action: 'delegate_to_mcp',
+        reason: '質疑応答事例は参考資料で法的拘束力がない。根拠は法律本文で確認する',
+        example: {
+          mcp: 'houki-egov',
+          tool: 'get_law',
+          law_name: '消費税法',
+          article: '2',
+          paragraph: 1,
+          item: 8,
+        },
+      },
+      {
+        action: 'nta_get_tsutatsu',
+        reason: '質疑応答事例が挙げている通達の本文を確認する',
+        example: { name: '消費税法基本通達', clause: '5-1-1' },
+      },
+    ]);
   });
 
   it('format=json で構造化レスポンス', async () => {

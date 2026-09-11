@@ -103,7 +103,7 @@ export const tools: Tool[] = [
   {
     name: 'nta_get_qa',
     description:
-      '国税庁の質疑応答事例 1 件を取得する。URL 形式: /law/shitsugi/{topic}/{category}/{id}.htm',
+      '国税庁の質疑応答事例 1 件を取得する。URL 形式: /law/shitsugi/{topic}/{category}/{id}.htm。format=json では【関係法令通達】を法令（related_laws）と通達（related_tsutatsu）に分け、next_actions で houki-egov-mcp の get_law と nta_get_tsutatsu を案内する。',
     inputSchema: {
       type: 'object',
       properties: {

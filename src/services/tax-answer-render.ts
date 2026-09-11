@@ -71,6 +71,14 @@ export function renderQaMarkdown(q: QaJirei): string {
     }
   }
 
+  // Issue #22: ページ下部の注記（作成時点と、一般的な回答である旨の断り書き）
+  if (q.notice) {
+    lines.push('## 注記（国税庁）');
+    lines.push('');
+    lines.push(q.notice);
+    lines.push('');
+  }
+
   lines.push('---');
   lines.push(`出典: ${q.sourceUrl}`);
   lines.push(`取得: ${q.fetchedAt}`);

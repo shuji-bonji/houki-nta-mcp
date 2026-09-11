@@ -44,6 +44,8 @@ import {
   renderAttachedPdfsMarkdown,
 } from '../services/pdf-meta.js';
 import { parseQaJirei } from '../services/qa-parser.js';
+import type { RelatedLawRef, RelatedTsutatsuRef } from '../services/related-law-parser.js';
+import { parseRelatedReferences } from '../services/related-law-parser.js';
 import { parseTaxAnswer } from '../services/tax-answer-parser.js';
 import { renderQaMarkdown, renderTaxAnswerMarkdown } from '../services/tax-answer-render.js';
 import { parseTsutatsuSection, TsutatsuParseError } from '../services/tsutatsu-parser.js';
@@ -537,12 +539,59 @@ export async function getQa(args: GetQaArgs, options: { fetchImpl?: typeof fetch
   }
 
   if (args.format === 'json') {
+    // Issue #22: 【関係法令通達】を法令と通達の参照に分け、houki-egov-mcp / nta_get_tsutatsu へ案内する
+    const { related_laws, related_tsutatsu } = parseRelatedReferences(qa.relatedLaws);
+    const next_actions = relatedNextActions(related_laws, related_tsutatsu);
     return {
       qa,
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+      ...(related_laws.length > 0 ? { related_laws } : {}),
+      ...(related_tsutatsu.length > 0 ? { related_tsutatsu } : {}),
+      ...(next_actions.length > 0 ? { next_actions } : {}),
     };
   }
   return renderQaMarkdown(qa);
+}
+
+/**
+ * Issue #22: 関係法令・通達の参照から next_actions を作る。
+ *
+ * - 法令: 条まで読めたもので、houki-egov-mcp の get_law で引ける見込みがあるもの。
+ *   条約（「日米租税条約」のような通称で e-Gov の法令名と一致しない）と、改正前の法令
+ *   （「旧所得税法」「改正前厚生年金保険法」。get_law は現行の条文を返す）は案内しない
+ * - 通達: nta_get_tsutatsu が扱う基本通達 4 種で、番号まで読めたもの。番号の後ろの「(4)」のような
+ *   細目は nta_get_tsutatsu の clause に含めない
+ * - 同じ案内は 1 回だけ
+ */
+function relatedNextActions(laws: RelatedLawRef[], tsutatsu: RelatedTsutatsuRef[]): NextAction[] {
+  const actions: NextAction[] = [];
+  const seen = new Set<string>();
+  const push = (a: NextAction) => {
+    const key = JSON.stringify(a.example);
+    if (seen.has(key)) return;
+    seen.add(key);
+    actions.push(a);
+  };
+  for (const l of laws) {
+    if (!l.article) continue;
+    if (!/(法|令|規則|法律)$/.test(l.law_name)) continue;
+    if (/改正前|^旧/.test(l.law_name)) continue;
+    push(
+      NEXT_ACTIONS.readRelatedLaw({
+        law_name: l.law_name,
+        article: l.article,
+        paragraph: l.paragraph,
+        item: l.item,
+      })
+    );
+  }
+  for (const t of tsutatsu) {
+    if (!t.clause || !TSUTATSU_URL_ROOTS[t.name]) continue;
+    const clause = t.clause.replace(/\([^)]*\)$/, '');
+    if (!clause) continue;
+    push(NEXT_ACTIONS.readRelatedTsutatsu(t.name, clause));
+  }
+  return actions;
 }
 
 /**

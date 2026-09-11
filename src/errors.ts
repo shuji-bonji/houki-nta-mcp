@@ -175,6 +175,30 @@ export const NEXT_ACTIONS = {
     reason: `${mcpHint} の管轄リソースです。該当 MCP に切り替えてください`,
     example: { mcp: mcpHint },
   }),
+  /** Issue #22: 質疑応答事例の関係法令の条文を houki-egov-mcp で読むよう案内する（成功時の応答用） */
+  readRelatedLaw: (ref: {
+    law_name: string;
+    article: string;
+    paragraph?: number;
+    item?: number;
+  }): NextAction => ({
+    action: 'delegate_to_mcp',
+    reason: '質疑応答事例は参考資料で法的拘束力がない。根拠は法律本文で確認する',
+    example: {
+      mcp: 'houki-egov',
+      tool: 'get_law',
+      law_name: ref.law_name,
+      article: ref.article,
+      ...(ref.paragraph !== undefined ? { paragraph: ref.paragraph } : {}),
+      ...(ref.item !== undefined ? { item: ref.item } : {}),
+    },
+  }),
+  /** Issue #22: 質疑応答事例が挙げる基本通達の本文を nta_get_tsutatsu で読むよう案内する */
+  readRelatedTsutatsu: (name: string, clause: string): NextAction => ({
+    action: 'nta_get_tsutatsu',
+    reason: '質疑応答事例が挙げている通達の本文を確認する',
+    example: { name, clause },
+  }),
   /** Issue #20: 通達が解釈している法律の本文を houki-egov-mcp で読むよう案内する（成功時の応答用） */
   readBaseLaw: (lawName: string): NextAction => ({
     action: 'delegate_to_mcp',
