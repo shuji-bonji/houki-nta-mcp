@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 件数を数えるのは検索が 0 件のときだけ（`countDocuments()` / `listDocumentTaxonomies()` を `src/services/db-search.ts` に追加、判定は `src/tools/handlers.ts` の `explainDocZeroHits()`）
 - 5 ツールの説明（`tools/list` の `description`）に、DB に無いときは `DOC_NOT_FOUND` を返すことを追記
 - `NEXT_ACTIONS.bulkDownloadDocs(flag)` を追加（`bulkDownload()` は基本通達用の `--bulk-download --tsutatsu=…`）
+- **stderr のログ**: `meta` を JSON で書ける値に限った（`src/utils/logger.ts` の `JsonObject`）。bulk download の失敗ログの `meta.error` は、文字列（`err.message`）から `{ name, message }` のオブジェクトに変わる。`logger.error` は `catch` で受け取った値をそのまま受け付け、`stack` も出す
+- 文字列の連結（`+`）をテンプレートリテラルにそろえた（出力される文字列は変わらない）
 
 ### Added
 

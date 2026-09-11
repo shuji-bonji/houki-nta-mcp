@@ -37,6 +37,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  logger.error('server', 'fatal error', error instanceof Error ? error : new Error(String(error)));
+  logger.error('server', 'fatal error', error);
   process.exit(1);
 });

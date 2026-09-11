@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 
 import type DatabaseT from 'better-sqlite3';
 import type { NtaDocument } from '../types/document.js';
-import { logger } from '../utils/logger.js';
+import { logger, toMeta } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotDocumentTable } from './db-snapshot.js';
 import {
@@ -165,8 +165,10 @@ export async function bulkDownloadJimuUnei(
       documentsFetched++;
     } catch (err) {
       documentsFailed++;
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn('jimu-unei-bulk', `失敗: ${t.title.slice(0, 40)}`, { url: t.url, error: msg });
+      logger.warn('jimu-unei-bulk', `失敗: ${t.title.slice(0, 40)}`, {
+        url: t.url,
+        error: toMeta(err),
+      });
     }
   }
 

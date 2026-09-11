@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import type DatabaseT from 'better-sqlite3';
 
 import { TSUTATSU_TOC_STYLES, TSUTATSU_URL_ROOTS } from '../constants.js';
-import { logger } from '../utils/logger.js';
+import { logger, toMeta } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotClauseTable } from './db-snapshot.js';
 import type { BaselineDocType, BulkRunRecord } from './health-store.js';
@@ -364,10 +364,9 @@ export async function bulkDownloadTsutatsu(
       clausesCount += sec.clauses.length;
     } catch (err) {
       sectionsFailed++;
-      const msg = err instanceof Error ? err.message : String(err);
       logger.warn('bulk-downloader', `失敗: 第${t.chapter}章 第${t.section}節`, {
         url: t.url,
-        error: msg,
+        error: toMeta(err),
       });
       // 想定外のエラー（SQLite 制約違反 / JSON エラー等）でも fail-soft で次の節に進む。
       // bulk DL 全体を止めると 1 件のバグで数百節が無駄になるため、ログ警告で済ませる。
@@ -530,11 +529,10 @@ export function writeBackLiveSection(
     return count;
   } catch (err) {
     // best effort cache: 失敗してもユーザー側の応答は変えない
-    const msg = err instanceof Error ? err.message : String(err);
     logger.warn('bulk-downloader', 'writeBackLiveSection 失敗（無視）', {
       formalName: options.formalName,
       sectionUrl: options.sectionUrl,
-      error: msg,
+      error: toMeta(err),
     });
     return 0;
   }

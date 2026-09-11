@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 
 import type DatabaseT from 'better-sqlite3';
 import type { NtaDocument } from '../types/document.js';
-import { logger } from '../utils/logger.js';
+import { logger, toMeta } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import {
   type BunshoAppendix,
@@ -128,8 +128,10 @@ export async function bulkDownloadBunshokaitou(
         targets.push({ url: it.url, title: it.title, issuedAt: it.issuedAt });
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn('bunsho-bulk', `税目別索引失敗: ${t.taxonomy}`, { url: t.indexUrl, error: msg });
+      logger.warn('bunsho-bulk', `税目別索引失敗: ${t.taxonomy}`, {
+        url: t.indexUrl,
+        error: toMeta(err),
+      });
     }
   }
 
@@ -194,9 +196,8 @@ export async function bulkDownloadBunshokaitou(
           const appendix = await fetchNtaPage(appendixUrl, fetchImpl ? { fetchImpl } : {});
           appendices.push({ url: appendix.sourceUrl, html: appendix.html });
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
           logger.warn('bunsho-bulk', `別紙の取得に失敗 (本文だけで続行): ${appendixUrl}`, {
-            error: msg,
+            error: toMeta(err),
           });
         }
       }
@@ -245,8 +246,10 @@ export async function bulkDownloadBunshokaitou(
       perTaxonomy[tx].fetched++;
     } catch (err) {
       documentsFailed++;
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn('bunsho-bulk', `失敗: ${t.title.slice(0, 40)}`, { url: t.url, error: msg });
+      logger.warn('bunsho-bulk', `失敗: ${t.title.slice(0, 40)}`, {
+        url: t.url,
+        error: toMeta(err),
+      });
       // taxonomy を URL から推測して failed カウント
       const txMatch = t.url.match(/bunshokaito\/([^/]+)\//);
       const tx = txMatch ? txMatch[1] : '(unknown)';

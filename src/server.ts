@@ -135,11 +135,7 @@ export function createServer(): Server {
         detail: { cause },
         tool: name,
       });
-      logger.error(
-        'server',
-        `tool ${name} threw`,
-        error instanceof Error ? error : new Error(String(error))
-      );
+      logger.error('server', `tool ${name} threw`, error);
       return {
         content: [{ type: 'text', text: JSON.stringify(err, null, 2) }],
         isError: true,

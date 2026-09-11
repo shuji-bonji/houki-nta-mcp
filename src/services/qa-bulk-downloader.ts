@@ -14,7 +14,7 @@ import * as cheerio from 'cheerio';
 import type { QaTopic } from '../constants.js';
 import { QA_TOPICS } from '../constants.js';
 import type { NtaDocument } from '../types/document.js';
-import { logger } from '../utils/logger.js';
+import { logger, toMeta } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotDocumentTable } from './db-snapshot.js';
 import {
@@ -146,8 +146,7 @@ export async function bulkDownloadQa(
       const limited = options.perTopicLimit ? items.slice(0, options.perTopicLimit) : items;
       targets.push(...limited);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn('qa-bulk', `税目別索引失敗: ${topic}`, { url: indexUrl, error: msg });
+      logger.warn('qa-bulk', `税目別索引失敗: ${topic}`, { url: indexUrl, error: toMeta(err) });
     }
   }
 
@@ -270,10 +269,9 @@ export async function bulkDownloadQa(
       perTopic[t.topic].fetched++;
     } catch (err) {
       documentsFailed++;
-      const msg = err instanceof Error ? err.message : String(err);
       logger.warn('qa-bulk', `失敗: ${t.topic}/${t.category}/${t.id}`, {
         url: t.url,
-        error: msg,
+        error: toMeta(err),
       });
       perTopic[t.topic] ??= { fetched: 0, failed: 0 };
       perTopic[t.topic].failed++;

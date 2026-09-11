@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto';
 
 import type DatabaseT from 'better-sqlite3';
 import type { NtaDocument } from '../types/document.js';
-import { logger } from '../utils/logger.js';
+import { logger, toMeta } from '../utils/logger.js';
 import {
   buildConditionalFetchOptions,
   loadDocumentConditionState,
@@ -183,8 +183,10 @@ export async function bulkDownloadKaisei(
       documentsFetched++;
     } catch (err) {
       documentsFailed++;
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn('kaisei-bulk', `失敗: ${t.title.slice(0, 40)}`, { url: t.url, error: msg });
+      logger.warn('kaisei-bulk', `失敗: ${t.title.slice(0, 40)}`, {
+        url: t.url,
+        error: toMeta(err),
+      });
       // fail-soft: 想定外エラーでも次の document へ
     }
   }

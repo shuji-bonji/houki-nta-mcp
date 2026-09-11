@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import type DatabaseT from 'better-sqlite3';
 import * as cheerio from 'cheerio';
 import type { AttachedPdf, NtaDocument } from '../types/document.js';
-import { logger } from '../utils/logger.js';
+import { logger, toMeta } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotDocumentTable } from './db-snapshot.js';
 import {
@@ -238,8 +238,7 @@ export async function bulkDownloadTaxAnswer(
       documentsFetched++;
     } catch (err) {
       documentsFailed++;
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn('tax-answer-bulk', `失敗: No.${t.no}`, { url: t.url, error: msg });
+      logger.warn('tax-answer-bulk', `失敗: No.${t.no}`, { url: t.url, error: toMeta(err) });
     }
   }
 
