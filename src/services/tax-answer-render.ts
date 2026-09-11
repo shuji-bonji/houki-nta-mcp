@@ -33,7 +33,7 @@ export function renderTaxAnswerMarkdown(t: TaxAnswer): string {
   lines.push('');
   lines.push(`> ${NTA_GENERAL_INFO_LEGAL_STATUS.note}`);
 
-  return lines.join('\n').trimEnd() + '\n';
+  return `${lines.join('\n').trimEnd()}\n`;
 }
 
 /** 質疑応答事例を Markdown に整形 */
@@ -85,5 +85,5 @@ export function renderQaMarkdown(q: QaJirei): string {
   lines.push('');
   lines.push(`> ${NTA_GENERAL_INFO_LEGAL_STATUS.note}`);
 
-  return lines.join('\n').trimEnd() + '\n';
+  return `${lines.join('\n').trimEnd()}\n`;
 }

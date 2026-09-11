@@ -238,9 +238,7 @@ export async function getTsutatsu(
       'TSUTATSU_NOT_FOUND',
       `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`,
       {
-        hint:
-          `先に \`houki-nta-mcp --bulk-download --tsutatsu="${resolved.formal}"\` を実行して ` +
-          'DB に投入してください（Phase 2d 以降は他通達も bulk DL 経由で対応）。',
+        hint: `先に \`houki-nta-mcp --bulk-download --tsutatsu="${resolved.formal}"\` を実行して DB に投入してください（Phase 2d 以降は他通達も bulk DL 経由で対応）。`,
         next_actions: [NEXT_ACTIONS.bulkDownload(resolved.formal)],
         supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
         resolved,
@@ -252,9 +250,7 @@ export async function getTsutatsu(
   const parsed = parseClauseNumber(args.clause);
   if (!parsed) {
     return makeError('INVALID_ARGUMENT', `clause の形式が不正: "${args.clause}"`, {
-      hint:
-        'ライブ取得には「章-節-条」形式（例: "5-1-9" / "1-4-13の2"）が必要です。' +
-        '他通達体系（条-項）の場合は `--bulk-download` で DB 投入してください',
+      hint: 'ライブ取得には「章-節-条」形式（例: "5-1-9" / "1-4-13の2"）が必要です。他通達体系（条-項）の場合は `--bulk-download` で DB 投入してください',
     });
   }
 
@@ -505,11 +501,7 @@ export function explainDocZeroHits(
       'DOC_NOT_FOUND',
       `ローカル DB に${meta.label}が 1 件も無いため、検索できません（「該当なし」という結果ではありません）`,
       {
-        hint:
-          `MCP サーバーが開いている DB（${dbPath}）に${meta.label}（doc_type="${docType}"）が入っていません。` +
-          `\`houki-nta-mcp ${meta.flag}\` で投入してください。` +
-          '投入したはずの場合は、bulk download を実行した環境と MCP サーバーとで、' +
-          '環境変数 HOUKI_NTA_DB_PATH / XDG_CACHE_HOME が同じか確認してください',
+        hint: `MCP サーバーが開いている DB（${dbPath}）に${meta.label}（doc_type="${docType}"）が入っていません。\`houki-nta-mcp ${meta.flag}\` で投入してください。投入したはずの場合は、bulk download を実行した環境と MCP サーバーとで、環境変数 HOUKI_NTA_DB_PATH / XDG_CACHE_HOME が同じか確認してください`,
         next_actions: [NEXT_ACTIONS.bulkDownloadDocs(meta.flag)],
         tool: meta.tool,
       }
@@ -533,9 +525,7 @@ export function explainDocZeroHits(
       ? `税目を絞って投入した場合は、\`houki-nta-mcp ${meta.flag} ${meta.taxonomyFlag}=${args.taxonomy}\` で追加できます`
       : '';
     return {
-      hint:
-        `DB の${meta.label} ${total} 件のうち、${argName}="${args.taxonomy}" の文書はありません。` +
-        `${argName} を外すか、available_taxonomies の値を指定してください。${addCommand}`,
+      hint: `DB の${meta.label} ${total} 件のうち、${argName}="${args.taxonomy}" の文書はありません。${argName} を外すか、available_taxonomies の値を指定してください。${addCommand}`,
       available_taxonomies: listDocumentTaxonomies(db, docType),
       ...withFreshness(fresh()),
     };
@@ -549,9 +539,7 @@ export function explainDocZeroHits(
     const scopeLabel = args.taxonomy !== undefined ? `（${argName}="${args.taxonomy}"）` : '';
     const which = args.hasPdf ? 'PDF 付き' : 'PDF 無し';
     return {
-      hint:
-        `DB の${meta.label}${scopeLabel} ${scoped} 件に、${which}の文書はありません。` +
-        'hasPdf を外して検索してください',
+      hint: `DB の${meta.label}${scopeLabel} ${scoped} 件に、${which}の文書はありません。hasPdf を外して検索してください`,
       ...withFreshness(fresh(args.taxonomy)),
     };
   }
@@ -563,9 +551,7 @@ export function explainDocZeroHits(
   ];
   const scopeLabel = conditions.length > 0 ? `（${conditions.join('、')}）` : '';
   return {
-    hint:
-      `該当なし。DB の${meta.label}${scopeLabel} ${searched} 件に「${args.keyword}」に合う文書はありません。` +
-      '別のキーワードで試してください',
+    hint: `該当なし。DB の${meta.label}${scopeLabel} ${searched} 件に「${args.keyword}」に合う文書はありません。別のキーワードで試してください`,
     ...withFreshness(fresh(args.taxonomy)),
   };
 }
@@ -586,9 +572,7 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
     return {
       results: [],
       keyword: args.keyword,
-      hint:
-        `質疑応答事例はすべて税務（domain="tax"）の資料のため、domain="${args.domain}" に当たる文書はありません。` +
-        '税目で絞り込むときは topic を使ってください',
+      hint: `質疑応答事例はすべて税務（domain="tax"）の資料のため、domain="${args.domain}" に当たる文書はありません。税目で絞り込むときは topic を使ってください`,
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   }
@@ -1378,9 +1362,7 @@ export async function handleNtaInspectPdfMeta(
         'DOC_NOT_FOUND',
         `${args.docType} の docId="${args.docId}" は DB に未登録です`,
         {
-          hint:
-            `\`--bulk-download-${args.docType === 'tax-answer' ? 'tax-answer' : args.docType}\`` +
-            ' で投入済みか確認してください。docId が正しいかも `nta_search_*` で検証可能',
+          hint: `\`--bulk-download-${args.docType === 'tax-answer' ? 'tax-answer' : args.docType}\` で投入済みか確認してください。docId が正しいかも \`nta_search_*\` で検証可能`,
         }
       );
     }
@@ -1419,10 +1401,7 @@ export async function handleNtaInspectPdfMeta(
           ? 'extract_tables'
           : 'read_text',
         min_pdf_reader_version: '0.3.0',
-        note:
-          '本文取得は pdf-reader-mcp に委譲（責務分離）。' +
-          'comparison / attachment は extract_tables (v0.3.0+) で表構造を保持したまま抽出するのが最優先。' +
-          'それ以外は read_text。examples を kind 別に参考にしてください。',
+        note: '本文取得は pdf-reader-mcp に委譲（責務分離）。comparison / attachment は extract_tables (v0.3.0+) で表構造を保持したまま抽出するのが最優先。それ以外は read_text。examples を kind 別に参考にしてください。',
         examples,
       },
       // v0.9.1: docType 別の legal_status を返す (Issue #1)

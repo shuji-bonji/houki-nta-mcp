@@ -398,10 +398,7 @@ export async function bulkDownloadTsutatsu(
 
   onProgress?.({
     phase: 'done',
-    message:
-      `完了: ${sectionsFetched}/${total} 節, ${clausesCount} clauses ` +
-      `(304: ${sectionsNotModified}, 同内容: ${sectionsContentSame}, 更新: ${sectionsContentChanged}) ` +
-      `${(durationMs / 1000).toFixed(1)}s`,
+    message: `完了: ${sectionsFetched}/${total} 節, ${clausesCount} clauses (304: ${sectionsNotModified}, 同内容: ${sectionsContentSame}, 更新: ${sectionsContentChanged}) ${(durationMs / 1000).toFixed(1)}s`,
   });
 
   const result: BulkDownloadResult = {

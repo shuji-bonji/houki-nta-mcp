@@ -133,8 +133,7 @@ export function evaluateHealth(
   if (shouldWarnFailRate(record, doc_type)) {
     const t = FAIL_THRESHOLDS[doc_type];
     reasons.push(
-      `fail rate threshold 超過: failed=${record.documentsFailed}/${record.totalEntries} ` +
-        `(MIN_ABS=${t.MIN_ABS}, MIN_RATE=${(t.MIN_RATE * 100).toFixed(1)}%)`
+      `fail rate threshold 超過: failed=${record.documentsFailed}/${record.totalEntries} (MIN_ABS=${t.MIN_ABS}, MIN_RATE=${(t.MIN_RATE * 100).toFixed(1)}%)`
     );
   }
 
@@ -142,16 +141,14 @@ export function evaluateHealth(
     const median = getMedianTotal(baseline);
     const diff = Math.abs(record.totalEntries - median) / median;
     reasons.push(
-      `count drift threshold 超過: total=${record.totalEntries} vs median=${median} ` +
-        `(${(diff * 100).toFixed(1)}% drift, threshold=${(COUNT_DRIFT_RATIO * 100).toFixed(0)}%)`
+      `count drift threshold 超過: total=${record.totalEntries} vs median=${median} (${(diff * 100).toFixed(1)}% drift, threshold=${(COUNT_DRIFT_RATIO * 100).toFixed(0)}%)`
     );
   }
 
   if (shouldWarnStructuralChange(record)) {
     const r = record.updatedDocs / record.totalEntries;
     reasons.push(
-      `構造変質の疑い: updatedDocs=${record.updatedDocs}/${record.totalEntries} ` +
-        `(${(r * 100).toFixed(1)}% 一斉更新, threshold=${(STRUCTURAL_RATIO * 100).toFixed(0)}%)`
+      `構造変質の疑い: updatedDocs=${record.updatedDocs}/${record.totalEntries} (${(r * 100).toFixed(1)}% 一斉更新, threshold=${(STRUCTURAL_RATIO * 100).toFixed(0)}%)`
     );
   }
 

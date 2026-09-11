@@ -265,7 +265,7 @@ async function runBaselineDriftCli(args: CliArgs): Promise<void> {
     `\n[drift-check] ${result.entries.length - result.driftCount}/${result.entries.length} OK, drift=${result.driftCount} (${(result.durationMs / 1000).toFixed(1)}s)\n`
   );
 
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 
   if (args.strict && result.driftCount > 0) {
     process.stderr.write(
@@ -384,7 +384,7 @@ async function runBulkDownloadTaxAnswer(args: CliArgs): Promise<void> {
         else process.stderr.write(`[${p.phase}] ${p.message}\n`);
       },
     });
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {
     closeDb(db);
   }
@@ -407,7 +407,7 @@ async function runBulkDownloadQa(args: CliArgs): Promise<void> {
         else process.stderr.write(`[${p.phase}] ${p.message}\n`);
       },
     });
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {
     closeDb(db);
   }
@@ -437,7 +437,7 @@ async function runBulkDownloadBunshokaitou(args: CliArgs): Promise<void> {
         }
       },
     });
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {
     closeDb(db);
   }
@@ -461,7 +461,7 @@ async function runBulkDownloadJimuUnei(args: CliArgs): Promise<void> {
         }
       },
     });
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {
     closeDb(db);
   }
@@ -538,7 +538,7 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
     }
 
     process.stdout.write(
-      JSON.stringify({ summary, aggregation, health: evaluation }, null, 2) + '\n'
+      `${JSON.stringify({ summary, aggregation, health: evaluation }, null, 2)}\n`
     );
   } finally {
     closeDb(db);
@@ -562,7 +562,7 @@ async function runRefreshStale(args: CliArgs, staleDays: number): Promise<void> 
 
     if (!args.refreshStale) {
       // dry-run: 一覧 JSON を返すだけ
-      process.stdout.write(JSON.stringify(stale, null, 2) + '\n');
+      process.stdout.write(`${JSON.stringify(stale, null, 2)}\n`);
       process.stderr.write(`[refresh-stale] dry-run（--apply で再 DL を実行）\n`);
       return;
     }
@@ -594,7 +594,7 @@ async function runRefreshStale(args: CliArgs, staleDays: number): Promise<void> 
         summary.push({ formalName, status: 'error', detail: msg });
       }
     }
-    process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
   } finally {
     closeDb(db);
   }
@@ -645,7 +645,7 @@ async function runBulkDownloadAll(args: CliArgs): Promise<void> {
       const mark = s.status === 'ok' ? '✓' : '✗';
       process.stderr.write(`  ${mark} ${s.formalName}: ${s.detail}\n`);
     }
-    process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
   } finally {
     closeDb(db);
   }
@@ -671,7 +671,7 @@ async function runBulkDownload(args: CliArgs): Promise<void> {
       },
     });
 
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {
     closeDb(db);
   }
@@ -736,7 +736,7 @@ async function runHealthCheckCli(args: CliArgs): Promise<void> {
     }
   }
 
-  process.stdout.write(JSON.stringify({ ...result, baselineStaleness }, null, 2) + '\n');
+  process.stdout.write(`${JSON.stringify({ ...result, baselineStaleness }, null, 2)}\n`);
 
   // --strict 指定時かつ fail がある場合は exit code 1
   if (args.strict && result.fail > 0) {

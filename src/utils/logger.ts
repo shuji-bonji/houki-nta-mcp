@@ -20,7 +20,7 @@ interface LogPayload {
 
 function emit(payload: LogPayload): void {
   // stderr に書く（stdio MCP プロトコルを汚染しない）
-  process.stderr.write(JSON.stringify(payload) + '\n');
+  process.stderr.write(`${JSON.stringify(payload)}\n`);
 }
 
 function makeLogger(level: LogLevel) {

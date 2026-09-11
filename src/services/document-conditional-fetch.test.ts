@@ -41,7 +41,7 @@ function seedDoc(
     args.fetchedAt ?? '2026-05-01T00:00:00Z',
     args.fullText ?? '本文',
     '[]',
-    args.contentHash ?? 'hash-' + args.docId,
+    args.contentHash ?? `hash-${args.docId}`,
     args.lastModified ?? null,
     args.etag ?? null
   );

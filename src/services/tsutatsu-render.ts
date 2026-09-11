@@ -67,7 +67,7 @@ export function renderClauseMarkdown(
     lines.push(`> ${TSUTATSU_LEGAL_STATUS.note}`);
   }
 
-  return lines.join('\n').trimEnd() + '\n';
+  return `${lines.join('\n').trimEnd()}\n`;
 }
 
 /** セクション全体を Markdown に整形する（章タイトル / 節タイトル / 全 clause） */
@@ -102,5 +102,5 @@ export function renderSectionMarkdown(section: TsutatsuSection): string {
   lines.push('');
   lines.push(`> ${TSUTATSU_LEGAL_STATUS.note}`);
 
-  return lines.join('\n').trimEnd() + '\n';
+  return `${lines.join('\n').trimEnd()}\n`;
 }

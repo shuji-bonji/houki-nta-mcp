@@ -193,10 +193,7 @@ export async function bulkDownloadKaisei(
   const durationMs = Date.now() - startMs;
   onProgress?.({
     phase: 'done',
-    message:
-      `完了: ${documentsFetched}/${targets.length} docs ` +
-      `(304: ${counts.notModified}, 同内容: ${counts.contentSame}, 更新: ${counts.contentChanged}) ` +
-      `${(durationMs / 1000).toFixed(1)}s`,
+    message: `完了: ${documentsFetched}/${targets.length} docs (304: ${counts.notModified}, 同内容: ${counts.contentSame}, 更新: ${counts.contentChanged}) ${(durationMs / 1000).toFixed(1)}s`,
   });
 
   return {
