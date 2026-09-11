@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.14.1] - 2026-09-12
+
+**patch リリース** — 取得系の 3 ツール（`nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou`）が、docId を打ち間違えただけでも「DB に未投入です」と返して bulk download を案内していた問題を直した。Issue #23（検索 5 ツールの 0 件）と同じ分け方を取得系にも適用する。
+
+### Fixed
+
+- **取得系の docId 未発見を 2 つに分ける**: `explainDocIdNotFound()` を追加し、その種別の文書が DB に 1 件もないときだけ投入を案内する（`next_actions` は `cli_bulk_download`、`hint` に DB のパスと `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME`）。文書はあるが docId が無いときは「見つかりません」と返し、`available_doc_ids`（新しい順に 30 件）と検索ツールへの `next_actions`（`nta_search_kaisei_tsutatsu` など）を付ける。`code` は変えない（改正通達・事務運営指針は `TSUTATSU_NOT_FOUND`、文書回答事例は `DOC_NOT_FOUND`）。エラー応答に `tool`（呼ばれた取得ツール名）が入る
+
+### Docs
+
+- README のエラー応答の例を v0.14.1 の実際の応答に差し替え、「docId が見つからないとき」の節を追加
+
+### Tests
+
+- 12 件追加（3 ツール × 種別 0 件 / docId 誤り / 別種別だけの DB / 既存 docId）。合計 **616 tests**（4 skipped）
+
+### 利用側への影響
+
+- docId の誤りに対して bulk download を案内しなくなる。`next_actions[0].action` が `cli_bulk_download` かどうかで、投入が必要なのか docId が誤っているのかを判別できる
+
 ## [0.14.0] - 2026-09-12
 
 **minor リリース** — ツールの引数を inputSchema で厳密に扱い（未知の引数はエラー）、`nta_search_tsutatsu` の使われていなかった `type` / `domain` を削除した。あわせて、文書回答事例の税目の別表記をまとめて検索し、質疑応答事例の枝番号の号を `next_actions` に渡すようにした。houki-egov-mcp v0.6.0 と同じ仕組み。

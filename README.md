@@ -530,19 +530,32 @@ handler が `LawServiceError`（上の JSON 形式）を返した場合も `isEr
 
 ```json
 {
-  "error": "通達 docId=0025004-999 が見つかりません",
+  "error": "改正通達 docId=\"0025004-999\" は見つかりません",
   "code": "TSUTATSU_NOT_FOUND",
-  "hint": "nta_search_tsutatsu で正しい docId を検索してください",
+  "hint": "DB の改正通達 30 件に、この docId はありません。available_doc_ids（新しい順に 30 件）から選ぶか、nta_search_kaisei_tsutatsu で検索して docId を確かめてください。DB を投入した後に国税庁が公開した文書は、`houki-nta-mcp --bulk-download-kaisei` をもう一度実行すると取り込めます",
+  "available_doc_ids": [
+    { "docId": "0026003-067", "title": "消費税法基本通達の一部改正について（法令解釈通達）", "issuedAt": "2026-04-01" }
+  ],
   "next_actions": [
     {
-      "action": "nta_search_tsutatsu",
-      "reason": "キーワード検索で該当通達を探せます",
-      "example": { "keyword": "適格請求書" }
+      "action": "nta_search_kaisei_tsutatsu",
+      "reason": "キーワード検索で正しい docId を探せます"
     }
   ],
-  "retryable": false
+  "tool": "nta_get_kaisei_tsutatsu"
 }
 ```
+
+### docId が見つからないとき（v0.14.1）
+
+取得系の `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` は、指定された docId が DB に無いとき、理由を 2 つに分けて返します。
+
+| DB の状態 | 応答 |
+| --- | --- |
+| その種別の文書が 1 件もない | 「ローカル DB に◯◯が 1 件も無いため、docId=… を取得できません」。`hint` に DB のパスと環境変数、`next_actions` に投入コマンド（`cli_bulk_download`） |
+| 文書はあるが、その docId が無い | 「◯◯ docId=… は見つかりません」。`available_doc_ids`（新しい順に 30 件）と、検索ツールへの `next_actions` |
+
+v0.14.0 までは、どちらの場合も「DB に未投入です」と返して bulk download を案内していたため、docId を打ち間違えただけでも投入を勧めていました。
 
 ## ドキュメント
 

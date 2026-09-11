@@ -27,6 +27,7 @@ import {
 import { closeDb, defaultDbPath, openDb } from '../db/index.js';
 import {
   isLawServiceError,
+  type LawErrorCode,
   type LawServiceError,
   makeError,
   NEXT_ACTIONS,
@@ -588,6 +589,52 @@ export function explainDocZeroHits(
 }
 
 /**
+ * 取得系（改正通達・事務運営指針・文書回答事例）で、指定した docId が DB に無いときのエラー（v0.14.1）。
+ *
+ * v0.14.0 までは、その種別の文書が DB に入っていても「DB に未投入です」と返し、bulk download を案内していた。
+ * docId を打ち間違えただけの利用者にも投入を勧めることになるため、2 つに分ける。
+ *
+ * 1. その種別の文書が DB に 1 件も無い → 投入を案内する（`next_actions` は `cli_bulk_download`。検索ツールの DOC_NOT_FOUND と同じ）
+ * 2. 文書はあるが、その docId が無い → 「見つかりません」。`available_doc_ids` と、検索ツールへの `next_actions` を付ける
+ *
+ * `code` は v0.14.0 から変えない（改正通達・事務運営指針は TSUTATSU_NOT_FOUND、文書回答事例は DOC_NOT_FOUND）。
+ */
+export function explainDocIdNotFound(
+  db: DatabaseT.Database,
+  docType: 'kaisei' | 'jimu-unei' | 'bunshokaitou',
+  docId: string,
+  code: LawErrorCode,
+  getTool: string,
+  options: { dbPath?: string } = {}
+): LawServiceError {
+  const meta = DOC_SEARCH_META[docType];
+  const total = countDocuments(db, { docType });
+  if (total === 0) {
+    const dbPath = options.dbPath ?? defaultDbPath();
+    return makeError(
+      code,
+      `ローカル DB に${meta.label}が 1 件も無いため、docId="${docId}" を取得できません`,
+      {
+        hint: `MCP サーバーが開いている DB（${dbPath}）に${meta.label}（doc_type="${docType}"）が入っていません。\`houki-nta-mcp ${meta.flag}\` で投入してください。投入したはずの場合は、bulk download を実行した環境と MCP サーバーとで、環境変数 HOUKI_NTA_DB_PATH / XDG_CACHE_HOME が同じか確認してください`,
+        next_actions: [NEXT_ACTIONS.bulkDownloadDocs(meta.flag)],
+        tool: getTool,
+      }
+    );
+  }
+  return makeError(code, `${meta.label} docId="${docId}" は見つかりません`, {
+    hint: `DB の${meta.label} ${formatCount(total)} 件に、この docId はありません。available_doc_ids（新しい順に 30 件）から選ぶか、${meta.tool} で検索して docId を確かめてください。DB を投入した後に国税庁が公開した文書は、\`houki-nta-mcp ${meta.flag}\` をもう一度実行すると取り込めます`,
+    available_doc_ids: listAvailableDocIds(db, docType, 30),
+    next_actions: [
+      {
+        action: meta.tool,
+        reason: 'キーワード検索で正しい docId を探せます',
+      },
+    ],
+    tool: getTool,
+  });
+}
+
+/**
  * 文書回答事例の税目を別表記まで広げて探したことを search_notes に書く（v0.14.0）。
  * 広げなかったとき（別表記の無い税目・指定なし）は空配列。
  */
@@ -1087,10 +1134,14 @@ export async function handleNtaGetKaiseiTsutatsu(
   try {
     const doc = getDocumentFromDb(db, 'kaisei', args.docId);
     if (!doc) {
-      return makeError('TSUTATSU_NOT_FOUND', `改正通達 docId="${args.docId}" は DB に未投入です`, {
-        hint: '`houki-nta-mcp --bulk-download-kaisei` で 4 通達分の改正通達を投入してください',
-        available_doc_ids: listAvailableDocIds(db, 'kaisei', 30),
-      });
+      return explainDocIdNotFound(
+        db,
+        'kaisei',
+        args.docId,
+        'TSUTATSU_NOT_FOUND',
+        'nta_get_kaisei_tsutatsu',
+        options
+      );
     }
 
     if (args.format === 'json') {
@@ -1221,13 +1272,13 @@ export async function handleNtaGetJimuUnei(
   try {
     const doc = getDocumentFromDb(db, 'jimu-unei', args.docId);
     if (!doc) {
-      return makeError(
+      return explainDocIdNotFound(
+        db,
+        'jimu-unei',
+        args.docId,
         'TSUTATSU_NOT_FOUND',
-        `事務運営指針 docId="${args.docId}" は DB に未投入です`,
-        {
-          hint: '`houki-nta-mcp --bulk-download-jimu-unei` で投入してください',
-          available_doc_ids: listAvailableDocIds(db, 'jimu-unei', 30),
-        }
+        'nta_get_jimu_unei',
+        options
       );
     }
     if (args.format === 'json') {
@@ -1381,10 +1432,14 @@ export async function handleNtaGetBunshokaitou(
   try {
     const doc = getDocumentFromDb(db, 'bunshokaitou', args.docId);
     if (!doc) {
-      return makeError('DOC_NOT_FOUND', `文書回答事例 docId="${args.docId}" は DB に未投入です`, {
-        hint: '`houki-nta-mcp --bulk-download-bunshokaitou` で投入してください（全税目で約 30 分）',
-        available_doc_ids: listAvailableDocIds(db, 'bunshokaitou', 30),
-      });
+      return explainDocIdNotFound(
+        db,
+        'bunshokaitou',
+        args.docId,
+        'DOC_NOT_FOUND',
+        'nta_get_bunshokaitou',
+        options
+      );
     }
     if (args.format === 'json') {
       return {
