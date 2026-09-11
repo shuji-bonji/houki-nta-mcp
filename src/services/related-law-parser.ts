@@ -26,8 +26,12 @@ export interface RelatedLawRef {
   article?: string;
   /** 項 */
   paragraph?: number;
-  /** 号（「第9号の2」のような枝番号は数値で表せないので入れない。raw で確かめる） */
-  item?: number;
+  /**
+   * 号。houki-egov-mcp の get_law の `item` と同じ形。
+   * 枝番号の号（「第12号の8」）は文字列 "12の8"（v0.14.0 から。get_law は houki-egov-mcp v0.6.0 以上で受け付ける）。
+   * v0.13.0 までは枝番号の号を入れていなかった
+   */
+  item?: number | string;
   /** 別表への参照。例: "別表第二第7号ハ" */
   appendix?: string;
   /** この参照を読み取った元の要素（「、」で区切ったもの）。続きの要素では法令名が省かれている */
@@ -51,17 +55,27 @@ export interface RelatedReferences {
 }
 
 /** 条の後ろに続く「第N項」「第N号(のM)」を読む */
-function parseAfterArticle(rest: string): { paragraph?: number; item?: number } {
-  const out: { paragraph?: number; item?: number } = {};
+function parseAfterArticle(rest: string): { paragraph?: number; item?: number | string } {
+  const out: { paragraph?: number; item?: number | string } = {};
   let s = rest;
   const p = s.match(/^第(\d+)項/);
   if (p) {
     out.paragraph = Number(p[1]);
     s = s.slice(p[0].length);
   }
-  const it = s.match(/^第(\d+)号(の\d+)?/);
-  if (it && !it[2]) out.item = Number(it[1]);
+  const item = itemOf(s);
+  if (item !== undefined) out.item = item;
   return out;
+}
+
+/**
+ * 先頭の「第N号」「第N号のM」を get_law の item の形にする。
+ * 枝番号が無ければ数値（12）、あれば文字列（"12の8"）。号で始まらなければ undefined
+ */
+function itemOf(s: string): number | string | undefined {
+  const it = s.match(/^第(\d+)号((?:の\d+)*)/);
+  if (!it) return undefined;
+  return it[2] ? `${it[1]}${it[2]}` : Number(it[1]);
 }
 
 /** "第57条の2" → "57の2" */
@@ -164,12 +178,12 @@ export function parseRelatedReferences(paragraphs: string[]): RelatedReferences 
           continue;
         }
         if (ctx.article && /^第\d+号/.test(t)) {
-          const it = t.match(/^第(\d+)号(の\d+)?/);
+          const item = itemOf(t);
           result.related_laws.push({
             law_name: ctx.law_name,
             article: ctx.article,
             ...(ctx.paragraph !== undefined ? { paragraph: ctx.paragraph } : {}),
-            ...(it && !it[2] ? { item: Number(it[1]) } : {}),
+            ...(item !== undefined ? { item } : {}),
             raw,
           });
           continue;

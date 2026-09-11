@@ -39,8 +39,17 @@ describe('parseRelatedReferences — 法令', () => {
     ]);
   });
 
-  it('枝番号の号（「第12号の8」）は item に入れない（hojin/33/56）', () => {
-    expect(laws(['法人税法第2条第12号の8ハ'])).toEqual([{ law_name: '法人税法', article: '2' }]);
+  it('枝番号の号（「第12号の8」）は item に文字列 "12の8" で入れる（hojin/33/56、v0.14.0）', () => {
+    expect(laws(['法人税法第2条第12号の8ハ'])).toEqual([
+      { law_name: '法人税法', article: '2', item: '12の8' },
+    ]);
+  });
+
+  it('続きの要素の枝番号の号も文字列で入れる（v0.14.0）', () => {
+    expect(laws(['消費税法第2条第1項第8号、第8号の2'])).toEqual([
+      { law_name: '消費税法', article: '2', paragraph: 1, item: 8 },
+      { law_name: '消費税法', article: '2', paragraph: 1, item: '8の2' },
+    ]);
   });
 
   it('別表は appendix に入れる（shohi/10/05）', () => {

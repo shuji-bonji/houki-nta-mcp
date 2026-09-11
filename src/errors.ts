@@ -191,7 +191,7 @@ export const NEXT_ACTIONS = {
     law_name: string;
     article: string;
     paragraph?: number;
-    item?: number;
+    item?: number | string;
   }): NextAction => ({
     action: 'delegate_to_mcp',
     reason: '質疑応答事例は参考資料で法的拘束力がない。根拠は法律本文で確認する',
