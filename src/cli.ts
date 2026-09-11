@@ -146,7 +146,7 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
 
 使い方:
   houki-nta-mcp                              MCP サーバを起動（既定）
-  houki-nta-mcp --bulk-download-everything   通達本体 + 改正通達 + 事務運営指針 + 文書回答事例 を一括投入（推奨、約 50 分 / --bunsho-taxonomy で短縮可）
+  houki-nta-mcp --bulk-download-everything   通達本体 + 改正通達 + 事務運営指針 + 文書回答事例 + タックスアンサー + 質疑応答事例 の 6 種別を一括投入（推奨、約 100 分 / --bunsho-taxonomy・--tax-answer-taxonomy・--qa-topic で短縮可）
   houki-nta-mcp --bulk-download              特定通達を bulk DL してローカル DB に投入
   houki-nta-mcp --bulk-download-all          登録済み通達を全て順次 bulk DL（消基通/所基通/法基通/相基通）
   houki-nta-mcp --bulk-download-kaisei       4 通達分の改正通達一覧を順次 bulk DL（document テーブルへ投入）
@@ -276,20 +276,26 @@ async function runBaselineDriftCli(args: CliArgs): Promise<void> {
 }
 
 /**
- * v0.4.0: すべての種別を一括 bulk DL（通達本体 → 改正通達 → 事務運営指針 → 文書回答事例）。
+ * v0.4.0: すべての種別を一括 bulk DL
+ * （通達本体 → 改正通達 → 事務運営指針 → 文書回答事例 → タックスアンサー → 質疑応答事例）。
  *
  * 所要時間の目安:
  *   - 通達本体 4 通達: 計 10-15 分
  *   - 改正通達: 約 5-10 分
  *   - 事務運営指針: 約 1 分
  *   - 文書回答事例: 約 30 分超（`--bunsho-taxonomy` で絞り込み推奨）
- *   合計: 約 50 分（絞り込まない場合）
+ *   - タックスアンサー: 約 14 分（`--tax-answer-taxonomy` で絞り込み可）
+ *   - 質疑応答事例: 約 35 分（`--qa-topic` で絞り込み可）
+ *   合計: 約 100 分（絞り込まない場合）
+ *
+ * 1 種別が失敗しても次の種別へ進む（fail-soft）。失敗した種別は DB に入らないので、
+ * その種別の検索は DOC_NOT_FOUND を返す（v0.13.0 / Issue #23）。
  */
 async function runBulkDownloadEverything(args: CliArgs): Promise<void> {
   const dbPath = args.dbPath ?? defaultDbPath();
   process.stderr.write(`[bulk-download-everything] DB: ${dbPath}\n`);
   process.stderr.write(
-    `[bulk-download-everything] 順次実行: 通達本体 → 改正通達 → 事務運営指針 → 文書回答事例\n`
+    `[bulk-download-everything] 順次実行: 通達本体 → 改正通達 → 事務運営指針 → 文書回答事例 → タックスアンサー → 質疑応答事例\n`
   );
   if (args.bunshoTaxonomies?.length) {
     process.stderr.write(
@@ -301,31 +307,31 @@ async function runBulkDownloadEverything(args: CliArgs): Promise<void> {
     );
   }
 
-  // 4 種別を順番に実行（fail-soft、各種別が失敗しても次に進む）
-  process.stderr.write('\n[bulk-download-everything] (1/4) ===== 通達本体 =====\n');
+  // 6 種別を順番に実行（fail-soft、各種別が失敗しても次に進む）
+  process.stderr.write('\n[bulk-download-everything] (1/6) ===== 通達本体 =====\n');
   try {
     await runBulkDownloadAll(args);
   } catch (err) {
     process.stderr.write(
-      `[bulk-download-everything] (1/4) 通達本体 失敗: ${err instanceof Error ? err.message : String(err)}\n`
+      `[bulk-download-everything] (1/6) 通達本体 失敗: ${err instanceof Error ? err.message : String(err)}\n`
     );
   }
 
-  process.stderr.write('\n[bulk-download-everything] (2/4) ===== 改正通達 =====\n');
+  process.stderr.write('\n[bulk-download-everything] (2/6) ===== 改正通達 =====\n');
   try {
     await runBulkDownloadKaisei(args);
   } catch (err) {
     process.stderr.write(
-      `[bulk-download-everything] (2/4) 改正通達 失敗: ${err instanceof Error ? err.message : String(err)}\n`
+      `[bulk-download-everything] (2/6) 改正通達 失敗: ${err instanceof Error ? err.message : String(err)}\n`
     );
   }
 
-  process.stderr.write('\n[bulk-download-everything] (3/4) ===== 事務運営指針 =====\n');
+  process.stderr.write('\n[bulk-download-everything] (3/6) ===== 事務運営指針 =====\n');
   try {
     await runBulkDownloadJimuUnei(args);
   } catch (err) {
     process.stderr.write(
-      `[bulk-download-everything] (3/4) 事務運営指針 失敗: ${err instanceof Error ? err.message : String(err)}\n`
+      `[bulk-download-everything] (3/6) 事務運営指針 失敗: ${err instanceof Error ? err.message : String(err)}\n`
     );
   }
 
