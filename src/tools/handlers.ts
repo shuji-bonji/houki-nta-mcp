@@ -7,6 +7,7 @@
  */
 
 import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
+import type DatabaseT from 'better-sqlite3';
 import type { QaTopic } from '../constants.js';
 import {
   BUNSHOKAITOU_LEGAL_STATUS,
@@ -21,19 +22,28 @@ import {
   TSUTATSU_LEGAL_STATUS,
   TSUTATSU_URL_ROOTS,
 } from '../constants.js';
-import { closeDb, openDb } from '../db/index.js';
-import { makeError, NEXT_ACTIONS, type NextAction } from '../errors.js';
+import { closeDb, defaultDbPath, openDb } from '../db/index.js';
+import {
+  isLawServiceError,
+  type LawServiceError,
+  makeError,
+  NEXT_ACTIONS,
+  type NextAction,
+} from '../errors.js';
 import { writeBackLiveSection } from '../services/bulk-downloader.js';
 import type { ClauseRow } from '../services/db-search.js';
 import {
+  countDocuments,
   describeExpansionNotes,
   describeSearchNotes,
   getClauseFromDb,
   hasAnyClause,
   listAvailableClauses,
+  listDocumentTaxonomies,
   searchClauseFtsWithExpansion,
 } from '../services/db-search.js';
 import {
+  type FreshnessRange,
   summarizeFreshnessFromDocument,
   summarizeFreshnessFromSection,
 } from '../services/freshness.js';
@@ -50,6 +60,7 @@ import { parseTaxAnswer } from '../services/tax-answer-parser.js';
 import { renderQaMarkdown, renderTaxAnswerMarkdown } from '../services/tax-answer-render.js';
 import { parseTsutatsuSection, TsutatsuParseError } from '../services/tsutatsu-parser.js';
 import { describeImageNotes, renderClauseMarkdown } from '../services/tsutatsu-render.js';
+import type { DocType } from '../types/document.js';
 import type {
   GetQaArgs,
   GetTaxAnswerArgs,
@@ -410,20 +421,184 @@ function renderDbHit(row: ClauseRow, format: GetTsutatsuArgs['format'], tsutatsu
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Issue #23 (v0.13.0): 文書系の検索が 0 件のときの判定                          */
+/* -------------------------------------------------------------------------- */
+
+/** 文書系の検索ツールごとの表示名・CLI フラグ・絞り込み引数の名前 */
+interface DocSearchMeta {
+  /** 応答の文に使う種別名。例: '質疑応答事例' */
+  label: string;
+  /** ツール名 */
+  tool: string;
+  /** 種別ごとの bulk download フラグ。例: '--bulk-download-qa' */
+  flag: string;
+  /** 税目で絞る引数の名前（ツールの inputSchema 上の名前） */
+  taxonomyArg?: string;
+  /** 税目を絞って bulk download するフラグ。例: '--qa-topic' */
+  taxonomyFlag?: string;
+}
+
+const DOC_SEARCH_META: Record<DocType, DocSearchMeta> = {
+  'qa-jirei': {
+    label: '質疑応答事例',
+    tool: 'nta_search_qa',
+    flag: '--bulk-download-qa',
+    taxonomyArg: 'topic',
+    taxonomyFlag: '--qa-topic',
+  },
+  'tax-answer': {
+    label: 'タックスアンサー',
+    tool: 'nta_search_tax_answer',
+    flag: '--bulk-download-tax-answer',
+  },
+  kaisei: {
+    label: '改正通達',
+    tool: 'nta_search_kaisei_tsutatsu',
+    flag: '--bulk-download-kaisei',
+    taxonomyArg: 'taxonomy',
+  },
+  'jimu-unei': {
+    label: '事務運営指針',
+    tool: 'nta_search_jimu_unei',
+    flag: '--bulk-download-jimu-unei',
+    taxonomyArg: 'taxonomy',
+  },
+  bunshokaitou: {
+    label: '文書回答事例',
+    tool: 'nta_search_bunshokaitou',
+    flag: '--bulk-download-bunshokaitou',
+    taxonomyArg: 'taxonomy',
+    taxonomyFlag: '--bunsho-taxonomy',
+  },
+};
+
+/** 検索が 0 件でも、その種別の文書は DB にある場合に応答へ足すフィールド */
+export interface DocZeroHitInfo {
+  hint: string;
+  /** 絞り込んだ税目に文書が無いとき: その種別の文書が持つ税目の一覧 */
+  available_taxonomies?: string[];
+  freshness?: FreshnessRange;
+}
+
 /**
- * nta_search_qa — 質疑応答事例検索（スタブ）
+ * 文書系の検索が 0 件だったときに、理由を 4 つに分ける。
  *
- * Phase 1e では検索インデックスを持たないため未実装。Phase 2 (FTS5) で対応。
+ * 1. その種別の文書が DB に 1 件も無い → エラー `DOC_NOT_FOUND`（「該当なし」とは違うことを応答の形で示す）
+ * 2. 税目の絞り込み（topic / taxonomy）の範囲に文書が無い → 成功。絞り込みを外すよう案内し、税目の一覧を付ける
+ * 3. `hasPdf` の条件に合う文書が無い → 成功。`hasPdf` を外すよう案内する
+ * 4. 文書はあるが、キーワードに合わない → 成功。別のキーワードを案内し、`freshness` で DB の取得時点を示す
+ *
+ * 件数を数えるのは検索が 0 件のときだけなので、ヒットしたときの応答時間は変わらない。
+ */
+export function explainDocZeroHits(
+  db: DatabaseT.Database,
+  docType: DocType,
+  args: { keyword: string; taxonomy?: string; hasPdf?: boolean },
+  options: { dbPath?: string } = {}
+): LawServiceError | DocZeroHitInfo {
+  const meta = DOC_SEARCH_META[docType];
+  const total = countDocuments(db, { docType });
+  if (total === 0) {
+    const dbPath = options.dbPath ?? defaultDbPath();
+    return makeError(
+      'DOC_NOT_FOUND',
+      `ローカル DB に${meta.label}が 1 件も無いため、検索できません（「該当なし」という結果ではありません）`,
+      {
+        hint:
+          `MCP サーバーが開いている DB（${dbPath}）に${meta.label}（doc_type="${docType}"）が入っていません。` +
+          `\`houki-nta-mcp ${meta.flag}\` で投入してください。` +
+          '投入したはずの場合は、bulk download を実行した環境と MCP サーバーとで、' +
+          '環境変数 HOUKI_NTA_DB_PATH / XDG_CACHE_HOME が同じか確認してください',
+        next_actions: [NEXT_ACTIONS.bulkDownloadDocs(meta.flag)],
+        tool: meta.tool,
+      }
+    );
+  }
+
+  const fresh = (taxonomy?: string) =>
+    summarizeFreshnessFromDocument(
+      db,
+      docType,
+      taxonomy !== undefined ? [taxonomy] : undefined,
+      `\`${meta.flag}\``
+    ) ?? undefined;
+
+  const argName = meta.taxonomyArg ?? 'taxonomy';
+  if (
+    args.taxonomy !== undefined &&
+    countDocuments(db, { docType, taxonomy: args.taxonomy }) === 0
+  ) {
+    const addCommand = meta.taxonomyFlag
+      ? `税目を絞って投入した場合は、\`houki-nta-mcp ${meta.flag} ${meta.taxonomyFlag}=${args.taxonomy}\` で追加できます`
+      : '';
+    return {
+      hint:
+        `DB の${meta.label} ${total} 件のうち、${argName}="${args.taxonomy}" の文書はありません。` +
+        `${argName} を外すか、available_taxonomies の値を指定してください。${addCommand}`,
+      available_taxonomies: listDocumentTaxonomies(db, docType),
+      ...withFreshness(fresh()),
+    };
+  }
+
+  if (
+    args.hasPdf !== undefined &&
+    countDocuments(db, { docType, taxonomy: args.taxonomy, hasPdf: args.hasPdf }) === 0
+  ) {
+    const scoped = countDocuments(db, { docType, taxonomy: args.taxonomy });
+    const scopeLabel = args.taxonomy !== undefined ? `（${argName}="${args.taxonomy}"）` : '';
+    const which = args.hasPdf ? 'PDF 付き' : 'PDF 無し';
+    return {
+      hint:
+        `DB の${meta.label}${scopeLabel} ${scoped} 件に、${which}の文書はありません。` +
+        'hasPdf を外して検索してください',
+      ...withFreshness(fresh(args.taxonomy)),
+    };
+  }
+
+  const searched = countDocuments(db, { docType, taxonomy: args.taxonomy, hasPdf: args.hasPdf });
+  const conditions = [
+    ...(args.taxonomy !== undefined ? [`${argName}="${args.taxonomy}"`] : []),
+    ...(args.hasPdf !== undefined ? [`hasPdf=${args.hasPdf}`] : []),
+  ];
+  const scopeLabel = conditions.length > 0 ? `（${conditions.join('、')}）` : '';
+  return {
+    hint:
+      `該当なし。DB の${meta.label}${scopeLabel} ${searched} 件に「${args.keyword}」に合う文書はありません。` +
+      '別のキーワードで試してください',
+    ...withFreshness(fresh(args.taxonomy)),
+  };
+}
+
+function withFreshness(freshness: FreshnessRange | undefined): { freshness?: FreshnessRange } {
+  return freshness ? { freshness } : {};
+}
+
+/**
+ * nta_search_qa — 質疑応答事例の FTS5 検索。事前に `--bulk-download-qa` で DB 投入が必要。
  */
 export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: string } = {}) {
   const limit = args.limit ?? 10;
+  // Issue #23: v0.12.0 までは domain（tax / labor / …）を taxonomy（shotoku / shohi / …）と比べていたため、
+  // domain を付けると必ず 0 件だった。質疑応答事例はすべて税務なので、"tax" は絞り込まず、
+  // それ以外は DB を開かずに 0 件を返す。税目での絞り込みは topic で行う
+  if (args.domain !== undefined && args.domain !== 'tax') {
+    return {
+      results: [],
+      keyword: args.keyword,
+      hint:
+        `質疑応答事例はすべて税務（domain="tax"）の資料のため、domain="${args.domain}" に当たる文書はありません。` +
+        '税目で絞り込むときは topic を使ってください',
+      legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+    };
+  }
   const db = openDb(options.dbPath);
   try {
     const opts: { docType: 'qa-jirei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'qa-jirei',
       limit,
     };
-    if (args.domain) opts.taxonomy = args.domain;
+    if (args.topic) opts.taxonomy = args.topic;
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
     // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
@@ -432,15 +607,22 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
       ...describeExpansionNotes(expansion),
     ];
     if (hits.length === 0) {
+      const zero = explainDocZeroHits(
+        db,
+        'qa-jirei',
+        { keyword: args.keyword, taxonomy: args.topic, hasPdf: args.hasPdf },
+        options
+      );
+      if (isLawServiceError(zero)) return zero;
       return {
         results: [],
         keyword: args.keyword,
         ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
-        hint: '該当なし。`--bulk-download-qa` で DB 投入済みか確認してください',
+        ...zero,
         legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       };
     }
-    const taxonomyFilter = args.domain ? [args.domain] : undefined;
+    const taxonomyFilter = args.topic ? [args.topic] : undefined;
     const freshness = summarizeFreshnessFromDocument(
       db,
       'qa-jirei',
@@ -618,11 +800,18 @@ export async function handleNtaSearchTaxAnswer(
       ...describeExpansionNotes(expansion),
     ];
     if (hits.length === 0) {
+      const zero = explainDocZeroHits(
+        db,
+        'tax-answer',
+        { keyword: args.keyword, hasPdf: args.hasPdf },
+        options
+      );
+      if (isLawServiceError(zero)) return zero;
       return {
         results: [],
         keyword: args.keyword,
         ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
-        hint: '該当なし。`--bulk-download-tax-answer` で DB 投入済みか確認してください',
+        ...zero,
         legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       };
     }
@@ -807,13 +996,18 @@ export async function handleNtaSearchKaiseiTsutatsu(
     ];
 
     if (hits.length === 0) {
+      const zero = explainDocZeroHits(
+        db,
+        'kaisei',
+        { keyword: args.keyword, taxonomy: args.taxonomy, hasPdf: args.hasPdf },
+        options
+      );
+      if (isLawServiceError(zero)) return zero;
       return {
         results: [],
         keyword: args.keyword,
         ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
-        hint:
-          '該当なし。`--bulk-download-kaisei` で DB 投入済みか確認してください。' +
-          ' 別キーワードで再試行も推奨',
+        ...zero,
         legal_status: TSUTATSU_LEGAL_STATUS,
       };
     }
@@ -936,11 +1130,18 @@ export async function handleNtaSearchJimuUnei(
     ];
 
     if (hits.length === 0) {
+      const zero = explainDocZeroHits(
+        db,
+        'jimu-unei',
+        { keyword: args.keyword, taxonomy: args.taxonomy, hasPdf: args.hasPdf },
+        options
+      );
+      if (isLawServiceError(zero)) return zero;
       return {
         results: [],
         keyword: args.keyword,
         ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
-        hint: '該当なし。`--bulk-download-jimu-unei` で DB 投入済みか確認してください',
+        ...zero,
         legal_status: TSUTATSU_LEGAL_STATUS,
       };
     }
@@ -1079,11 +1280,18 @@ export async function handleNtaSearchBunshokaitou(
       ...describeExpansionNotes(expansion),
     ];
     if (hits.length === 0) {
+      const zero = explainDocZeroHits(
+        db,
+        'bunshokaitou',
+        { keyword: args.keyword, taxonomy: args.taxonomy, hasPdf: args.hasPdf },
+        options
+      );
+      if (isLawServiceError(zero)) return zero;
       return {
         results: [],
         keyword: args.keyword,
         ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
-        hint: '該当なし。`--bulk-download-bunshokaitou` で DB 投入済みか確認してください',
+        ...zero,
         // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
         legal_status: BUNSHOKAITOU_LEGAL_STATUS,
       };

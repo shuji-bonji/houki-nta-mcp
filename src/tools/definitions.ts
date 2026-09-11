@@ -9,7 +9,7 @@
  */
 
 import type { Tool } from '@modelcontextprotocol/server';
-import { DOMAINS, LIMITS, OUTPUT_FORMATS } from '../constants.js';
+import { DOMAINS, LIMITS, OUTPUT_FORMATS, QA_TOPICS } from '../constants.js';
 
 export const tools: Tool[] = [
   {
@@ -72,7 +72,8 @@ export const tools: Tool[] = [
   {
     name: 'nta_search_qa',
     description:
-      '国税庁の質疑応答事例（9 税目: 所得税/源泉所得税/譲渡所得/相続税・贈与税/財産の評価/法人税/消費税/印紙税/法定調書）を FTS5 でキーワード検索する。事前に `--bulk-download-qa` で DB 投入が必要。',
+      '国税庁の質疑応答事例（9 税目: 所得税/源泉所得税/譲渡所得/相続税・贈与税/財産の評価/法人税/消費税/印紙税/法定調書）を FTS5 でキーワード検索する。事前に `--bulk-download-qa` で DB 投入が必要。' +
+      'この種別の文書が DB に 1 件も無いときはエラー DOC_NOT_FOUND を返す（キーワードに合わないだけの 0 件は results: [] で返す）。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -84,7 +85,14 @@ export const tools: Tool[] = [
         domain: {
           type: 'string',
           enum: [...DOMAINS],
-          description: '税目で絞り込み',
+          description:
+            '分野で絞り込み。質疑応答事例はすべて税務なので、"tax" は絞り込まず、それ以外は 0 件になる。税目で絞り込むときは topic を使う',
+        },
+        topic: {
+          type: 'string',
+          enum: [...QA_TOPICS],
+          description:
+            '税目で絞り込み。shotoku=所得税 / gensen=源泉所得税 / joto=譲渡所得 / sozoku=相続税・贈与税 / hyoka=財産の評価 / hojin=法人税 / shohi=消費税 / inshi=印紙税 / hotei=法定調書',
         },
         limit: {
           type: 'number',
@@ -145,7 +153,8 @@ export const tools: Tool[] = [
   {
     name: 'nta_search_tax_answer',
     description:
-      'タックスアンサー（一般納税者向け解説、約 750 件）を FTS5 でキーワード検索する。事前に `--bulk-download-tax-answer` で DB 投入が必要。',
+      'タックスアンサー（一般納税者向け解説、約 750 件）を FTS5 でキーワード検索する。事前に `--bulk-download-tax-answer` で DB 投入が必要。' +
+      'この種別の文書が DB に 1 件も無いときはエラー DOC_NOT_FOUND を返す（キーワードに合わないだけの 0 件は results: [] で返す）。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -193,7 +202,8 @@ export const tools: Tool[] = [
   {
     name: 'nta_search_kaisei_tsutatsu',
     description:
-      '改正通達（一部改正通達）を FTS5 でキーワード検索する。事前に `--bulk-download-kaisei` で DB 投入が必要。',
+      '改正通達（一部改正通達）を FTS5 でキーワード検索する。事前に `--bulk-download-kaisei` で DB 投入が必要。' +
+      'この種別の文書が DB に 1 件も無いときはエラー DOC_NOT_FOUND を返す（キーワードに合わないだけの 0 件は results: [] で返す）。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -246,7 +256,8 @@ export const tools: Tool[] = [
   {
     name: 'nta_search_jimu_unei',
     description:
-      '事務運営指針（jimu-unei）を FTS5 でキーワード検索する。事前に `--bulk-download-jimu-unei` で DB 投入が必要。',
+      '事務運営指針（jimu-unei）を FTS5 でキーワード検索する。事前に `--bulk-download-jimu-unei` で DB 投入が必要。' +
+      'この種別の文書が DB に 1 件も無いときはエラー DOC_NOT_FOUND を返す（キーワードに合わないだけの 0 件は results: [] で返す）。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -298,7 +309,8 @@ export const tools: Tool[] = [
   {
     name: 'nta_search_bunshokaitou',
     description:
-      '文書回答事例（bunshokaitou）を FTS5 でキーワード検索する。事前に `--bulk-download-bunshokaitou` で DB 投入が必要。',
+      '文書回答事例（bunshokaitou）を FTS5 でキーワード検索する。事前に `--bulk-download-bunshokaitou` で DB 投入が必要。' +
+      'この種別の文書が DB に 1 件も無いときはエラー DOC_NOT_FOUND を返す（キーワードに合わないだけの 0 件は results: [] で返す）。',
     inputSchema: {
       type: 'object',
       properties: {

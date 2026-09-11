@@ -166,6 +166,17 @@ export const NEXT_ACTIONS = {
       ? { command: `houki-nta-mcp --bulk-download --tsutatsu="${target}"` }
       : { command: 'houki-nta-mcp --bulk-download' },
   }),
+  /**
+   * Issue #23 (v0.13.0): 文書系（質疑応答事例・タックスアンサー・改正通達・事務運営指針・文書回答事例）の
+   * bulk download を案内する。`bulkDownload()` は基本通達用（`--bulk-download --tsutatsu=…`）なので分けている。
+   *
+   * @param flag 種別ごとの CLI フラグ。例: `--bulk-download-qa`
+   */
+  bulkDownloadDocs: (flag: string): NextAction => ({
+    action: 'cli_bulk_download',
+    reason: 'ローカル DB に未投入のため bulk download が必要',
+    example: { command: `houki-nta-mcp ${flag}` },
+  }),
   retryLater: (): NextAction => ({
     action: 'retry_later',
     reason: '一時的な API/ネットワークエラーの可能性。30秒〜数分後に再試行してください',
