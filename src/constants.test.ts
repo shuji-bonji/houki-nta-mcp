@@ -7,6 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   BUNSHOKAITOU_LEGAL_STATUS,
+  bunshoMainTaxonomy,
+  expandBunshoTaxonomy,
   LEGAL_STATUS_BY_DOCTYPE,
   NTA_GENERAL_INFO_LEGAL_STATUS,
   TSUTATSU_BASE_LAWS,
@@ -88,5 +90,21 @@ describe('TSUTATSU_BASE_LAWS — 基本通達と解釈の対象になる法律 (
       expect(order).toBe(`${act}施行令`);
       expect(rule).toBe(`${act}施行規則`);
     }
+  });
+});
+
+describe('文書回答事例の税目の別表記（v0.14.0）', () => {
+  it('expandBunshoTaxonomy: 別表記があれば組ごと、無ければ 1 要素', () => {
+    expect(expandBunshoTaxonomy('sozoku')).toEqual(['sozoku', 'souzoku']);
+    expect(expandBunshoTaxonomy('souzoku')).toEqual(['sozoku', 'souzoku']);
+    expect(expandBunshoTaxonomy('joto_sanrin')).toEqual(['joto-sanrin', 'joto_sanrin']);
+    expect(expandBunshoTaxonomy('zoyo')).toEqual(['zoyo']);
+  });
+
+  it('bunshoMainTaxonomy: 国税局の表記は本庁の表記に直し、本庁の索引に無い値は undefined', () => {
+    expect(bunshoMainTaxonomy('gensenshotoku')).toBe('gensen');
+    expect(bunshoMainTaxonomy('hojin')).toBe('hojin');
+    expect(bunshoMainTaxonomy('inshi')).toBeUndefined();
+    expect(bunshoMainTaxonomy('zzz')).toBeUndefined();
   });
 });

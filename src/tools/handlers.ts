@@ -11,6 +11,8 @@ import type DatabaseT from 'better-sqlite3';
 import type { QaTopic } from '../constants.js';
 import {
   BUNSHOKAITOU_LEGAL_STATUS,
+  bunshoMainTaxonomy,
+  expandBunshoTaxonomy,
   LEGAL_STATUS_BY_DOCTYPE,
   NTA_GENERAL_INFO_LEGAL_STATUS,
   NTA_HINT,
@@ -451,6 +453,11 @@ interface DocSearchMeta {
   taxonomyArg?: string;
   /** 税目を絞って bulk download するフラグ。例: '--qa-topic' */
   taxonomyFlag?: string;
+  /**
+   * taxonomyFlag に渡す値を返す（v0.14.0）。投入できない値なら undefined を返し、投入コマンドを案内しない。
+   * 文書回答事例は国税局の表記（souzoku）を本庁の表記（sozoku）に直し、本庁の索引に無い値は案内しない
+   */
+  taxonomyFlagValue?: (taxonomy: string) => string | undefined;
 }
 
 const DOC_SEARCH_META: Record<DocType, DocSearchMeta> = {
@@ -460,6 +467,8 @@ const DOC_SEARCH_META: Record<DocType, DocSearchMeta> = {
     flag: '--bulk-download-qa',
     taxonomyArg: 'topic',
     taxonomyFlag: '--qa-topic',
+    // topic は inputSchema の enum（QA_TOPICS）で検証済みなので、そのまま渡せる
+    taxonomyFlagValue: (topic) => topic,
   },
   'tax-answer': {
     label: 'タックスアンサー',
@@ -484,6 +493,7 @@ const DOC_SEARCH_META: Record<DocType, DocSearchMeta> = {
     flag: '--bulk-download-bunshokaitou',
     taxonomyArg: 'taxonomy',
     taxonomyFlag: '--bunsho-taxonomy',
+    taxonomyFlagValue: bunshoMainTaxonomy,
   },
 };
 
@@ -508,7 +518,14 @@ export interface DocZeroHitInfo {
 export function explainDocZeroHits(
   db: DatabaseT.Database,
   docType: DocType,
-  args: { keyword: string; taxonomy?: string; hasPdf?: boolean },
+  args: {
+    keyword: string;
+    /** 利用者が指定した税目（hint の文に使う） */
+    taxonomy?: string;
+    /** 実際に探した税目（文書回答事例は別表記を含む。省略時は taxonomy だけ） */
+    taxonomies?: readonly string[];
+    hasPdf?: boolean;
+  },
   options: { dbPath?: string } = {}
 ): LawServiceError | DocZeroHitInfo {
   const meta = DOC_SEARCH_META[docType];
@@ -526,22 +543,18 @@ export function explainDocZeroHits(
     );
   }
 
-  const fresh = (taxonomy?: string) =>
-    summarizeFreshnessFromDocument(
-      db,
-      docType,
-      taxonomy !== undefined ? [taxonomy] : undefined,
-      `\`${meta.flag}\``
-    ) ?? undefined;
+  // 数えるときの税目。文書回答事例は別表記（sozoku と souzoku など）をまとめて数える
+  const taxonomies = args.taxonomy !== undefined ? (args.taxonomies ?? [args.taxonomy]) : undefined;
+  const fresh = (filter?: readonly string[]) =>
+    summarizeFreshnessFromDocument(db, docType, filter, `\`${meta.flag}\``) ?? undefined;
 
   const argName = meta.taxonomyArg ?? 'taxonomy';
-  if (
-    args.taxonomy !== undefined &&
-    countDocuments(db, { docType, taxonomy: args.taxonomy }) === 0
-  ) {
-    const addCommand = meta.taxonomyFlag
-      ? `税目を絞って投入した場合は、\`houki-nta-mcp ${meta.flag} ${meta.taxonomyFlag}=${args.taxonomy}\` で追加できます`
-      : '';
+  if (args.taxonomy !== undefined && countDocuments(db, { docType, taxonomy: taxonomies }) === 0) {
+    const flagValue = meta.taxonomyFlagValue?.(args.taxonomy);
+    const addCommand =
+      meta.taxonomyFlag && flagValue !== undefined
+        ? `税目を絞って投入した場合は、\`houki-nta-mcp ${meta.flag} ${meta.taxonomyFlag}=${flagValue}\` で追加できます`
+        : '';
     return {
       hint: `DB の${meta.label} ${formatCount(total)} 件のうち、${argName}="${args.taxonomy}" の文書はありません。${argName} を外すか、available_taxonomies の値を指定してください。${addCommand}`,
       available_taxonomies: listDocumentTaxonomies(db, docType),
@@ -551,18 +564,18 @@ export function explainDocZeroHits(
 
   if (
     args.hasPdf !== undefined &&
-    countDocuments(db, { docType, taxonomy: args.taxonomy, hasPdf: args.hasPdf }) === 0
+    countDocuments(db, { docType, taxonomy: taxonomies, hasPdf: args.hasPdf }) === 0
   ) {
-    const scoped = countDocuments(db, { docType, taxonomy: args.taxonomy });
+    const scoped = countDocuments(db, { docType, taxonomy: taxonomies });
     const scopeLabel = args.taxonomy !== undefined ? `（${argName}="${args.taxonomy}"）` : ' ';
     const which = args.hasPdf ? 'PDF 付き' : 'PDF 無し';
     return {
       hint: `DB の${meta.label}${scopeLabel}${formatCount(scoped)} 件に、${which}の文書はありません。hasPdf を外して検索してください`,
-      ...withFreshness(fresh(args.taxonomy)),
+      ...withFreshness(fresh(taxonomies)),
     };
   }
 
-  const searched = countDocuments(db, { docType, taxonomy: args.taxonomy, hasPdf: args.hasPdf });
+  const searched = countDocuments(db, { docType, taxonomy: taxonomies, hasPdf: args.hasPdf });
   const conditions = [
     ...(args.taxonomy !== undefined ? [`${argName}="${args.taxonomy}"`] : []),
     ...(args.hasPdf !== undefined ? [`hasPdf=${args.hasPdf}`] : []),
@@ -570,8 +583,23 @@ export function explainDocZeroHits(
   const scopeLabel = conditions.length > 0 ? `（${conditions.join('、')}）` : ' ';
   return {
     hint: `該当なし。DB の${meta.label}${scopeLabel}${formatCount(searched)} 件に「${args.keyword}」に合う文書はありません。別のキーワードで試してください`,
-    ...withFreshness(fresh(args.taxonomy)),
+    ...withFreshness(fresh(taxonomies)),
   };
+}
+
+/**
+ * 文書回答事例の税目を別表記まで広げて探したことを search_notes に書く（v0.14.0）。
+ * 広げなかったとき（別表記の無い税目・指定なし）は空配列。
+ */
+function describeTaxonomyAliasNotes(
+  taxonomy: string | undefined,
+  taxonomies: readonly string[] | undefined
+): string[] {
+  if (taxonomy === undefined || taxonomies === undefined || taxonomies.length <= 1) return [];
+  const others = taxonomies.filter((t) => t !== taxonomy).map((t) => `"${t}"`);
+  return [
+    `taxonomy="${taxonomy}" は、同じ税目の別表記 ${others.join('・')} の文書もまとめて検索しました（国税局のページは本庁と違う税目フォルダ名を使うことがあるため）`,
+  ];
 }
 
 /** hint に書く件数。3 桁ごとにカンマを入れる（例: 1,841） */
@@ -1274,23 +1302,33 @@ export async function handleNtaSearchBunshokaitou(
   const limit = args.limit ?? 10;
   const db = openDb(options.dbPath);
   try {
-    const opts: { docType: 'bunshokaitou'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
+    // v0.14.0: 国税局のページは本庁と違う税目フォルダ名を使うことがある（sozoku と souzoku など）ので、
+    // 同じ税目の別表記もまとめて探す
+    const taxonomies =
+      args.taxonomy !== undefined ? expandBunshoTaxonomy(args.taxonomy) : undefined;
+    const opts: {
+      docType: 'bunshokaitou';
+      limit: number;
+      taxonomy?: readonly string[];
+      hasPdf?: boolean;
+    } = {
       docType: 'bunshokaitou',
       limit,
     };
-    if (args.taxonomy !== undefined) opts.taxonomy = args.taxonomy;
+    if (taxonomies !== undefined) opts.taxonomy = taxonomies;
     if (args.hasPdf !== undefined) opts.hasPdf = args.hasPdf;
     const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
     // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
     const searchNotes = [
       ...describeSearchNotes(args.keyword),
       ...describeExpansionNotes(expansion),
+      ...describeTaxonomyAliasNotes(args.taxonomy, taxonomies),
     ];
     if (hits.length === 0) {
       const zero = explainDocZeroHits(
         db,
         'bunshokaitou',
-        { keyword: args.keyword, taxonomy: args.taxonomy, hasPdf: args.hasPdf },
+        { keyword: args.keyword, taxonomy: args.taxonomy, taxonomies, hasPdf: args.hasPdf },
         options
       );
       if (isLawServiceError(zero)) return zero;
@@ -1303,11 +1341,10 @@ export async function handleNtaSearchBunshokaitou(
         legal_status: BUNSHOKAITOU_LEGAL_STATUS,
       };
     }
-    const taxonomyFilter = args.taxonomy !== undefined ? [args.taxonomy] : undefined;
     const freshness = summarizeFreshnessFromDocument(
       db,
       'bunshokaitou',
-      taxonomyFilter,
+      taxonomies,
       '`--bulk-download-bunshokaitou`'
     );
     return {

@@ -500,14 +500,11 @@ export function listDocumentTaxonomies(db: DatabaseT.Database, docType: DocType)
  */
 export function countDocuments(
   db: DatabaseT.Database,
-  options: { docType: DocType; taxonomy?: string; hasPdf?: boolean }
+  options: { docType: DocType; taxonomy?: string | readonly string[]; hasPdf?: boolean }
 ): number {
   const conds = ['doc_type = ?'];
   const params: string[] = [options.docType];
-  if (options.taxonomy) {
-    conds.push('taxonomy = ?');
-    params.push(options.taxonomy);
-  }
+  pushTaxonomyCondition(conds, params, 'taxonomy', options.taxonomy);
   if (options.hasPdf === true) {
     conds.push(
       `attached_pdfs_json IS NOT NULL AND attached_pdfs_json != '[]' AND attached_pdfs_json != ''`
@@ -660,8 +657,11 @@ export interface DocumentSearchHit {
 export interface SearchDocumentOptions {
   /** 'kaisei' / 'jimu-unei' / 'bunshokaitou' で絞る */
   docType?: DocType;
-  /** 税目で絞る。例: 'shohi' */
-  taxonomy?: string;
+  /**
+   * 税目で絞る。例: 'shohi'。
+   * v0.14.0 から配列も受け付ける（文書回答事例の別表記 `['sozoku', 'souzoku']` をまとめて探すため）
+   */
+  taxonomy?: string | readonly string[];
   /** 取得件数。default 10、最大 50 */
   limit?: number;
   /**
@@ -737,10 +737,7 @@ function runDocumentQuery(
     conds.push('d.doc_type = ?');
     params.push(options.docType);
   }
-  if (options.taxonomy) {
-    conds.push('d.taxonomy = ?');
-    params.push(options.taxonomy);
-  }
+  pushTaxonomyCondition(conds, params, 'd.taxonomy', options.taxonomy);
   if (options.hasPdf === true) {
     // PDF を持つ文書だけ。NULL / '[]' / '' は全て除外
     conds.push(
@@ -939,4 +936,24 @@ export function findStaleSections(
     )
     .all(...params) as StaleSection[];
   return rows;
+}
+
+/**
+ * taxonomy の絞り込み条件を足す。1 つなら `= ?`、複数なら `IN (?, ?)`。空・未指定なら何もしない。
+ */
+function pushTaxonomyCondition(
+  conds: string[],
+  params: Array<string | number>,
+  column: string,
+  taxonomy: string | readonly string[] | undefined
+): void {
+  const values = typeof taxonomy === 'string' ? [taxonomy] : [...(taxonomy ?? [])];
+  const nonEmpty = values.filter((v) => v.length > 0);
+  if (nonEmpty.length === 0) return;
+  if (nonEmpty.length === 1) {
+    conds.push(`${column} = ?`);
+  } else {
+    conds.push(`${column} IN (${nonEmpty.map(() => '?').join(', ')})`);
+  }
+  params.push(...nonEmpty);
 }

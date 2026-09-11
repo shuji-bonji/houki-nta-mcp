@@ -303,3 +303,81 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.available_taxonomies).toEqual(['shotoku']);
   });
 });
+
+describe('文書回答事例の税目の別表記（v0.14.0）', () => {
+  let dir: string;
+  let dbPath: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'houki-nta-bunsho-alias-'));
+    dbPath = join(dir, 'cache.db');
+    seed(dbPath, [
+      [
+        'bunshokaitou',
+        'sozoku/100101',
+        'sozoku',
+        '本庁の相続税の回答',
+        '小規模宅地等の特例の適用について',
+      ],
+      [
+        'bunshokaitou',
+        'tokyo/souzoku/181207',
+        'souzoku',
+        '東京局の相続税の回答',
+        '小規模宅地等の特例を老人ホーム入居中に',
+      ],
+      ['bunshokaitou', 'zoyo/070226', 'zoyo', '贈与税の回答', '種類株式の評価について'],
+    ]);
+  });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('taxonomy="sozoku" は "souzoku" の文書もまとめて探し、search_notes にその旨を書く', async () => {
+    const r = (await handleNtaSearchBunshokaitou(
+      { keyword: '小規模宅地等', taxonomy: 'sozoku' },
+      { dbPath }
+    )) as ZeroHitResponse & { results: Array<{ taxonomy: string }>; search_notes?: string[] };
+    expect(r.results.map((x) => x.taxonomy).sort()).toEqual(['souzoku', 'sozoku']);
+    expect(r.search_notes?.join('\n')).toContain('"souzoku"');
+  });
+
+  it('国税局の表記（souzoku）で指定しても本庁の表記（sozoku）の文書が出る', async () => {
+    const r = (await handleNtaSearchBunshokaitou(
+      { keyword: '小規模宅地等', taxonomy: 'souzoku' },
+      { dbPath }
+    )) as { results: Array<{ taxonomy: string }> };
+    expect(r.results).toHaveLength(2);
+  });
+
+  it('別表記の無い税目（zoyo）は search_notes を付けない', async () => {
+    const r = (await handleNtaSearchBunshokaitou(
+      { keyword: '種類株式', taxonomy: 'zoyo' },
+      { dbPath }
+    )) as { results: unknown[]; search_notes?: string[] };
+    expect(r.results).toHaveLength(1);
+    expect(r.search_notes).toBeUndefined();
+  });
+
+  it('0 件のときの件数は別表記も含めて数える', async () => {
+    const r = (await handleNtaSearchBunshokaitou(
+      { keyword: '量子暗号通信', taxonomy: 'sozoku' },
+      { dbPath }
+    )) as ZeroHitResponse;
+    expect(r.hint).toContain('（taxonomy="sozoku"）2 件');
+  });
+
+  it('範囲に文書が無いとき、国税局の表記は本庁の表記で投入コマンドを案内し、索引に無い値は案内しない', async () => {
+    const gensen = (await handleNtaSearchBunshokaitou(
+      { keyword: '源泉徴収', taxonomy: 'gensenshotoku' },
+      { dbPath }
+    )) as ZeroHitResponse;
+    expect(gensen.hint).toContain('--bunsho-taxonomy=gensen`');
+    const typo = (await handleNtaSearchBunshokaitou(
+      { keyword: '源泉徴収', taxonomy: 'zzz' },
+      { dbPath }
+    )) as ZeroHitResponse;
+    expect(typo.hint).not.toContain('--bunsho-taxonomy');
+    expect(typo.available_taxonomies).toEqual(['souzoku', 'sozoku', 'zoyo']);
+  });
+});

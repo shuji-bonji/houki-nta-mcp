@@ -201,6 +201,52 @@ export const QA_TOPICS = [
 ] as const;
 export type QaTopic = (typeof QA_TOPICS)[number];
 
+/**
+ * 文書回答事例の税目フォルダの別表記（v0.14.0）。
+ *
+ * 文書回答事例の taxonomy は URL のフォルダ名。国税局のページ（`/about/organization/{局}/bunshokaito/…`）は
+ * 本庁のページ（`/law/bunshokaito/…`）と違うフォルダ名を使うことがあり、同じ税目が 2 つの値に分かれる
+ * （2026-09-12 に DB の値で確認）。`taxonomy` を指定して検索したときは、同じ組の値をまとめて探す。
+ * 各組の先頭が本庁の表記（`--bunsho-taxonomy` に渡す値）。
+ */
+export const BUNSHO_TAXONOMY_GROUPS: ReadonlyArray<readonly [string, ...string[]]> = [
+  ['sozoku', 'souzoku'], // 相続税
+  ['gensen', 'gensenshotoku'], // 源泉所得税
+  ['joto-sanrin', 'joto_sanrin'], // 譲渡所得・山林所得
+];
+
+/**
+ * 本庁の文書回答事例の索引（`/law/bunshokaito/01.htm`）にある税目フォルダ（2026-09 時点のフィクスチャから）。
+ * `--bunsho-taxonomy` はこの索引の税目で絞り込むので、ここに無い値を渡しても何も投入されない。
+ */
+export const BUNSHO_MAIN_TAXONOMIES = [
+  'shotoku',
+  'gensen',
+  'joto-sanrin',
+  'sozoku',
+  'zoyo',
+  'hyoka',
+  'hojin',
+  'shohi',
+  'shozei',
+  'sonota',
+] as const;
+
+/** 文書回答事例の taxonomy を、同じ税目の別表記も含めた一覧にする（別表記が無ければ 1 要素） */
+export function expandBunshoTaxonomy(taxonomy: string): string[] {
+  const group = BUNSHO_TAXONOMY_GROUPS.find((g) => g.includes(taxonomy));
+  return group ? [...group] : [taxonomy];
+}
+
+/**
+ * `--bunsho-taxonomy` に渡す値（本庁の表記）を返す。国税局の表記なら本庁の表記に直す。
+ * 本庁の索引に無い値なら undefined（投入コマンドを案内しない）。
+ */
+export function bunshoMainTaxonomy(taxonomy: string): string | undefined {
+  const main = expandBunshoTaxonomy(taxonomy)[0];
+  return (BUNSHO_MAIN_TAXONOMIES as readonly string[]).includes(main) ? main : undefined;
+}
+
 /** このMCPが扱う category（houki-abbreviations の Category 型のサブセット） */
 export const NTA_CATEGORIES = [
   'kihon-tsutatsu',

@@ -320,7 +320,7 @@ export const ntaSearchBunshokaitouTool = {
       taxonomy: {
         type: 'string',
         description:
-          '税目で絞り込み。"shotoku" / "hojin" / "sozoku" / "gensen" / "joto-sanrin" / "shohi" 等',
+          '税目で絞り込み。"shotoku" / "hojin" / "sozoku" / "gensen" / "joto-sanrin" / "shohi" 等（URL の税目フォルダ名）。国税局のページの別表記（"souzoku" / "gensenshotoku" / "joto_sanrin"）は、同じ税目としてまとめて検索する。DB にある値は、該当が無いときの応答の available_taxonomies で分かる',
       },
       limit: {
         type: 'number',
