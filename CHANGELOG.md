@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **文書はあるが 0 件のときの `hint` を理由ごとに分けた**（応答は従来どおり `results: []`）
   - 税目の絞り込み（`topic` / `taxonomy`）の範囲に文書が無い: 絞り込みを外すよう案内し、`available_taxonomies`（その種別の文書が持つ税目の一覧）を付ける。質疑応答事例と文書回答事例は、`--qa-topic` / `--bunsho-taxonomy` での追加投入コマンドも書く
   - `hasPdf` の条件に合う文書が無い: `hasPdf` を外すよう案内する
-  - キーワードに合わない: 「該当なし」と、検索した文書の件数（例: 「DB の質疑応答事例 1841 件に」）を書き、`freshness` を付ける
+  - キーワードに合わない: 「該当なし」と、検索した文書の件数（例: 「DB の質疑応答事例 1,841 件に」。絞り込みがあれば「DB の質疑応答事例（topic="inshi"）243 件に」）を書き、`freshness` を付ける
 - 件数を数えるのは検索が 0 件のときだけ（`countDocuments()` / `listDocumentTaxonomies()` を `src/services/db-search.ts` に追加、判定は `src/tools/handlers.ts` の `explainDocZeroHits()`）
 - 5 ツールの説明（`tools/list` の `description`）に、DB に無いときは `DOC_NOT_FOUND` を返すことを追記
 - `NEXT_ACTIONS.bulkDownloadDocs(flag)` を追加（`bulkDownload()` は基本通達用の `--bulk-download --tsutatsu=…`）

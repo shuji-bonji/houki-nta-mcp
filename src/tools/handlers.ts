@@ -525,7 +525,7 @@ export function explainDocZeroHits(
       ? `税目を絞って投入した場合は、\`houki-nta-mcp ${meta.flag} ${meta.taxonomyFlag}=${args.taxonomy}\` で追加できます`
       : '';
     return {
-      hint: `DB の${meta.label} ${total} 件のうち、${argName}="${args.taxonomy}" の文書はありません。${argName} を外すか、available_taxonomies の値を指定してください。${addCommand}`,
+      hint: `DB の${meta.label} ${formatCount(total)} 件のうち、${argName}="${args.taxonomy}" の文書はありません。${argName} を外すか、available_taxonomies の値を指定してください。${addCommand}`,
       available_taxonomies: listDocumentTaxonomies(db, docType),
       ...withFreshness(fresh()),
     };
@@ -536,10 +536,10 @@ export function explainDocZeroHits(
     countDocuments(db, { docType, taxonomy: args.taxonomy, hasPdf: args.hasPdf }) === 0
   ) {
     const scoped = countDocuments(db, { docType, taxonomy: args.taxonomy });
-    const scopeLabel = args.taxonomy !== undefined ? `（${argName}="${args.taxonomy}"）` : '';
+    const scopeLabel = args.taxonomy !== undefined ? `（${argName}="${args.taxonomy}"）` : ' ';
     const which = args.hasPdf ? 'PDF 付き' : 'PDF 無し';
     return {
-      hint: `DB の${meta.label}${scopeLabel} ${scoped} 件に、${which}の文書はありません。hasPdf を外して検索してください`,
+      hint: `DB の${meta.label}${scopeLabel}${formatCount(scoped)} 件に、${which}の文書はありません。hasPdf を外して検索してください`,
       ...withFreshness(fresh(args.taxonomy)),
     };
   }
@@ -549,11 +549,16 @@ export function explainDocZeroHits(
     ...(args.taxonomy !== undefined ? [`${argName}="${args.taxonomy}"`] : []),
     ...(args.hasPdf !== undefined ? [`hasPdf=${args.hasPdf}`] : []),
   ];
-  const scopeLabel = conditions.length > 0 ? `（${conditions.join('、')}）` : '';
+  const scopeLabel = conditions.length > 0 ? `（${conditions.join('、')}）` : ' ';
   return {
-    hint: `該当なし。DB の${meta.label}${scopeLabel} ${searched} 件に「${args.keyword}」に合う文書はありません。別のキーワードで試してください`,
+    hint: `該当なし。DB の${meta.label}${scopeLabel}${formatCount(searched)} 件に「${args.keyword}」に合う文書はありません。別のキーワードで試してください`,
     ...withFreshness(fresh(args.taxonomy)),
   };
+}
+
+/** hint に書く件数。3 桁ごとにカンマを入れる（例: 1,841） */
+function formatCount(n: number): string {
+  return n.toLocaleString('en-US');
 }
 
 function withFreshness(freshness: FreshnessRange | undefined): { freshness?: FreshnessRange } {

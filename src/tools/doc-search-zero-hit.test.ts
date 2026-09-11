@@ -280,7 +280,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
       { keyword: '電子帳簿保存', hasPdf: true },
       { dbPath }
     )) as ZeroHitResponse;
-    expect(r.hint).toContain('改正通達（hasPdf=true） 1 件');
+    expect(r.hint).toContain('改正通達（hasPdf=true）1 件');
     expect(r.hint).toContain('該当なし');
   });
 
