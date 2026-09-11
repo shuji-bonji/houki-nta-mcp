@@ -532,7 +532,7 @@ handler が `LawServiceError`（上の JSON 形式）を返した場合も `isEr
 {
   "error": "改正通達 docId=\"0025004-999\" は見つかりません",
   "code": "TSUTATSU_NOT_FOUND",
-  "hint": "DB の改正通達 30 件に、この docId はありません。available_doc_ids（新しい順に 30 件）から選ぶか、nta_search_kaisei_tsutatsu で検索して docId を確かめてください。DB を投入した後に国税庁が公開した文書は、`houki-nta-mcp --bulk-download-kaisei` をもう一度実行すると取り込めます",
+  "hint": "DB の改正通達 118 件に、この docId はありません。available_doc_ids（新しい順に 30 件）から選ぶか、nta_search_kaisei_tsutatsu で検索して docId を確かめてください。DB を投入した後に国税庁が公開した文書は、`houki-nta-mcp --bulk-download-kaisei` をもう一度実行すると取り込めます",
   "available_doc_ids": [
     { "docId": "0026003-067", "title": "消費税法基本通達の一部改正について（法令解釈通達）", "issuedAt": "2026-04-01" }
   ],
