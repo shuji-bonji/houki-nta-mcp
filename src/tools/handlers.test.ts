@@ -20,25 +20,26 @@ import {
 } from './handlers.js';
 
 describe('search 系 (Phase 3c で本実装)', () => {
-  // DB 空（in-memory）の場合は results=[] と hint を返す
-  it('nta_search_qa: 空 DB は results=[] + hint', async () => {
+  // Issue #23 (v0.13.0): 空 DB は results=[] ではなく DOC_NOT_FOUND を返す。
+  // 5 ツールの 0 件の扱いは doc-search-zero-hit.test.ts で確認する
+  it('nta_search_qa: 空 DB は DOC_NOT_FOUND + --bulk-download-qa', async () => {
     const r = (await handleNtaSearchQa({ keyword: '社内会議' }, { dbPath: ':memory:' })) as {
-      results?: unknown[];
+      code?: string;
       hint?: string;
     };
-    expect(r.results).toEqual([]);
+    expect(r.code).toBe('DOC_NOT_FOUND');
     expect(r.hint).toContain('--bulk-download-qa');
   });
 
-  it('nta_search_tax_answer: 空 DB は results=[] + hint', async () => {
+  it('nta_search_tax_answer: 空 DB は DOC_NOT_FOUND + --bulk-download-tax-answer', async () => {
     const r = (await handleNtaSearchTaxAnswer(
       { keyword: '医療費控除' },
       { dbPath: ':memory:' }
     )) as {
-      results?: unknown[];
+      code?: string;
       hint?: string;
     };
-    expect(r.results).toEqual([]);
+    expect(r.code).toBe('DOC_NOT_FOUND');
     expect(r.hint).toContain('--bulk-download-tax-answer');
   });
 });

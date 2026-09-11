@@ -478,6 +478,51 @@ export function hasAnyClause(db: DatabaseT.Database, formalName?: string): boole
   return row.n > 0;
 }
 
+/**
+ * Issue #23 (v0.13.0): その種別の文書が持つ taxonomy（税目フォルダ）の一覧を返す。
+ * 絞り込んだ範囲に文書が無いときに、指定できる値を応答で示すために使う。
+ */
+export function listDocumentTaxonomies(db: DatabaseT.Database, docType: DocType): string[] {
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT taxonomy FROM document WHERE doc_type = ? AND taxonomy IS NOT NULL ORDER BY taxonomy`
+    )
+    .all(docType) as Array<{ taxonomy: string }>;
+  return rows.map((r) => r.taxonomy);
+}
+
+/**
+ * Issue #23 (v0.13.0): document テーブルの件数を数える。
+ *
+ * 文書系の検索が 0 件だったときに、その種別の文書が DB に無いのか、
+ * 絞り込み（taxonomy / hasPdf）の範囲に無いのか、キーワードに合わないだけなのかを分けるために使う。
+ * `hasPdf` の判定は `searchDocumentFts()` と同じ条件にそろえる。
+ */
+export function countDocuments(
+  db: DatabaseT.Database,
+  options: { docType: DocType; taxonomy?: string; hasPdf?: boolean }
+): number {
+  const conds = ['doc_type = ?'];
+  const params: string[] = [options.docType];
+  if (options.taxonomy) {
+    conds.push('taxonomy = ?');
+    params.push(options.taxonomy);
+  }
+  if (options.hasPdf === true) {
+    conds.push(
+      `attached_pdfs_json IS NOT NULL AND attached_pdfs_json != '[]' AND attached_pdfs_json != ''`
+    );
+  } else if (options.hasPdf === false) {
+    conds.push(
+      `(attached_pdfs_json IS NULL OR attached_pdfs_json = '[]' OR attached_pdfs_json = '')`
+    );
+  }
+  const row = db
+    .prepare(`SELECT count(*) AS n FROM document WHERE ${conds.join(' AND ')}`)
+    .get(...params) as { n: number };
+  return row.n;
+}
+
 /* -------------------------------------------------------------------------- */
 /* clause lookup — Phase 2d で nta_get_tsutatsu の DB 経由応答に使う           */
 /* -------------------------------------------------------------------------- */

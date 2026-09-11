@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.13.0] - 2026-09-12
+
+**minor リリース** — 文書系の検索 5 ツールが 0 件のとき、その種別の文書が DB に無いのか、キーワードに合う文書が無いだけなのかを分けて返すようにした（Issue #23）。その種別の文書が DB に 1 件も無いときは、これまでの成功（`results: []`）ではなくエラー `DOC_NOT_FOUND` を返すため minor。あわせて、`nta_search_qa` の `domain` を指定すると必ず 0 件になっていた問題を直し、税目で絞る `topic` を追加した。
+
+### Changed
+
+- **その種別の文書が DB に 1 件も無いときはエラー `DOC_NOT_FOUND`**（`nta_search_qa` / `nta_search_tax_answer` / `nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` / `nta_search_bunshokaitou`）。`error` に「「該当なし」という結果ではありません」と書き、`hint` に MCP サーバーが開いている DB ファイルのパス・投入コマンド・環境変数（`HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME`）の確認を、`next_actions` に `cli_bulk_download`（`houki-nta-mcp --bulk-download-qa` など）を入れる。`nta_search_tsutatsu` の `TSUTATSU_NOT_FOUND` と同じ扱い。エラーコードは family 語彙の既存の `DOC_NOT_FOUND`
+- **文書はあるが 0 件のときの `hint` を理由ごとに分けた**（応答は従来どおり `results: []`）
+  - 税目の絞り込み（`topic` / `taxonomy`）の範囲に文書が無い: 絞り込みを外すよう案内し、`available_taxonomies`（その種別の文書が持つ税目の一覧）を付ける。質疑応答事例と文書回答事例は、`--qa-topic` / `--bunsho-taxonomy` での追加投入コマンドも書く
+  - `hasPdf` の条件に合う文書が無い: `hasPdf` を外すよう案内する
+  - キーワードに合わない: 「該当なし」と、検索した文書の件数（例: 「DB の質疑応答事例 1841 件に」）を書き、`freshness` を付ける
+- 件数を数えるのは検索が 0 件のときだけ（`countDocuments()` / `listDocumentTaxonomies()` を `src/services/db-search.ts` に追加、判定は `src/tools/handlers.ts` の `explainDocZeroHits()`）
+- 5 ツールの説明（`tools/list` の `description`）に、DB に無いときは `DOC_NOT_FOUND` を返すことを追記
+- `NEXT_ACTIONS.bulkDownloadDocs(flag)` を追加（`bulkDownload()` は基本通達用の `--bulk-download --tsutatsu=…`）
+
+### Added
+
+- **`nta_search_qa` の `topic`**: 税目で絞り込む（`QA_TOPICS` の enum。`--qa-topic` と同じ値）
+
+### Fixed
+
+- **`nta_search_qa` の `domain` を指定すると必ず 0 件だった** — `domain` の enum は分野（houki-abbreviations の `DOMAINS`: `tax` / `labor` / …）なのに、検索は質疑応答事例の `taxonomy`（`shotoku` / `shohi` / …）と比べていた。v0.12.0 の実測（2026-09-11、1,841 件の DB）: 「軽減税率」は `domain` なしで 3 件、`domain: "tax"` で 0 件。質疑応答事例はすべて税務なので、`domain: "tax"` は絞り込まず、それ以外の値は DB を見ずに 0 件と `topic` の案内を返す
+- **`--help` の `--bulk-download-everything` の説明が 4 種別のままだった** — 実装はタックスアンサーと質疑応答事例を含む 6 種別を投入する。説明と所要時間の目安（約 100 分）を直し、進行表示の `(1/4)`〜`(3/4)` を `(1/6)`〜`(3/6)` にそろえた
+
+### Tests
+
+- `src/tools/doc-search-zero-hit.test.ts` を追加（19 件）: 5 ツールの空 DB（`DOC_NOT_FOUND`・`next_actions`・DB のパス）、他の種別だけが入った DB、税目の絞り込み、`hasPdf`、キーワード不一致、`topic`、`domain`
+- `handlers.test.ts` の空 DB の 2 件を `DOC_NOT_FOUND` を確かめる形に変更。合計 **594 tests**（見込み）
+
+### 利用側への影響
+
+- `results: []` と `hint` の文言で「DB 未投入」を判定していた場合は、`code === "DOC_NOT_FOUND"` で判定する
+- `nta_search_qa` で `domain` を使っていた場合は、税目で絞るなら `topic` に置き換える
+
 ## [0.12.0] - 2026-09-11
 
 **minor リリース** — 質疑応答事例（`nta_get_qa`）の【関係法令通達】欄を法令と通達の参照に分け、根拠の条文へ案内するようにしました（Issue #22。Issue #20 の提案 3 を切り出したもの）。あわせて、ページ下部の「注記」が関係法令や回答に混ざっていた問題を直しました。引数は変わりません。応答にフィールドが増えます。

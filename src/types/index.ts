@@ -4,7 +4,7 @@
  * AbbreviationEntry は @shuji-bonji/houki-abbreviations から re-export。
  */
 
-import type { Domain, NtaCategory, OutputFormat } from '../constants.js';
+import type { Domain, NtaCategory, OutputFormat, QaTopic } from '../constants.js';
 
 // houki-abbreviations から re-export
 export type { AbbreviationEntry } from '@shuji-bonji/houki-abbreviations';
@@ -35,8 +35,12 @@ export interface GetTsutatsuArgs {
 export interface SearchQaArgs {
   /** 検索キーワード */
   keyword: string;
-  /** 税目で絞り込み */
+  /**
+   * 分野で絞り込み。質疑応答事例はすべて税務なので、"tax" は絞り込まず、それ以外は 0 件（Issue #23）
+   */
   domain?: Domain;
+  /** 税目で絞り込み（Issue #23 / v0.13.0）。`--qa-topic` と同じ値 */
+  topic?: QaTopic;
   /** 取得件数 */
   limit?: number;
   /**

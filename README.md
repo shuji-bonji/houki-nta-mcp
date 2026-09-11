@@ -90,7 +90,7 @@ flowchart TB
 | `nta_get_tax_answer`         | タックスアンサー本文を取得                                                                                                       |
 | `nta_search_tax_answer`      | タックスアンサーを FTS5 全文検索（`hasPdf` フィルタ・`freshness`）                                                               |
 | `nta_get_qa`                 | 質疑応答事例の本文を取得                                                                                                         |
-| `nta_search_qa`              | 質疑応答事例を FTS5 全文検索（`freshness` 付き）                                                                                 |
+| `nta_search_qa`              | 質疑応答事例を FTS5 全文検索（`topic` で税目の絞り込み・`freshness` 付き）                                                                |
 | `nta_inspect_pdf_meta`       | 指定文書の添付 PDF メタ + `pdf-reader-mcp` 呼び出し例（kind 別 / extract_tables 推奨）だけを返す軽量 API (v0.7.1, v0.7.2 で拡張) |
 | `resolve_abbreviation`       | 略称→エントリ解決（houki-abbreviations 経由）                                                                                    |
 
@@ -116,6 +116,29 @@ clause 番号は **Normalize-everywhere** で全角→半角統一されてい�
 | 1 文字 | 検索条件から外します |
 
 2 文字語や 1 文字語を含むクエリでは、応答に `search_notes`（文字列の配列）が付き、どう扱ったかを文で示します。0 件のときも `search_notes` が付くので、LLM / Skill 層は「仕様上ヒットしなかった」のか「本当に該当がない」のかを判別できます。
+
+### 検索が 0 件のとき（v0.13.0、Issue #23）
+
+文書系の検索 5 ツール（`nta_search_qa` / `nta_search_tax_answer` / `nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` / `nta_search_bunshokaitou`）は、結果が 0 件になった理由を分けて返します。v0.12.0 までは、どの場合も「`--bulk-download-*` で DB 投入済みか確認してください」という同じ `hint` だったため、文書が入っている DB でも投入をやり直すよう案内していました。
+
+| DB の状態 | 応答 |
+| --- | --- |
+| その種別の文書が DB に 1 件も無い | エラー `DOC_NOT_FOUND`。「該当なし」という検索結果ではないことを応答の形で示します。`hint` に MCP サーバーが開いている DB ファイルのパスと投入コマンドを、`next_actions` に投入コマンドを入れます |
+| 税目の絞り込み（`topic` / `taxonomy`）の範囲に文書が無い | `results: []`。`hint` で絞り込みを外すよう案内し、`available_taxonomies` にその種別の文書が持つ税目の一覧を入れます |
+| `hasPdf` の条件に合う文書が無い | `results: []`。`hint` で `hasPdf` を外すよう案内します（質疑応答事例は PDF を持たないため、`hasPdf: true` では常にこれになります） |
+| 文書はあるが、キーワードに合わない | `results: []`。`hint` に「該当なし」と、検索した文書の件数を書きます。`freshness` で DB の取得時点を示します |
+
+その種別の文書が 1 件も無くなるのは、主に次の場合です。
+
+- その種別をまだ投入していない（bulk download は種別ごとに分かれています）
+- `--bulk-download-everything` の途中で、その種別だけ失敗した（失敗しても次の種別へ進みます）
+- bulk download を実行したシェルと MCP サーバー（Claude Desktop や plugin が起動するもの）とで、環境変数 `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` が違い、サーバーが別の DB ファイルを開いている。`hint` の DB のパスで確かめられます
+
+基本通達を検索する `nta_search_tsutatsu` は、以前から同じ分け方をしています（DB に通達が無ければ `TSUTATSU_NOT_FOUND`）。
+
+#### `nta_search_qa` の税目の絞り込み
+
+v0.13.0 から、`nta_search_qa` は `topic`（`shotoku` / `gensen` / `joto` / `sozoku` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei`。`--qa-topic` と同じ値）で税目を絞り込めます。v0.12.0 までの `domain` は分野（`tax` / `labor` など）の値を税目と比べていたため、指定すると必ず 0 件でした。質疑応答事例はすべて税務なので、`domain: "tax"` は絞り込まずに検索し、それ以外の値は 0 件と、`topic` を使うよう案内する `hint` を返します。
 
 ### 質疑応答事例の関係法令通達（v0.12.0、Issue #22）
 
@@ -269,7 +292,7 @@ DB は `${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db`。詳細は [`docs/D
 
 ### 投入済みかどうかを素早く確認する
 
-`nta_search_*` の応答が空 (`results: []` + `--bulk-download-* で DB 投入済みか確認してください` のヒント) の場合、対象 docType が未投入の可能性があります。投入有無は以下で確認できます。
+`nta_search_*` がエラー `DOC_NOT_FOUND`（基本通達は `TSUTATSU_NOT_FOUND`）を返した場合、その種別は MCP サーバーが開いている DB に入っていません（v0.12.0 までは `results: []` と「DB 投入済みか確認してください」のヒントでした）。投入の有無は以下で確認できます。
 
 ```bash
 # 各 docType の件数を一発で確認 (DB が無ければ投入前)
