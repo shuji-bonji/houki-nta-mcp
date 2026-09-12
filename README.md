@@ -168,7 +168,7 @@ v0.13.0 から、`nta_search_qa` は `topic`（`shotoku` / `gensen` / `joto` / `
 | 源泉所得税 | `gensen` | `gensenshotoku` |
 | 譲渡所得・山林所得 | `joto-sanrin` | `joto_sanrin` |
 
-`--bunsho-taxonomy` に渡すのは本庁の表記です。
+`--bunsho-taxonomy` は v0.14.2 からどちらの表記でも渡せます（国税局の表記は本庁の表記に直してから索引を絞り込みます）。
 
 ### 略称と通称の展開（v0.11.1、Issue #21）
 
@@ -327,6 +327,16 @@ sqlite3 "$HOME/.cache/houki-nta-mcp/cache.db" \
 `--bulk-download-everything` は上記すべてを順番に実行する短絡コマンドです。
 
 bunsho-taxonomy / tax-answer-taxonomy / qa-topic で範囲を絞らない場合、`bunshokaitou` と `qa-jirei` は数千件単位になるため、初回は taxonomy/topic を絞って投入することを推奨します。
+
+税目に渡せる値は次のとおりです。v0.14.2 から、ここに無い値を渡すと、何も投入せずに使える値を表示して終了します（終了コード 1）。`--help` にも同じ一覧を載せています。
+
+| フラグ | 使える値 |
+| --- | --- |
+| `--bunsho-taxonomy` | `shotoku` / `gensen` / `joto-sanrin` / `sozoku` / `zoyo` / `hyoka` / `hojin` / `shohi` / `shozei` / `sonota`（国税局の表記 `souzoku` / `gensenshotoku` / `joto_sanrin` も可） |
+| `--tax-answer-taxonomy` | `shotoku` / `gensen` / `joto` / `sozoku` / `hojin` / `shohi` / `inshi` / `osirase` |
+| `--qa-topic` | `shotoku` / `gensen` / `joto` / `sozoku` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei` |
+
+v0.14.1 までは値を見ずに受け取っていたため、税目を打ち間違えても投入が 0 件のまま正常終了していました。
 
 ```bash
 # 例: 所得税関連だけを bulk DL（数十分 → 数分に短縮）

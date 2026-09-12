@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.14.2] - 2026-09-12
+
+**patch リリース** — bulk download の税目フラグが値を検証していなかった問題を直した（Issue #25）。打ち間違えると、何も投入されないまま正常終了していた。
+
+### Fixed
+
+- **`--bunsho-taxonomy` / `--tax-answer-taxonomy` / `--qa-topic` の値を検証する**: それぞれ `BUNSHO_MAIN_TAXONOMIES`・`TAX_ANSWER_FOLDER_MAP` の値・`QA_TOPICS` と照合し、一覧に無い値があれば、何も投入せず使える値を stderr に出して終了コード 1 で終わる（MCP サーバーも起動しない）。複数指定（`--qa-topic=shohi,zzz`）でも、1 つでも誤っていれば止める
+  - `--bunsho-taxonomy` は国税局の表記（`souzoku` / `gensenshotoku` / `joto_sanrin`）も受け付け、`bunshoMainTaxonomy()` で本庁の表記に直してから索引を絞り込む。検索ツールが v0.14.0 から両方の表記を受け付けるのに合わせた
+  - `--qa-topic` の `as QaTopic[]`（検証なしの型付け）をやめた
+- **`--help` に使える値を載せた**: 3 つのフラグそれぞれの行に一覧を出す
+
+### Tests
+
+- 9 件追加（正しい値・別表記の正規化・不明な値・複数指定・`--help`・エラー文）。合計 **625 tests**（4 skipped）
+
+### 利用側への影響
+
+- これまで黙って 0 件で終わっていた指定が、エラーで止まる。正しい指定の動きは変わらない
+
 ## [0.14.1] - 2026-09-12
 
 **patch リリース** — 取得系の 3 ツール（`nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou`）が、docId を打ち間違えただけでも「DB に未投入です」と返して bulk download を案内していた問題を直した。Issue #23（検索 5 ツールの 0 件）と同じ分け方を取得系にも適用する。

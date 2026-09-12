@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { parseArgs, runCliIfRequested } from './cli.js';
+import { formatInvalidTaxonomyValues, parseArgs, runCliIfRequested } from './cli.js';
 
 // v0.10.2: --refresh が bulkDownloadTsutatsu の forceReload に渡ることを確認するため、
 // 実際の DL は mock する (国税庁サイトには触れない)
@@ -184,5 +184,108 @@ describe('--refresh → forceReload: 通達以外の 5 種別 (v0.10.4)', () => 
       expect(calls.length).toBeGreaterThanOrEqual(1);
       for (const c of calls) expect(c[1]).toMatchObject({ forceReload: true });
     }
+  });
+});
+
+describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  const written: string[] = [];
+
+  beforeEach(() => {
+    written.length = 0;
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    vi.mocked(bulkDownloadBunshokaitou).mockClear();
+    vi.mocked(bulkDownloadQa).mockClear();
+    vi.mocked(bulkDownloadTaxAnswer).mockClear();
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+    process.exitCode = undefined;
+  });
+
+  it('正しい税目はこれまでどおり渡る', () => {
+    const a = parseArgs(['--bunsho-taxonomy=shotoku,hojin']);
+    expect(a.bunshoTaxonomies).toEqual(['shotoku', 'hojin']);
+    expect(a.invalidTaxonomyValues).toEqual([]);
+  });
+
+  it('--bunsho-taxonomy の国税局の別表記は本庁の表記に直す', () => {
+    const a = parseArgs(['--bunsho-taxonomy=souzoku,gensenshotoku,joto_sanrin']);
+    expect(a.bunshoTaxonomies).toEqual(['sozoku', 'gensen', 'joto-sanrin']);
+    expect(a.invalidTaxonomyValues).toEqual([]);
+  });
+
+  it('--bunsho-taxonomy に一覧に無い値を渡すと invalidTaxonomyValues に入る', () => {
+    const a = parseArgs(['--bunsho-taxonomy=zzz']);
+    expect(a.bunshoTaxonomies).toEqual([]);
+    expect(a.invalidTaxonomyValues).toHaveLength(1);
+    expect(a.invalidTaxonomyValues[0]).toMatchObject({ flag: '--bunsho-taxonomy', value: 'zzz' });
+    expect(a.invalidTaxonomyValues[0].allowed).toContain('shotoku');
+    expect(a.invalidTaxonomyValues[0].aliases).toContain('souzoku');
+  });
+
+  it('--tax-answer-taxonomy と --qa-topic も検証する', () => {
+    const a = parseArgs(['--tax-answer-taxonomy=shohi,zzz', '--qa-topic=shohi,ZZZ']);
+    expect(a.taxAnswerTaxonomies).toEqual(['shohi']);
+    expect(a.qaTopics).toEqual(['shohi']);
+    expect(a.invalidTaxonomyValues.map((i) => i.flag)).toEqual([
+      '--tax-answer-taxonomy',
+      '--qa-topic',
+    ]);
+  });
+
+  it('質疑応答事例の税目は --qa-topic の一覧で判定する（文書回答事例の税目は通さない）', () => {
+    // zoyo は文書回答事例にはあるが、質疑応答事例には無い
+    const a = parseArgs(['--qa-topic=zoyo']);
+    expect(a.qaTopics).toEqual([]);
+    expect(a.invalidTaxonomyValues).toHaveLength(1);
+  });
+
+  it('一覧に無い値があると、投入せずに exit code 1 で終わる', async () => {
+    const handled = await runCliIfRequested([
+      '--bulk-download-bunshokaitou',
+      '--bunsho-taxonomy=zzz',
+      '--db-path=:memory:',
+    ]);
+    expect(handled).toBe(true);
+    expect(process.exitCode).toBe(1);
+    expect(bulkDownloadBunshokaitou).not.toHaveBeenCalled();
+    expect(written.join('')).toContain('--bunsho-taxonomy="zzz" は使えません');
+    expect(written.join('')).toContain('shotoku');
+  });
+
+  it('複数指定で 1 つだけ誤っていても投入しない', async () => {
+    await runCliIfRequested(['--bulk-download-qa', '--qa-topic=shohi,zzz', '--db-path=:memory:']);
+    expect(process.exitCode).toBe(1);
+    expect(bulkDownloadQa).not.toHaveBeenCalled();
+  });
+
+  it('--help は一覧に無い値があっても使える値を表示する', async () => {
+    const handled = await runCliIfRequested(['--help', '--qa-topic=zzz']);
+    expect(handled).toBe(true);
+    expect(process.exitCode).toBeUndefined();
+    const help = vi
+      .mocked(stdoutSpy)
+      .mock.calls.map((c) => String(c[0]))
+      .join('');
+    expect(help).toContain('--qa-topic の値: shotoku, gensen');
+    expect(help).toContain('--bunsho-taxonomy の値: shotoku, gensen, joto-sanrin');
+  });
+
+  it('formatInvalidTaxonomyValues は 1 件につき 1 行', () => {
+    const text = formatInvalidTaxonomyValues([
+      { flag: '--qa-topic', value: 'zzz', allowed: ['shohi'], aliases: [] },
+      { flag: '--bunsho-taxonomy', value: 'yyy', allowed: ['sozoku'], aliases: ['souzoku'] },
+    ]);
+    expect(text.trimEnd().split('\n')).toHaveLength(2);
+    expect(text).toContain('[houki-nta-mcp] --qa-topic="zzz" は使えません。使える値: shohi');
+    expect(text).toContain('（国税局の別表記 souzoku も使えます）');
   });
 });

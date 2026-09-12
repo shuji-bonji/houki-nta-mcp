@@ -15,7 +15,14 @@
 
 import { PACKAGE_INFO } from './config.js';
 import type { QaTopic } from './constants.js';
-import { TSUTATSU_URL_ROOTS } from './constants.js';
+import {
+  BUNSHO_MAIN_TAXONOMIES,
+  BUNSHO_TAXONOMY_GROUPS,
+  bunshoMainTaxonomy,
+  QA_TOPICS,
+  TAX_ANSWER_FOLDER_MAP,
+  TSUTATSU_URL_ROOTS,
+} from './constants.js';
 import { closeDb, defaultDbPath, openDb } from './db/index.js';
 import { detectBaselineDrift } from './services/baseline-drift.js';
 import {
@@ -56,6 +63,8 @@ interface CliArgs {
   qaTopics: QaTopic[] | undefined;
   /** v0.4.0: 通達本体 + 改正通達 + 事務運営指針 + 文書回答事例 を一括 bulk DL */
   bulkDownloadEverything: boolean;
+  /** Issue #25: 税目フラグに渡された、一覧に無い値（あれば CLI は何もせず exit 1） */
+  invalidTaxonomyValues: InvalidTaxonomyValue[];
   /** N 日より古い section を列挙（dry-run）。`--refresh-stale=<days>` */
   staleDays: number | undefined;
   /** stale section を実際に再 DL する（要 --refresh-stale） */
@@ -73,6 +82,54 @@ interface CliArgs {
   version: boolean;
 }
 
+/** Issue #25: 税目フラグに渡された値のうち、一覧に無かったもの */
+export interface InvalidTaxonomyValue {
+  /** 例: `--bunsho-taxonomy` */
+  flag: string;
+  /** 利用者が渡した値 */
+  value: string;
+  /** そのフラグで使える値（本庁・国税庁の表記） */
+  allowed: readonly string[];
+  /** 別表記など、`allowed` のほかに受け付ける値（無ければ空） */
+  aliases: readonly string[];
+}
+
+/** 文書回答事例の税目の別表記（本庁の表記を除いたもの）。エラー文に添える */
+const BUNSHO_TAXONOMY_ALIASES: readonly string[] = BUNSHO_TAXONOMY_GROUPS.flatMap((g) =>
+  g.slice(1)
+);
+
+/** タックスアンサーの税目フォルダ（`TAX_ANSWER_FOLDER_MAP` の値） */
+const TAX_ANSWER_TAXONOMIES: readonly string[] = Object.values(TAX_ANSWER_FOLDER_MAP);
+
+/**
+ * Issue #25: `--bunsho-taxonomy` などの CSV を分割し、一覧に無い値を集める。
+ *
+ * v0.14.1 までは値を見ずに渡していたため、税目を打ち間違えても投入が 0 件で正常終了していた。
+ *
+ * @param csv フラグの `=` の右側
+ * @param flag フラグ名（エラー文に出す）
+ * @param allowed 使える値
+ * @param normalize 別表記を正規化する関数。`undefined` を返す値は一覧に無い値として扱う
+ */
+function parseTaxonomyCsv(
+  csv: string,
+  flag: string,
+  allowed: readonly string[],
+  normalize: (value: string) => string | undefined,
+  aliases: readonly string[] = []
+): { values: string[]; invalid: InvalidTaxonomyValue[] } {
+  const values: string[] = [];
+  const invalid: InvalidTaxonomyValue[] = [];
+  for (const raw of csv.split(',').map((v) => v.trim())) {
+    if (!raw) continue;
+    const normalized = normalize(raw);
+    if (normalized === undefined) invalid.push({ flag, value: raw, allowed, aliases });
+    else values.push(normalized);
+  }
+  return { values, invalid };
+}
+
 /** argv をパース（process.argv.slice(2) を渡す前提） */
 export function parseArgs(argv: readonly string[]): CliArgs {
   const args: CliArgs = {
@@ -86,6 +143,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     taxAnswerTaxonomies: undefined,
     bulkDownloadQa: false,
     qaTopics: undefined,
+    invalidTaxonomyValues: [],
     bulkDownloadEverything: false,
     staleDays: undefined,
     refreshStale: false,
@@ -104,25 +162,36 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     else if (a === '--bulk-download-jimu-unei') args.bulkDownloadJimuUnei = true;
     else if (a === '--bulk-download-bunshokaitou') args.bulkDownloadBunshokaitou = true;
     else if (a.startsWith('--bunsho-taxonomy=')) {
-      const csv = a.slice('--bunsho-taxonomy='.length);
-      args.bunshoTaxonomies = csv
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
+      // 国税局の別表記（souzoku 等）は本庁の表記に直してから索引を絞り込む
+      const parsed = parseTaxonomyCsv(
+        a.slice('--bunsho-taxonomy='.length),
+        '--bunsho-taxonomy',
+        BUNSHO_MAIN_TAXONOMIES,
+        bunshoMainTaxonomy,
+        BUNSHO_TAXONOMY_ALIASES
+      );
+      args.bunshoTaxonomies = parsed.values;
+      args.invalidTaxonomyValues.push(...parsed.invalid);
     } else if (a === '--bulk-download-tax-answer') args.bulkDownloadTaxAnswer = true;
     else if (a.startsWith('--tax-answer-taxonomy=')) {
-      const csv = a.slice('--tax-answer-taxonomy='.length);
-      args.taxAnswerTaxonomies = csv
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
+      const parsed = parseTaxonomyCsv(
+        a.slice('--tax-answer-taxonomy='.length),
+        '--tax-answer-taxonomy',
+        TAX_ANSWER_TAXONOMIES,
+        (v) => (TAX_ANSWER_TAXONOMIES.includes(v) ? v : undefined)
+      );
+      args.taxAnswerTaxonomies = parsed.values;
+      args.invalidTaxonomyValues.push(...parsed.invalid);
     } else if (a === '--bulk-download-qa') args.bulkDownloadQa = true;
     else if (a.startsWith('--qa-topic=')) {
-      const csv = a.slice('--qa-topic='.length);
-      args.qaTopics = csv
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean) as QaTopic[];
+      const parsed = parseTaxonomyCsv(
+        a.slice('--qa-topic='.length),
+        '--qa-topic',
+        QA_TOPICS,
+        (v) => ((QA_TOPICS as readonly string[]).includes(v) ? v : undefined)
+      );
+      args.qaTopics = parsed.values as QaTopic[];
+      args.invalidTaxonomyValues.push(...parsed.invalid);
     } else if (a === '--bulk-download-all') args.bulkDownloadAll = true;
     else if (a === '--bulk-download') args.bulkDownload = true;
     else if (a === '--health-check') args.healthCheck = true;
@@ -152,8 +221,11 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
   houki-nta-mcp --bulk-download-kaisei       4 通達分の改正通達一覧を順次 bulk DL（document テーブルへ投入）
   houki-nta-mcp --bulk-download-jimu-unei    事務運営指針（jimu-unei）一覧を bulk DL（document テーブルへ投入）
   houki-nta-mcp --bulk-download-bunshokaitou 文書回答事例（bunshokaitou）を bulk DL（全税目で 30 分超のため、--bunsho-taxonomy=shotoku,hojin で絞り込み推奨）
+                                             --bunsho-taxonomy の値: ${BUNSHO_MAIN_TAXONOMIES.join(', ')}（国税局の別表記 ${BUNSHO_TAXONOMY_ALIASES.join('・')} も可）
   houki-nta-mcp --bulk-download-tax-answer   タックスアンサー（taxanswer）を bulk DL（約 850 件 / 約 15 分。--tax-answer-taxonomy=shohi,shotoku で絞り込み可）
+                                             --tax-answer-taxonomy の値: ${TAX_ANSWER_TAXONOMIES.join(', ')}
   houki-nta-mcp --bulk-download-qa           質疑応答事例（shitsugi）を bulk DL（9 税目で計 2000+ 件、--qa-topic=shohi,shotoku で絞り込み推奨）
+                                             --qa-topic の値: ${QA_TOPICS.join(', ')}
   houki-nta-mcp --refresh-stale=<日数>     N 日以上古い section を列挙（dry-run）
   houki-nta-mcp --refresh-stale=<日数> --apply  N 日以上古い section の通達を実際に再 DL
   houki-nta-mcp --health-check              6 大コンテンツ + 4 通達（計 9 種別）の代表 URL を canary fetch + parse 検証
@@ -176,6 +248,21 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
 `;
 
 /**
+ * Issue #25: 一覧に無い税目の値を stderr に書く文を作る。
+ *
+ * 打ち間違いをその場で気づけるように、使える値をすべて並べる。
+ */
+export function formatInvalidTaxonomyValues(invalid: readonly InvalidTaxonomyValue[]): string {
+  return invalid
+    .map((i) => {
+      const aliases =
+        i.aliases.length > 0 ? `（国税局の別表記 ${i.aliases.join('・')} も使えます）` : '';
+      return `[houki-nta-mcp] ${i.flag}="${i.value}" は使えません。使える値: ${i.allowed.join(', ')}${aliases}\n`;
+    })
+    .join('');
+}
+
+/**
  * CLI モードのメイン関数。
  *
  * @returns CLI モードで処理した場合 true、MCP モードに進むべき場合 false
@@ -189,6 +276,12 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
   }
   if (args.version) {
     process.stdout.write(`${PACKAGE_INFO.version}\n`);
+    return true;
+  }
+  // Issue #25: 税目フラグに一覧に無い値があれば、何も投入せずに終わる（MCP サーバーも起動しない）
+  if (args.invalidTaxonomyValues.length > 0) {
+    process.stderr.write(formatInvalidTaxonomyValues(args.invalidTaxonomyValues));
+    process.exitCode = 1;
     return true;
   }
   if (args.bulkDownloadEverything) {
