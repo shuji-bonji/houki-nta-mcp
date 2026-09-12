@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type DatabaseT from 'better-sqlite3';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -176,7 +177,7 @@ describe('initSchema — Phase 6-2 (v0.9.0): last_modified / etag カラム', ()
         VALUES (1, 1, 1, '第1章第1節', '2026-05-01T00:00:00Z', 'pre-existing-hash');
     `);
 
-    // v4 へのマイグレーションを起動 (initSchema が migrateV3ToV4 を呼ぶ)
+    // マイグレーションを起動する。v3 → v4 → v5 と数珠つなぎに進む
     initSchema(db);
 
     // 既存データが保持されている
@@ -184,16 +185,18 @@ describe('initSchema — Phase 6-2 (v0.9.0): last_modified / etag カラム', ()
       .prepare(`SELECT title, content_hash, last_modified, etag FROM section WHERE tsutatsu_id=1`)
       .get() as {
       title: string;
-      content_hash: string;
+      content_hash: string | null;
       last_modified: string | null;
       etag: string | null;
     };
     expect(sec.title).toBe('第1章第1節');
-    expect(sec.content_hash).toBe('pre-existing-hash');
     expect(sec.last_modified).toBeNull();
     expect(sec.etag).toBeNull();
+    // section の content_hash は v5 で未計算に戻る（配下 clause の並び順を
+    // DB から復元できないため。Issue #27 の migrateV4ToV5 を参照）
+    expect(sec.content_hash).toBeNull();
 
-    // schema_version が v4 に更新されている
+    // schema_version が最新に更新されている
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
   });
 });
@@ -217,5 +220,131 @@ describe('clearAllData', () => {
     const c = db.prepare(`SELECT count(*) AS n FROM clause`).get() as { n: number };
     expect(c.n).toBe(0);
     db.close();
+  });
+});
+
+describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入れ直す', () => {
+  let db: DatabaseT.Database;
+
+  /** v5 のスキーマに全角英字入りの行を入れ、schema_version だけ v4 に戻した DB を作る */
+  function seedV4Database(): void {
+    initSchema(db);
+    db.prepare(`INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?)`).run(
+      '消費税法基本通達',
+      '消基通',
+      'https://example.com/'
+    );
+    db.prepare(
+      `INSERT INTO section(tsutatsu_id, chapter_number, section_number, title, url, fetched_at, content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(1, 1, 4, 'ＮＩＳＡ関係', 'https://example.com/01/04.htm', '2026-09-07T00:00:00Z', 'old');
+    db.prepare(
+      `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      1,
+      'Ａ－１',
+      'https://example.com/x',
+      1,
+      4,
+      'ＮＩＳＡの取扱い',
+      'ＮＩＳＡ口座について',
+      JSON.stringify([{ indent: 0, text: 'ｅ－Ｔａｘで提出する' }])
+    );
+    db.prepare(
+      `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'tax-answer',
+      '1535',
+      'shotoku',
+      'ＮＩＳＡ制度',
+      'https://example.com/1535.htm',
+      '2026-09-07T00:00:00Z',
+      'ＮＩＳＡの概要',
+      '[]',
+      'old-hash'
+    );
+    db.prepare(`UPDATE schema_meta SET value = '4' WHERE key = 'schema_version'`).run();
+  }
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    seedV4Database();
+    initSchema(db); // v4 と判定され migrateV4ToV5 が走る
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('schema_version が v5 になる', () => {
+    expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
+    expect(SCHEMA_VERSION).toBe(5);
+  });
+
+  it('clause の条番号・題名・本文・段落 JSON が半角になる', () => {
+    const row = db
+      .prepare('SELECT clause_number, title, full_text, paragraphs_json FROM clause')
+      .get() as {
+      clause_number: string;
+      title: string;
+      full_text: string;
+      paragraphs_json: string;
+    };
+    expect(row.clause_number).toBe('A-1');
+    expect(row.title).toBe('NISAの取扱い');
+    expect(row.full_text).toBe('NISA口座について');
+    expect(JSON.parse(row.paragraphs_json)).toEqual([{ indent: 0, text: 'e-Taxで提出する' }]);
+  });
+
+  it('半角のキーワードで FTS5 が引けるようになる', () => {
+    const hits = db
+      .prepare('SELECT clause_number FROM clause_fts WHERE clause_fts MATCH ?')
+      .all('NISA');
+    expect(hits).toHaveLength(1);
+
+    const docHits = db
+      .prepare('SELECT title FROM document_fts WHERE document_fts MATCH ?')
+      .all('NISA') as Array<{ title: string }>;
+    expect(docHits).toHaveLength(1);
+    expect(docHits[0].title).toBe('NISA制度');
+  });
+
+  it('section は題名が半角になり、content_hash が未計算に戻る', () => {
+    const row = db.prepare('SELECT title, content_hash FROM section').get() as {
+      title: string;
+      content_hash: string | null;
+    };
+    expect(row.title).toBe('NISA関係');
+    expect(row.content_hash).toBeNull();
+  });
+
+  it('document は題名・本文が半角になり、content_hash が計算し直される', () => {
+    const row = db.prepare('SELECT title, full_text, content_hash FROM document').get() as {
+      title: string;
+      full_text: string;
+      content_hash: string;
+    };
+    expect(row.title).toBe('NISA制度');
+    expect(row.full_text).toBe('NISAの概要');
+    // bulk downloader と同じ式: docType \n docId \n title \n fullText
+    const expected = createHash('sha1')
+      .update('tax-answer')
+      .update('\n')
+      .update('1535')
+      .update('\n')
+      .update('NISA制度')
+      .update('\n')
+      .update('NISAの概要')
+      .digest('hex');
+    expect(row.content_hash).toBe(expected);
+    expect(row.content_hash).not.toBe('old-hash');
+  });
+
+  it('もう一度開いても何も変わらない（冪等）', () => {
+    const before = db.prepare('SELECT title, full_text, content_hash FROM document').get();
+    initSchema(db);
+    const after = db.prepare('SELECT title, full_text, content_hash FROM document').get();
+    expect(after).toEqual(before);
   });
 });
