@@ -277,9 +277,9 @@ describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入�
     db.close();
   });
 
-  it('schema_version が v6 になる', () => {
+  it('schema_version が最新になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(6);
+    expect(SCHEMA_VERSION).toBe(7);
   });
 
   it('clause の条番号・題名・本文・段落 JSON が半角になる', () => {
@@ -409,8 +409,58 @@ describe('initSchema — v5 → v6 (Issue #29): document に structured_json を
 
   it('もう一度開いても何も変わらない（冪等）', () => {
     initSchema(db);
-    expect(getSchemaVersion(db)).toBe(6);
+    expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
     const count = db.prepare('SELECT COUNT(*) AS n FROM document').get() as { n: number };
     expect(count.n).toBe(1);
+  });
+});
+
+describe('initSchema — v6 → v7 (Issue #30): document に orphaned_at を足す', () => {
+  let db: DatabaseT.Database;
+
+  /** v7 のスキーマから orphaned_at 列を落とし、schema_version を v6 に戻した DB を作る */
+  function seedV6Database(): void {
+    initSchema(db);
+    db.prepare(
+      `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'jimu-unei',
+      '170331',
+      'shotoku',
+      '申告所得税の事務運営指針',
+      'https://example.com/170331/01.htm',
+      '2026-09-07T00:00:00Z',
+      '本文',
+      '[]',
+      'hash-170331'
+    );
+    db.exec('ALTER TABLE document DROP COLUMN orphaned_at');
+    db.prepare(`UPDATE schema_meta SET value = '6' WHERE key = 'schema_version'`).run();
+  }
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    seedV6Database();
+    initSchema(db); // v6 と判定され migrateV6ToV7 が走る
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('orphaned_at 列が増える', () => {
+    const cols = (db.prepare('PRAGMA table_info(document)').all() as Array<{ name: string }>).map(
+      (c) => c.name
+    );
+    expect(cols).toContain('orphaned_at');
+  });
+
+  it('既存の行は消えず、orphaned_at は NULL（索引にある）のまま残る', () => {
+    const row = db
+      .prepare('SELECT title, content_hash, orphaned_at FROM document WHERE doc_id = ?')
+      .get('170331') as { title: string; content_hash: string; orphaned_at: string | null };
+    expect(row.title).toBe('申告所得税の事務運営指針');
+    expect(row.content_hash).toBe('hash-170331');
+    expect(row.orphaned_at).toBeNull();
   });
 });

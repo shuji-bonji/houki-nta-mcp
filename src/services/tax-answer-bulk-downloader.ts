@@ -22,6 +22,7 @@ import {
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
 import { computeDocumentHash } from './document-writeback.js';
+import { markAndCount } from './index-status.js';
 import type { BulkRunRecord } from './health-store.js';
 import type { HealthEvaluation } from './health-thresholds.js';
 import { fetchNtaPage } from './nta-scraper.js';
@@ -254,9 +255,17 @@ export async function bulkDownloadTaxAnswer(
   let health: HealthEvaluation | undefined;
   if (isFullRun && beforeSnapshot) {
     const afterSnapshot = snapshotDocumentTable(db, 'tax-answer');
+    // Issue #30: 索引から消えた文書に印を付け直す。索引の取得に失敗すると
+    // ここまで来ないので（例外が出る）、索引は全部取れている
+    const orphanCounts = markAndCount(db, 'tax-answer', {
+      indexUrls: new Set(entries.map((e) => e.url)),
+      runStartedAt: startedAt,
+      ranAt: finishedAt,
+    });
     aggregation = computeBulkAggregation({
       before: beforeSnapshot,
       after: afterSnapshot,
+      orphanCounts,
       totalEntries: targets.length,
       documentsFailed,
       durationMs,

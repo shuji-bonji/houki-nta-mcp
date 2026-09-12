@@ -24,6 +24,7 @@ import {
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
 import { computeDocumentHash } from './document-writeback.js';
+import { markAndCount } from './index-status.js';
 import type { BulkRunRecord } from './health-store.js';
 import type { HealthEvaluation } from './health-thresholds.js';
 import { fetchNtaPage } from './nta-scraper.js';
@@ -130,6 +131,8 @@ export async function bulkDownloadQa(
 
   // 1. 各税目別索引から個別 URL を集める
   const targets: QaIndexEntry[] = [];
+  // Issue #30: 索引を 1 つでも取れなかった実行では、索引から消えた文書の判定をしない
+  let indexFailures = 0;
   for (let i = 0; i < topics.length; i++) {
     const topic = topics[i];
     const indexUrl = `https://www.nta.go.jp/law/shitsugi/${topic}/01.htm`;
@@ -146,6 +149,7 @@ export async function bulkDownloadQa(
       const limited = options.perTopicLimit ? items.slice(0, options.perTopicLimit) : items;
       targets.push(...limited);
     } catch (err) {
+      indexFailures++;
       logger.warn('qa-bulk', `税目別索引失敗: ${topic}`, { url: indexUrl, error: toMeta(err) });
     }
   }
@@ -290,6 +294,15 @@ export async function bulkDownloadQa(
   let health: HealthEvaluation | undefined;
   if (isFullRun && beforeSnapshot) {
     const afterSnapshot = snapshotDocumentTable(db, 'qa-jirei');
+    // Issue #30: 索引から消えた文書に印を付け直す（索引をすべて取れたときだけ）
+    const orphanCounts =
+      indexFailures === 0
+        ? markAndCount(db, 'qa-jirei', {
+            indexUrls: new Set(targets.map((t) => t.url)),
+            runStartedAt: startedAt,
+            ranAt: finishedAt,
+          })
+        : undefined;
     aggregation = computeBulkAggregation({
       before: beforeSnapshot,
       after: afterSnapshot,
@@ -297,6 +310,7 @@ export async function bulkDownloadQa(
       documentsFailed,
       durationMs,
       ranAt: finishedAt,
+      ...(orphanCounts ? { orphanCounts } : {}),
     });
     health = recordBulkRun('qa-jirei', aggregation, options.baselinePath);
   }

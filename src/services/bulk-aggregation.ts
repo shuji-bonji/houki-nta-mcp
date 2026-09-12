@@ -36,6 +36,17 @@ export interface DocSnapshot {
 }
 
 /**
+ * 索引と DB を突き合わせて出した orphaned / moved の件数（Issue #30）。
+ *
+ * `document` テーブルの 5 種別は索引から消えた行を DELETE しないため、bulk download の
+ * 前後で DB を比べても orphaned は必ず 0 になる。索引側と突き合わせた件数をここから渡す。
+ */
+export interface OrphanCounts {
+  orphanedDocs: number;
+  movedDocs: number;
+}
+
+/**
  * 4 パターン集計の入力。
  */
 export interface AggregationInput {
@@ -51,6 +62,14 @@ export interface AggregationInput {
   durationMs: number;
   /** ISO 8601 timestamp（省略時は現在時刻） */
   ranAt?: string;
+  /**
+   * 索引と突き合わせて出した orphaned / moved の件数（Issue #30）。
+   *
+   * 渡すと `orphanedDocs` / `movedDocs` はこの値を使う。渡さなければ before / after の
+   * 差から数える（clause テーブルはこちら。節ごとに DELETE してから入れ直すため、
+   * 前後の差で消えた条が分かる）。
+   */
+  orphanCounts?: OrphanCounts;
 }
 
 /**
@@ -61,9 +80,13 @@ export interface AggregationInput {
  * - orphanedDocs: before にあって after にない doc_id（=DB に残るが索引から消えた）
  * - movedDocs:    orphaned + new のうちタイトル一致するペアの推定件数
  *
- * **注意**: orphaned は DB から DELETE せず、件数だけ集計する設計（過去通達の
- * 法的価値を保持するため）。移動検知の推定は粗いが、後続の `--health-check` で
- * 詳細確認できる。
+ * **注意**: orphaned は DB から DELETE せず、`document.orphaned_at` に印を付けて残す設計
+ * （過去の課税期間の判断では依然として意味を持つため。Issue #30）。印を付けるのは
+ * `markOrphanedDocuments`（`index-status.ts`）で、その件数を `orphanCounts` で受け取る。
+ *
+ * `document` テーブルの 5 種別は行を消さないので、bulk download の前後で DB を比べても
+ * orphaned は必ず 0 になる。索引側と突き合わせた件数を使うのはこのため。`clause` テーブル
+ * （基本通達）は節ごとに DELETE してから入れ直すので、前後の差で消えた条が分かる。
  */
 export function computeBulkAggregation(input: AggregationInput): BulkRunRecord {
   const { before, after, totalEntries, documentsFailed, durationMs } = input;
@@ -103,6 +126,11 @@ export function computeBulkAggregation(input: AggregationInput): BulkRunRecord {
   const newTitleSet = new Set(newTitles);
   const movedDocs = orphanedTitles.filter((t) => newTitleSet.has(t)).length;
 
+  // Issue #30: document テーブルの 5 種別は索引側と突き合わせた件数を使う
+  if (input.orphanCounts) {
+    orphanedDocs = input.orphanCounts.orphanedDocs;
+  }
+
   const failRate = totalEntries === 0 ? 0 : documentsFailed / totalEntries;
 
   return {
@@ -113,7 +141,7 @@ export function computeBulkAggregation(input: AggregationInput): BulkRunRecord {
     newDocs,
     updatedDocs,
     orphanedDocs,
-    movedDocs,
+    movedDocs: input.orphanCounts ? input.orphanCounts.movedDocs : movedDocs,
     failRate,
     durationMs,
   };
