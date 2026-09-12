@@ -53,6 +53,13 @@ export interface BulkKaiseiResult {
   documentsNotModified?: number;
   documentsContentSame?: number;
   documentsContentChanged?: number;
+  /**
+   * この索引から集めた個別ページの URL 全部（Issue #30）。
+   *
+   * 改正通達は 4 通達の索引を CLI が順に回して 1 つの baseline にまとめるため、索引から
+   * 消えた文書の判定も CLI 側で 4 通達分をまとめて行う。その材料として返す。
+   */
+  indexedUrls: string[];
 }
 
 export interface BulkKaiseiOptions {
@@ -207,6 +214,7 @@ export async function bulkDownloadKaisei(
     documentsNotModified: counts.notModified,
     documentsContentSame: counts.contentSame,
     documentsContentChanged: counts.contentChanged,
+    indexedUrls: targets.map((t) => t.url),
   };
 }
 

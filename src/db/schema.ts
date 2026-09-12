@@ -26,8 +26,9 @@ import { normalizeClauseNumber, normalizeJpText } from '../services/text-normali
  * - v4: section / document に last_modified / etag を追加（Phase 6-2: 差分 bulk DL）
  * - v5: 投入済みテキストを共通実装の正規化で入れ直す（Issue #27: 全角英字が半角にならない）
  * - v6: document に structured_json を追加（Issue #29: 取得ツールが DB から live と同じ構造を返せるようにする）
+ * - v7: document に orphaned_at を追加（Issue #30: 国税庁の索引から消えた文書に印を付ける）
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -141,6 +142,10 @@ CREATE TABLE IF NOT EXISTS document (
   -- sourceUrl / fetchedAt は列を正とするため、この JSON には入れない。
   -- NULL は「この種別では使わない」か「v6 より前に投入した行」を表す。
   structured_json TEXT,
+  -- v7 (Issue #30): 国税庁の索引から消えたことを最初に確認した日時。
+  -- NULL は索引にあることを表す。索引から消えても行は消さない（過去の課税期間の判断では
+  -- 依然として意味を持つため）。次の bulk download で索引に戻っていれば NULL に戻す。
+  orphaned_at TEXT,
   UNIQUE(doc_type, doc_id)
 );
 CREATE INDEX IF NOT EXISTS idx_document_lookup ON document(doc_type, doc_id);
@@ -207,6 +212,10 @@ export function initSchema(db: DatabaseT.Database): void {
   if (version === 5) {
     migrateV5ToV6(db);
     version = 6;
+  }
+  if (version === 6) {
+    migrateV6ToV7(db);
+    version = 7;
   }
   if (version === SCHEMA_VERSION) {
     setSchemaVersion(db, SCHEMA_VERSION);
@@ -288,6 +297,20 @@ function migrateV5ToV6(db: DatabaseT.Database): void {
   const docCols = listColumns(db, 'document');
   if (!docCols.has('structured_json')) {
     db.exec(`ALTER TABLE document ADD COLUMN structured_json TEXT`);
+  }
+}
+
+/**
+ * v6 → v7 マイグレーション（Issue #30: 索引から消えた文書に印を付ける）
+ *
+ * `document` に `orphaned_at` 列を足すだけで、既存の行は NULL（＝索引にある）のまま残る。
+ * 印が付くのは次の `--bulk-download-*` のときで、この移行では国税庁サイトへのアクセスは
+ * 発生しない。
+ */
+function migrateV6ToV7(db: DatabaseT.Database): void {
+  const docCols = listColumns(db, 'document');
+  if (!docCols.has('orphaned_at')) {
+    db.exec(`ALTER TABLE document ADD COLUMN orphaned_at TEXT`);
   }
 }
 

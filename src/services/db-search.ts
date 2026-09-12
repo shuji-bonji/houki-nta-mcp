@@ -652,6 +652,11 @@ export interface DocumentSearchHit {
   score?: number;
   /** Phase 6-1 (v0.8.0): スコア決定の理由 */
   scoreReasons?: string[];
+  /**
+   * 国税庁の索引から消えたことを最初に確認した日時（Issue #30、v0.17.0 から）。
+   * NULL は索引にあることを表す。
+   */
+  orphanedAt: string | null;
 }
 
 export interface SearchDocumentOptions {
@@ -761,6 +766,7 @@ function runDocumentQuery(
       d.issued_at AS issuedAt,
       d.source_url AS sourceUrl,
       d.full_text AS fullText,
+      d.orphaned_at AS orphanedAt,
       snippet(document_fts, 3, '<b>', '</b>', ' … ', 16) AS snippet,
       document_fts.rank AS rank
     FROM document_fts
@@ -778,6 +784,7 @@ function runDocumentQuery(
       d.issued_at AS issuedAt,
       d.source_url AS sourceUrl,
       d.full_text AS fullText,
+      d.orphaned_at AS orphanedAt,
       '' AS snippet,
       -1 AS rank
     FROM document d
@@ -826,7 +833,7 @@ export function getDocumentFromDb(
   const row = db
     .prepare(
       `SELECT doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url,
-              fetched_at, full_text, attached_pdfs_json, structured_json
+              fetched_at, full_text, attached_pdfs_json, structured_json, orphaned_at
        FROM document
        WHERE doc_type = ? AND doc_id = ?
        LIMIT 1`
@@ -844,6 +851,7 @@ export function getDocumentFromDb(
         full_text: string;
         attached_pdfs_json: string;
         structured_json: string | null;
+        orphaned_at: string | null;
       }
     | undefined;
   if (!row) return null;
@@ -878,6 +886,7 @@ export function getDocumentFromDb(
     fullText: row.full_text,
     attachedPdfs,
     ...(structured ? { structured } : {}),
+    ...(row.orphaned_at ? { orphanedAt: row.orphaned_at } : {}),
   };
 }
 
