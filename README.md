@@ -168,7 +168,7 @@ v0.13.0 から、`nta_search_qa` は `topic`（`shotoku` / `gensen` / `joto` / `
 | 源泉所得税 | `gensen` | `gensenshotoku` |
 | 譲渡所得・山林所得 | `joto-sanrin` | `joto_sanrin` |
 
-`--bunsho-taxonomy` は v0.14.2 からどちらの表記でも渡せます（国税局の表記は本庁の表記に直してから索引を絞り込みます）。
+`--bunsho-taxonomy` は v0.14.2 からどちらの表記でも渡せます（国税局の表記は本庁の表記に直してから索引を絞り込みます）。絞り込むのは本庁の索引（`/law/bunshokaito/01.htm`）の節なので、`--bunsho-taxonomy=sozoku` でも `souzoku` でも、投入されるのは同じ 1 つの節の文書です。その節には国税局のページへのリンクも並んでいるため、DB には両方の表記が入ります（2026-09-12 に `--bunsho-taxonomy=souzoku` を実行し、18 件のうち `sozoku` 11 件・`souzoku` 7 件を確認）。
 
 ### 略称と通称の展開（v0.11.1、Issue #21）
 
