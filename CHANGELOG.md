@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
-## [0.17.0] - 2026-09-12
+## [0.17.0] - 2026-09-13
 
 **minor リリース** — 国税庁の索引から消えた文書に印を付け、検索と取得の応答で現行の文書と区別できるようにした（Issue #30）。行は今までどおり消さない。
 
@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - 取得 5 ツール（`nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` / `nta_get_tax_answer` / `nta_get_qa`）は `index_status` / `orphaned_at` に加えて `notice`（現在の取扱いは最新の通達で確認する旨）を返す。Markdown 形式では「索引の状態」の行と注記が入る
   - 絞り込みの引数（索引にあるものだけ / 消えたものだけ）は足していない。まず印と注記だけで様子を見る
 
-## [0.16.0] - 2026-09-12
+## [0.16.0] - 2026-09-13
 
 **minor リリース** — `nta_get_qa` と `nta_get_tax_answer` がローカル DB を見ずに毎回国税庁サイトを取りに行っていた問題を直し、説明を実態に合わせた（Issue #29）。
 
