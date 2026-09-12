@@ -277,9 +277,9 @@ describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入�
     db.close();
   });
 
-  it('schema_version が v5 になる', () => {
+  it('schema_version が v6 になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(5);
+    expect(SCHEMA_VERSION).toBe(6);
   });
 
   it('clause の条番号・題名・本文・段落 JSON が半角になる', () => {
@@ -346,5 +346,71 @@ describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入�
     initSchema(db);
     const after = db.prepare('SELECT title, full_text, content_hash FROM document').get();
     expect(after).toEqual(before);
+  });
+});
+
+describe('initSchema — v5 → v6 (Issue #29): document に structured_json を足す', () => {
+  let db: DatabaseT.Database;
+
+  /** v6 のスキーマから structured_json 列を落とし、schema_version を v5 に戻した DB を作る */
+  function seedV5Database(): void {
+    initSchema(db);
+    db.prepare(
+      `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      'tax-answer',
+      '1535',
+      'shotoku',
+      'NISA制度',
+      'https://example.com/1535.htm',
+      '2026-09-07T00:00:00Z',
+      'NISAの概要',
+      '[]',
+      'hash-1535'
+    );
+    db.exec('ALTER TABLE document DROP COLUMN structured_json');
+    db.prepare(`UPDATE schema_meta SET value = '5' WHERE key = 'schema_version'`).run();
+  }
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    seedV5Database();
+    initSchema(db); // v5 と判定され migrateV5ToV6 が走る
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('structured_json 列が増える', () => {
+    const cols = (db.prepare('PRAGMA table_info(document)').all() as Array<{ name: string }>).map(
+      (c) => c.name
+    );
+    expect(cols).toContain('structured_json');
+  });
+
+  it('既存の行は消えず、structured_json は NULL のまま残る', () => {
+    const row = db
+      .prepare(
+        'SELECT title, full_text, content_hash, structured_json FROM document WHERE doc_id = ?'
+      )
+      .get('1535') as {
+      title: string;
+      full_text: string;
+      content_hash: string;
+      structured_json: string | null;
+    };
+    expect(row.title).toBe('NISA制度');
+    expect(row.full_text).toBe('NISAの概要');
+    // content_hash は作り直さない（作り直すと次の bulk download が全件を「更新」と数える）
+    expect(row.content_hash).toBe('hash-1535');
+    expect(row.structured_json).toBeNull();
+  });
+
+  it('もう一度開いても何も変わらない（冪等）', () => {
+    initSchema(db);
+    expect(getSchemaVersion(db)).toBe(6);
+    const count = db.prepare('SELECT COUNT(*) AS n FROM document').get() as { n: number };
+    expect(count.n).toBe(1);
   });
 });

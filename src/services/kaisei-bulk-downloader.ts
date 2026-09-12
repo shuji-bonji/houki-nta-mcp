@@ -11,10 +11,7 @@
  * fail-soft: 個別ページの fetch / parse 失敗は続行（失敗カウントのみ）
  */
 
-import { createHash } from 'node:crypto';
-
 import type DatabaseT from 'better-sqlite3';
-import type { NtaDocument } from '../types/document.js';
 import { logger, toMeta } from '../utils/logger.js';
 import {
   buildConditionalFetchOptions,
@@ -23,6 +20,7 @@ import {
   updateDocumentFetchedAt,
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
+import { computeDocumentHash } from './document-writeback.js';
 import { parseKaiseiPage } from './kaisei-parser.js';
 import { parseKaiseiIndex } from './kaisei-toc-parser.js';
 import { fetchNtaPage } from './nta-scraper.js';
@@ -213,18 +211,6 @@ export async function bulkDownloadKaisei(
 }
 
 /** document の content_hash を計算 */
-function computeDocumentHash(doc: NtaDocument): string {
-  const h = createHash('sha1');
-  h.update(doc.docType);
-  h.update('\n');
-  h.update(doc.docId);
-  h.update('\n');
-  h.update(normalizeJpText(doc.title));
-  h.update('\n');
-  h.update(doc.fullText);
-  return h.digest('hex');
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

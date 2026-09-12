@@ -45,6 +45,7 @@ import {
   listDocumentTaxonomies,
   searchClauseFtsWithExpansion,
 } from '../services/db-search.js';
+import { writeBackLiveDocument } from '../services/document-writeback.js';
 import {
   type FreshnessRange,
   summarizeFreshnessFromDocument,
@@ -56,14 +57,20 @@ import {
   fillMissingKinds,
   renderAttachedPdfsMarkdown,
 } from '../services/pdf-meta.js';
-import { parseQaJirei } from '../services/qa-parser.js';
+import { buildQaFullText, parseQaJirei } from '../services/qa-parser.js';
 import type { RelatedLawRef, RelatedTsutatsuRef } from '../services/related-law-parser.js';
 import { parseRelatedReferences } from '../services/related-law-parser.js';
-import { parseTaxAnswer } from '../services/tax-answer-parser.js';
-import { renderQaMarkdown, renderTaxAnswerMarkdown } from '../services/tax-answer-render.js';
+import { extractPdfs, parseEffectiveDate } from '../services/tax-answer-bulk-downloader.js';
+import { buildTaxAnswerFullText, parseTaxAnswer } from '../services/tax-answer-parser.js';
+import {
+  type DocumentSource,
+  renderQaMarkdown,
+  renderTaxAnswerMarkdown,
+} from '../services/tax-answer-render.js';
+import { normalizeJpText } from '../services/text-normalize.js';
 import { parseTsutatsuSection, TsutatsuParseError } from '../services/tsutatsu-parser.js';
 import { describeImageNotes, renderClauseMarkdown } from '../services/tsutatsu-render.js';
-import type { DocType } from '../types/document.js';
+import type { DocType, StoredQaStructure, StoredTaxAnswerStructure } from '../types/document.js';
 import type {
   GetQaArgs,
   GetTaxAnswerArgs,
@@ -74,6 +81,8 @@ import type {
   SearchTaxAnswerArgs,
   SearchTsutatsuArgs,
 } from '../types/index.js';
+import type { QaJirei } from '../types/qa.js';
+import type { TaxAnswer } from '../types/tax-answer.js';
 import { buildSectionUrl, parseClauseNumber } from '../utils/clause.js';
 import {
   ntaGetBunshokaitouTool,
@@ -742,8 +751,18 @@ export async function handleNtaGetQa(args: GetQaArgs) {
 
 /**
  * `handleNtaGetQa` のテスト容易な内部関数。
+ *
+ * Issue #29 で `nta_get_tsutatsu` と同じ流れに揃えた。
+ *   1. 引数の検証
+ *   2. **DB を先に引く**: `--bulk-download-qa` 済みなら国税庁サイトへ行かずに返す
+ *   3. DB に無ければ国税庁サイトから取得し、DB へ書き戻す
+ *
+ * 応答の `source` が `"db"` か `"live"` かで、どちらから返したかが分かる。
  */
-export async function getQa(args: GetQaArgs, options: { fetchImpl?: typeof fetch } = {}) {
+export async function getQa(
+  args: GetQaArgs,
+  options: { fetchImpl?: typeof fetch; dbPath?: string } = {}
+) {
   const topic = args.topic;
   if (!QA_TOPICS.includes(topic as QaTopic)) {
     return makeError('INVALID_ARGUMENT', `topic "${topic}" は houki-nta-mcp では未対応です`, {
@@ -760,6 +779,11 @@ export async function getQa(args: GetQaArgs, options: { fetchImpl?: typeof fetch
   const category = args.category.padStart(2, '0');
   const id = args.id.padStart(2, '0');
   const url = `${QA_BASE_URL}${topic}/${category}/${id}.htm`;
+  const docId = `${topic}/${category}/${id}`;
+
+  // Issue #29: DB を先に引く。bulk DL 済みなら国税庁サイトへ行かない
+  const fromDb = readQaFromDb(docId, options.dbPath);
+  if (fromDb) return qaResponse(fromDb, args.format, 'db');
 
   let html: string;
   let sourceUrl: string;
@@ -802,19 +826,77 @@ export async function getQa(args: GetQaArgs, options: { fetchImpl?: typeof fetch
     throw err;
   }
 
-  if (args.format === 'json') {
+  // Issue #29: 取得した 1 件を DB に入れる。次回は DB から返せる。
+  // best effort で、失敗してもこの応答には影響しない
+  writeBackQa(docId, qa, options.dbPath);
+
+  return qaResponse(qa, args.format, 'live');
+}
+
+/**
+ * DB から質疑応答事例 1 件を読む（Issue #29）。
+ *
+ * `structured_json` を持つ行だけを返す。v0.16.0 より前に投入した行は構造を持たないので、
+ * `null` を返して呼び出し側に国税庁サイトから取り直させる。
+ */
+function readQaFromDb(docId: string, dbPath?: string): QaJirei | null {
+  const db = openDb(dbPath);
+  try {
+    const doc = getDocumentFromDb(db, 'qa-jirei', docId);
+    if (!doc?.structured) return null;
+    const structured = doc.structured as StoredQaStructure;
+    return { ...structured, sourceUrl: doc.sourceUrl, fetchedAt: doc.fetchedAt };
+  } catch {
+    return null;
+  } finally {
+    closeDb(db);
+  }
+}
+
+/** 取得した質疑応答事例を DB に書き戻す（Issue #29）。失敗は無視する */
+function writeBackQa(docId: string, qa: QaJirei, dbPath?: string): void {
+  try {
+    const db = openDb(dbPath);
+    try {
+      const { sourceUrl: _s, fetchedAt: _f, ...structured } = qa;
+      writeBackLiveDocument(db, {
+        docType: 'qa-jirei',
+        docId,
+        taxonomy: qa.topic,
+        // bulk download と同じ行になるように、題名にも同じ正規化を通す（content_hash が揃う）
+        title: normalizeJpText(qa.title),
+        issuedAt: undefined,
+        issuer: '国税庁',
+        sourceUrl: qa.sourceUrl,
+        fetchedAt: qa.fetchedAt,
+        fullText: buildQaFullText(qa),
+        attachedPdfs: [],
+        structured,
+      });
+    } finally {
+      closeDb(db);
+    }
+  } catch {
+    // best effort: 書き戻しに失敗しても応答は返せる
+  }
+}
+
+/** 質疑応答事例 1 件を応答の形にする（DB / live で同じ形にするため共有する） */
+function qaResponse(qa: QaJirei, format: GetQaArgs['format'], source: DocumentSource) {
+  if (format === 'json') {
     // Issue #22: 【関係法令通達】を法令と通達の参照に分け、houki-egov-mcp / nta_get_tsutatsu へ案内する
     const { related_laws, related_tsutatsu } = parseRelatedReferences(qa.relatedLaws);
     const next_actions = relatedNextActions(related_laws, related_tsutatsu);
     return {
       qa,
+      source,
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       ...(related_laws.length > 0 ? { related_laws } : {}),
       ...(related_tsutatsu.length > 0 ? { related_tsutatsu } : {}),
       ...(next_actions.length > 0 ? { next_actions } : {}),
     };
   }
-  return renderQaMarkdown(qa);
+  return renderQaMarkdown(qa, source);
 }
 
 /**
@@ -934,10 +1016,17 @@ export async function handleNtaGetTaxAnswer(args: GetTaxAnswerArgs) {
 
 /**
  * `handleNtaGetTaxAnswer` のテスト容易な内部関数。
+ *
+ * Issue #29 で `nta_get_tsutatsu` と同じ流れに揃えた。
+ *   1. 引数の検証
+ *   2. **DB を先に引く**: `--bulk-download-tax-answer` 済みなら国税庁サイトへ行かずに返す
+ *   3. DB に無ければ国税庁サイトから取得し、DB へ書き戻す
+ *
+ * 応答の `source` が `"db"` か `"live"` かで、どちらから返したかが分かる。
  */
 export async function getTaxAnswer(
   args: GetTaxAnswerArgs,
-  options: { fetchImpl?: typeof fetch } = {}
+  options: { fetchImpl?: typeof fetch; dbPath?: string } = {}
 ) {
   const no = args.no?.trim();
   if (!no || !/^\d+$/.test(no)) {
@@ -961,6 +1050,10 @@ export async function getTaxAnswer(
   }
 
   const url = `${TAX_ANSWER_BASE_URL}${folder}/${no}.htm`;
+
+  // Issue #29: DB を先に引く。bulk DL 済みなら国税庁サイトへ行かない
+  const fromDb = readTaxAnswerFromDb(no, options.dbPath);
+  if (fromDb) return taxAnswerResponse(fromDb, args.format, 'db');
 
   let html: string;
   let sourceUrl: string;
@@ -996,13 +1089,75 @@ export async function getTaxAnswer(
     throw err;
   }
 
-  if (args.format === 'json') {
+  // Issue #29: 取得した 1 件を DB に入れる。次回は DB から返せる。
+  // best effort で、失敗してもこの応答には影響しない
+  writeBackTaxAnswer(taxAnswer, html, options.dbPath);
+
+  return taxAnswerResponse(taxAnswer, args.format, 'live');
+}
+
+/**
+ * DB からタックスアンサー 1 件を読む（Issue #29）。
+ *
+ * `structured_json` を持つ行だけを返す。v0.16.0 より前に投入した行は構造を持たないので、
+ * `null` を返して呼び出し側に国税庁サイトから取り直させる。
+ */
+function readTaxAnswerFromDb(no: string, dbPath?: string): TaxAnswer | null {
+  const db = openDb(dbPath);
+  try {
+    const doc = getDocumentFromDb(db, 'tax-answer', no);
+    if (!doc?.structured) return null;
+    const structured = doc.structured as StoredTaxAnswerStructure;
+    return { ...structured, sourceUrl: doc.sourceUrl, fetchedAt: doc.fetchedAt };
+  } catch {
+    return null;
+  } finally {
+    closeDb(db);
+  }
+}
+
+/** 取得したタックスアンサーを DB に書き戻す（Issue #29）。失敗は無視する */
+function writeBackTaxAnswer(ta: TaxAnswer, html: string, dbPath?: string): void {
+  try {
+    const db = openDb(dbPath);
+    try {
+      const { sourceUrl: _s, fetchedAt: _f, ...structured } = ta;
+      writeBackLiveDocument(db, {
+        docType: 'tax-answer',
+        docId: ta.no,
+        taxonomy: TAX_ANSWER_FOLDER_MAP[ta.no[0]],
+        // bulk download と同じ行になるように、題名にも同じ正規化を通す（content_hash が揃う）
+        title: normalizeJpText(ta.title),
+        issuedAt: parseEffectiveDate(ta.effectiveDate),
+        issuer: '国税庁',
+        sourceUrl: ta.sourceUrl,
+        fetchedAt: ta.fetchedAt,
+        fullText: buildTaxAnswerFullText(ta),
+        attachedPdfs: extractPdfs(html, ta.sourceUrl),
+        structured,
+      });
+    } finally {
+      closeDb(db);
+    }
+  } catch {
+    // best effort: 書き戻しに失敗しても応答は返せる
+  }
+}
+
+/** タックスアンサー 1 件を応答の形にする（DB / live で同じ形にするため共有する） */
+function taxAnswerResponse(
+  taxAnswer: TaxAnswer,
+  format: GetTaxAnswerArgs['format'],
+  source: DocumentSource
+) {
+  if (format === 'json') {
     return {
       taxAnswer,
+      source,
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   }
-  return renderTaxAnswerMarkdown(taxAnswer);
+  return renderTaxAnswerMarkdown(taxAnswer, source);
 }
 
 /**

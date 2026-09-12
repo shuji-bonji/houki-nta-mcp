@@ -227,3 +227,50 @@ describe('newDifferentialCounts', () => {
     expect(b.notModified).toBe(0);
   });
 });
+
+/**
+ * Issue #29: `structured_json` がまだ無い行は、条件付き GET を使わずに取り直す。
+ *
+ * 304 が返ると本文が無いのでパースできず、構造を入れられない。そのため
+ * `loadDocumentConditionState` が「構造を持っているか」を返し、質疑応答事例と
+ * タックスアンサーの bulk-downloader がその行だけ条件付き GET を外す。
+ */
+describe('loadDocumentConditionState — hasStructured (Issue #29)', () => {
+  let db: DatabaseT.Database;
+  beforeEach(() => {
+    db = new Database(':memory:');
+    initSchema(db);
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('structured_json が入っていれば true', () => {
+    seedDoc(db, {
+      docType: 'tax-answer',
+      docId: '1535',
+      sourceUrl: 'https://example.com/1535.htm',
+    });
+    db.prepare('UPDATE document SET structured_json = ? WHERE doc_id = ?').run(
+      JSON.stringify({ no: '1535', title: 'NISA制度', sections: [] }),
+      '1535'
+    );
+    expect(
+      loadDocumentConditionState(db, 'tax-answer', 'https://example.com/1535.htm')?.hasStructured
+    ).toBe(true);
+  });
+
+  it('structured_json が NULL なら false（他の値は今までどおり読める）', () => {
+    seedDoc(db, {
+      docType: 'tax-answer',
+      docId: '1535',
+      sourceUrl: 'https://example.com/1535.htm',
+      lastModified: 'Mon, 07 Sep 2026 00:00:00 GMT',
+      etag: 'W/"abc"',
+    });
+    const state = loadDocumentConditionState(db, 'tax-answer', 'https://example.com/1535.htm');
+    expect(state?.hasStructured).toBe(false);
+    expect(state?.lastModified).toBe('Mon, 07 Sep 2026 00:00:00 GMT');
+    expect(state?.etag).toBe('W/"abc"');
+  });
+});

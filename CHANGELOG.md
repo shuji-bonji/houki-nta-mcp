@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.16.0] - 2026-09-12
+
+**minor リリース** — `nta_get_qa` と `nta_get_tax_answer` がローカル DB を見ずに毎回国税庁サイトを取りに行っていた問題を直し、説明を実態に合わせた（Issue #29）。
+
+### Changed
+
+- **`nta_get_qa` / `nta_get_tax_answer` がローカル DB を先に引くようにした**: `nta_get_tsutatsu` と同じ「DB を先に引く → 無ければ国税庁サイトから取得 → DB へ書き戻す」流れに揃えた
+  - 症状: `--bulk-download-tax-answer` に約 15 分かけて DB を作っても、`nta_get_tax_answer` の `fetchedAt` は実行時刻のままで、毎回 ~700ms かかっていた。国税庁サイトが落ちていると、DB に本文があるのに取得だけ失敗した
+  - 応答に `source`（`"db"` / `"live"`）が付く。Markdown 形式では末尾に「取得元」の行が増える
+- **`document` に `structured_json` 列を足し、SCHEMA_VERSION を 5 → 6 に上げた**: `full_text` は見出しを含む平文なので、そこからは段落の区切りや節の構造を戻せない。`--bulk-download-qa` / `--bulk-download-tax-answer` がパース結果をこの列に入れ、取得ツールが国税庁サイトから取ったときと同じ構造で返す
+  - 移行は列を足すだけで、既存の行は NULL のまま残る。**国税庁サイトへの再アクセスは発生しない**
+  - NULL の行は取得ツールが 1 度引いたときに埋まる。`--bulk-download-qa` / `--bulk-download-tax-answer` を実行しても埋まる（この 2 種別では、構造を持たない行は条件付き GET を使わずに 200 で取り直す。304 では本文が返らずパースできないため）
+  - `content_hash` の計算には `structured_json` を含めない。含めると移行直後の bulk download が全件を「更新された」と数える
+- **README とサイトの「DB-first → live fallback」という書き方をやめた**: 6 つの取得ツールを 1 つの言い方でまとめると、実態と食い違う。README に「取得ツールが DB をどう使うか」の表を置き、ツールごとに書いた
+  - 実際にこの通りだったのは `nta_get_tsutatsu` だけだった。改正通達・事務運営指針・文書回答事例は DB に無ければ `DOC_NOT_FOUND` を返し（この 3 つは docId から URL を組み立てるのに税目フォルダの世代差を解く必要があるため、今回も国税庁サイトへは取りに行かない）、質疑応答事例・タックスアンサーは DB があっても毎回取得していた
+
+### Internal
+
+- `content_hash` の計算式と `full_text` の組み立てを、bulk download と取得ツールで共有した（`computeDocumentHash` / `buildQaFullText` / `buildTaxAnswerFullText`）。式が分かれると、取得ツールが書いた行を次の bulk download が「内容が変わった」と誤って数える
+- `content_hash` の計算式は 5 つの bulk-downloader に同じものが 5 本あり、質疑応答事例・タックスアンサーの 2 本だけ題名の正規化を呼んでいなかった。`document-writeback.ts` の 1 本にまとめた（題名の正規化は冪等なので、どの経路から呼んでも今までと同じ値が出る）
+
 ## [0.15.0] - 2026-09-12
 
 **minor リリース** — 全角英字が半角にならず、`ＮＩＳＡ` と `NISA` で検索結果が分断されていた問題を直した（Issue #27）。既存 DB は起動時に一度だけ入れ直す。

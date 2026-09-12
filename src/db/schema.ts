@@ -25,8 +25,9 @@ import { normalizeClauseNumber, normalizeJpText } from '../services/text-normali
  * - v3: document / document_fts テーブル追加（Phase 3b: 改正通達・事務運営指針・文書回答事例）
  * - v4: section / document に last_modified / etag を追加（Phase 6-2: 差分 bulk DL）
  * - v5: 投入済みテキストを共通実装の正規化で入れ直す（Issue #27: 全角英字が半角にならない）
+ * - v6: document に structured_json を追加（Issue #29: 取得ツールが DB から live と同じ構造を返せるようにする）
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -135,6 +136,11 @@ CREATE TABLE IF NOT EXISTS document (
   -- v4 (Phase 6-2): 差分 bulk DL 用
   last_modified TEXT,
   etag TEXT,
+  -- v6 (Issue #29): パーサが組み立てた構造の JSON。質疑応答事例とタックスアンサーで使う。
+  -- full_text は見出しを含む平文なので、そこからは段落の区切りや節の構造を戻せない。
+  -- sourceUrl / fetchedAt は列を正とするため、この JSON には入れない。
+  -- NULL は「この種別では使わない」か「v6 より前に投入した行」を表す。
+  structured_json TEXT,
   UNIQUE(doc_type, doc_id)
 );
 CREATE INDEX IF NOT EXISTS idx_document_lookup ON document(doc_type, doc_id);
@@ -197,6 +203,10 @@ export function initSchema(db: DatabaseT.Database): void {
   if (version === 4) {
     migrateV4ToV5(db);
     version = 5;
+  }
+  if (version === 5) {
+    migrateV5ToV6(db);
+    version = 6;
   }
   if (version === SCHEMA_VERSION) {
     setSchemaVersion(db, SCHEMA_VERSION);
@@ -264,6 +274,21 @@ function migrateV4ToV5(db: DatabaseT.Database): void {
     renormalizeDocuments(db);
   });
   tx();
+}
+
+/**
+ * v5 → v6 マイグレーション（Issue #29: 取得ツールが DB から構造を返せるようにする）
+ *
+ * `document` に `structured_json` 列を足すだけで、既存の行は NULL のまま残る。
+ * NULL の行は `nta_get_qa` / `nta_get_tax_answer` が国税庁サイトから取得して埋めるか、
+ * 次の `--bulk-download-qa` / `--bulk-download-tax-answer` が埋める。
+ * 再ダウンロードを強制しないので、この移行で国税庁サイトへのアクセスは発生しない。
+ */
+function migrateV5ToV6(db: DatabaseT.Database): void {
+  const docCols = listColumns(db, 'document');
+  if (!docCols.has('structured_json')) {
+    db.exec(`ALTER TABLE document ADD COLUMN structured_json TEXT`);
+  }
 }
 
 /** clause の条番号・題名・本文・段落 JSON を入れ直す */

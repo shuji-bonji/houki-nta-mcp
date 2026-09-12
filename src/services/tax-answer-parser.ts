@@ -23,6 +23,7 @@ import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 
 import type { TaxAnswer, TaxAnswerSection } from '../types/tax-answer.js';
+import { normalizeJpText } from './text-normalize.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 
 /**
@@ -141,4 +142,24 @@ function cleanText(s: string): string {
     .replace(/[ ]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * DB の `full_text` に入れる平文を組み立てる（Issue #29）。
+ *
+ * `--bulk-download-tax-answer` と `nta_get_tax_answer` の書き戻しで同じ文字列を作るために
+ * 共有する。ここが分かれると、取得ツールが書いた行を次の bulk download が
+ * 「内容が変わった」と判定してしまう。
+ */
+export function buildTaxAnswerFullText(ta: TaxAnswer): string {
+  return normalizeJpText(
+    [
+      ta.title,
+      ta.effectiveDate ? `[${ta.effectiveDate}]` : '',
+      ta.taxCategory ? `税目: ${ta.taxCategory}` : '',
+      ...ta.sections.map((s) => `【${s.heading}】\n${s.paragraphs.join('\n')}`),
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  );
 }
