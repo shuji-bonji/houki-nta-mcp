@@ -138,7 +138,7 @@ claude mcp add pdf-reader -- npx -y @shuji-bonji/pdf-reader-mcp
 
 ### 3.4 初回 bulk DL (houki-nta-mcp 必須)
 
-**houki-nta-mcp は事前に bulk DL してローカル SQLite に投入することで、応答が DB-first (≈10ms) になります**。未投入のまま検索を呼ぶと「DB に未登録」エラーが返ります。
+**houki-nta-mcp は事前に bulk DL してローカル SQLite に投入することで、ローカル DB から返せる（≈10ms）ようになります**。未投入のまま検索を呼ぶと「DB に未登録」エラーが返ります。取得ツールが DB に無いときにどうするかは種別ごとに違うので、README の「取得ツールが DB をどう使うか」を参照してください。
 
 別ターミナルで以下を実行してください (合計 30〜60 分。範囲を絞れば短縮可):
 
@@ -220,7 +220,7 @@ sequenceDiagram
 **ポイント**:
 
 - 略称解決は **houki-nta-mcp が内蔵する resolve_abbreviation** で完結 (houki-abbreviations を別途叩く必要なし)
-- DB-first lookup なので一瞬 (≈10ms)。bulk DL 済みでない場合は live fallback (~700ms)
+- DB から返すので一瞬 (≈10ms)。bulk DL 済みでない場合は国税庁サイトから取得する (~700ms)
 - レスポンスの `legal_status` から「通達は税務署員のみ拘束、納税者には直接的拘束力なし」も自動引用される
 
 ### 4.2 三層回答 — 「インボイス制度の登録番号の扱いは?」

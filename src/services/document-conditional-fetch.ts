@@ -25,6 +25,15 @@ export interface DocumentConditionState {
   lastModified: string | null;
   etag: string | null;
   contentHash: string | null;
+  /**
+   * `structured_json` が入っているか（Issue #29、v0.16.0 から）。
+   *
+   * false の行は本文が同じでも構造を入れ直す必要があります。質疑応答事例と
+   * タックスアンサーの bulk-downloader は、この値が false のときは条件付き GET を
+   * 使わず 200 で取り直し、パースした構造を入れます。他の 3 種別は
+   * `structured_json` を使わないので、この値を見ません。
+   */
+  hasStructured: boolean;
 }
 
 /**
@@ -38,13 +47,17 @@ export function loadDocumentConditionState(
 ): DocumentConditionState | null {
   const row = db
     .prepare(
-      `SELECT last_modified AS lastModified, etag AS etag, content_hash AS contentHash
+      `SELECT last_modified AS lastModified, etag AS etag, content_hash AS contentHash,
+              structured_json IS NOT NULL AS hasStructured
        FROM document
        WHERE doc_type = ? AND source_url = ?
        LIMIT 1`
     )
-    .get(docType, sourceUrl) as DocumentConditionState | undefined;
-  return row ?? null;
+    .get(docType, sourceUrl) as
+    | (Omit<DocumentConditionState, 'hasStructured'> & { hasStructured: number })
+    | undefined;
+  if (!row) return null;
+  return { ...row, hasStructured: row.hasStructured === 1 };
 }
 
 /**

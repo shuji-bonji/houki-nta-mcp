@@ -9,7 +9,7 @@
 
 import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
 import type DatabaseT from 'better-sqlite3';
-import type { AttachedPdf, DocType, NtaDocument } from '../types/document.js';
+import type { AttachedPdf, DocType, NtaDocument, StoredStructure } from '../types/document.js';
 import { computeRelevance, type DocTypeForScoring, sortByScoreDesc } from './relevance-scoring.js';
 import { normalizeClauseNumber, normalizeSearchQuery } from './text-normalize.js';
 
@@ -826,7 +826,7 @@ export function getDocumentFromDb(
   const row = db
     .prepare(
       `SELECT doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url,
-              fetched_at, full_text, attached_pdfs_json
+              fetched_at, full_text, attached_pdfs_json, structured_json
        FROM document
        WHERE doc_type = ? AND doc_id = ?
        LIMIT 1`
@@ -843,6 +843,7 @@ export function getDocumentFromDb(
         fetched_at: string;
         full_text: string;
         attached_pdfs_json: string;
+        structured_json: string | null;
       }
     | undefined;
   if (!row) return null;
@@ -853,6 +854,16 @@ export function getDocumentFromDb(
     if (Array.isArray(parsed)) attachedPdfs = parsed;
   } catch {
     // JSON 壊れは空配列で扱う
+  }
+
+  // Issue #29: v6 より前に投入した行と、構造を持たない 3 種別では NULL になる
+  let structured: StoredStructure | undefined;
+  if (row.structured_json) {
+    try {
+      structured = JSON.parse(row.structured_json) as StoredStructure;
+    } catch {
+      // JSON 壊れは「構造なし」として扱い、呼び出し側が国税庁サイトから取り直す
+    }
   }
 
   return {
@@ -866,6 +877,7 @@ export function getDocumentFromDb(
     fetchedAt: row.fetched_at,
     fullText: row.full_text,
     attachedPdfs,
+    ...(structured ? { structured } : {}),
   };
 }
 

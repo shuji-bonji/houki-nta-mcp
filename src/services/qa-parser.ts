@@ -21,6 +21,7 @@ import type { Element } from 'domhandler';
 import type { QaTopic } from '../constants.js';
 import type { QaJirei } from '../types/qa.js';
 import { extractIssuedAt } from './kaisei-toc-parser.js';
+import { normalizeJpText } from './text-normalize.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 
 export interface ParseQaInput {
@@ -160,4 +161,24 @@ function cleanText(s: string): string {
     .replace(/[ ]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * DB の `full_text` に入れる平文を組み立てる（Issue #29）。
+ *
+ * `--bulk-download-qa` と `nta_get_qa` の書き戻しで同じ文字列を作るために共有する。
+ * ここが分かれると、取得ツールが書いた行を次の bulk download が「内容が変わった」と
+ * 判定してしまう。
+ */
+export function buildQaFullText(qa: QaJirei): string {
+  return normalizeJpText(
+    [
+      qa.title,
+      qa.question.length ? `【照会要旨】\n${qa.question.join('\n')}` : '',
+      qa.answer.length ? `【回答要旨】\n${qa.answer.join('\n')}` : '',
+      qa.relatedLaws.length ? `【関係法令通達】\n${qa.relatedLaws.join('\n')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  );
 }
