@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.17.0] - 2026-09-12
+
+**minor リリース** — 国税庁の索引から消えた文書に印を付け、検索と取得の応答で現行の文書と区別できるようにした（Issue #30）。行は今までどおり消さない。
+
+### Fixed
+
+- **索引から消えた文書の件数が、常に 0 になっていた**: `computeBulkAggregation` は bulk download の前後で DB を比べて `orphanedDocs` を数えていたが、`document` テーブルの 5 種別は索引から消えた行を DELETE しない。消えた行は後の snapshot にも残るので、差は必ず空になる
+  - 索引から集めた URL の集合と DB を突き合わせる形に変えた（`markOrphanedDocuments`）。`clause` テーブル（基本通達）は節ごとに DELETE してから入れ直すので、前後の差で消えた条が分かる。こちらは変えていない
+  - 索引の取得に失敗した税目がある実行では、判定そのものを行わない。失敗した税目の文書が丸ごと「消えた」と判定されるため
+
+### Added
+
+- **`document` に `orphaned_at` 列を足し、SCHEMA_VERSION を 6 → 7 に上げた**: 索引から消えたことを最初に確認した日時を入れる。NULL は索引にあることを表す
+  - 移行は列を足すだけで、既存の行は NULL のまま残る。**国税庁サイトへの再アクセスは発生しない**。印が付くのは次の `--bulk-download-*` のとき
+  - 次の実行で索引に戻っていれば、印を外す（国税庁サイトの一時的な不整合や、世代ディレクトリの移行中に消えたように見える場合があるため）
+  - 索引にある文書と題名が一致する行には印を付けない。世代ディレクトリの移行（`sozoku` → `sozoku2` など）で doc_id が変わっただけの文書を、消えたと数えないため
+  - 索引の URL に無くても、その実行で `fetched_at` が更新された行には印を付けない。索引の URL からリダイレクトされて `source_url` が変わった行を、消えたと数えないため
+- **応答で索引の状態を返す**: 検索 5 ツール（`nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` / `nta_search_bunshokaitou` / `nta_search_tax_answer` / `nta_search_qa`）の各件に `index_status: "removed_from_index"` と `orphaned_at` が付き、`search_notes` に「N 件のうち M 件は索引から外れています」の 1 行が入る
+  - **検索結果からは除外しない**。除外すると、過去の課税期間を調べたい利用者が引けなくなる
+  - 取得 5 ツール（`nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` / `nta_get_tax_answer` / `nta_get_qa`）は `index_status` / `orphaned_at` に加えて `notice`（現在の取扱いは最新の通達で確認する旨）を返す。Markdown 形式では「索引の状態」の行と注記が入る
+  - 絞り込みの引数（索引にあるものだけ / 消えたものだけ）は足していない。まず印と注記だけで様子を見る
+
 ## [0.16.0] - 2026-09-12
 
 **minor リリース** — `nta_get_qa` と `nta_get_tax_answer` がローカル DB を見ずに毎回国税庁サイトを取りに行っていた問題を直し、説明を実態に合わせた（Issue #29）。

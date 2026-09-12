@@ -29,6 +29,7 @@ import {
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
 import { computeDocumentHash } from './document-writeback.js';
+import { markAndCount } from './index-status.js';
 import type { BulkRunRecord } from './health-store.js';
 import type { HealthEvaluation } from './health-thresholds.js';
 import { fetchNtaPage } from './nta-scraper.js';
@@ -109,6 +110,8 @@ export async function bulkDownloadBunshokaitou(
 
   // 2. 各税目別索引から個別事例 URL を集める（fetch 間隔を空ける）
   const targets: Array<{ url: string; title: string; issuedAt: string | undefined }> = [];
+  // Issue #30: 索引を 1 つでも取れなかった実行では、索引から消えた文書の判定をしない
+  let indexFailures = 0;
   for (let i = 0; i < taxonomyEntries.length; i++) {
     const t = taxonomyEntries[i];
     onProgress?.({
@@ -126,6 +129,7 @@ export async function bulkDownloadBunshokaitou(
         targets.push({ url: it.url, title: it.title, issuedAt: it.issuedAt });
       }
     } catch (err) {
+      indexFailures++;
       logger.warn('bunsho-bulk', `税目別索引失敗: ${t.taxonomy}`, {
         url: t.indexUrl,
         error: toMeta(err),
@@ -268,6 +272,15 @@ export async function bulkDownloadBunshokaitou(
   let health: HealthEvaluation | undefined;
   if (isFullRun && beforeSnapshot) {
     const afterSnapshot = snapshotDocumentTable(db, 'bunshokaitou');
+    // Issue #30: 索引から消えた文書に印を付け直す（索引をすべて取れたときだけ）
+    const orphanCounts =
+      indexFailures === 0
+        ? markAndCount(db, 'bunshokaitou', {
+            indexUrls: new Set(targets.map((t) => t.url)),
+            runStartedAt: startedAt,
+            ranAt: finishedAt,
+          })
+        : undefined;
     aggregation = computeBulkAggregation({
       before: beforeSnapshot,
       after: afterSnapshot,
@@ -275,6 +288,7 @@ export async function bulkDownloadBunshokaitou(
       documentsFailed,
       durationMs,
       ranAt: finishedAt,
+      ...(orphanCounts ? { orphanCounts } : {}),
     });
     health = recordBulkRun('bunshokaitou', aggregation, options.baselinePath);
   }

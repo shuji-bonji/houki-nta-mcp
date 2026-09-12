@@ -47,6 +47,11 @@ import {
 } from '../services/db-search.js';
 import { writeBackLiveDocument } from '../services/document-writeback.js';
 import {
+  indexStatusFields,
+  REMOVED_FROM_INDEX,
+  REMOVED_FROM_INDEX_NOTICE,
+} from '../services/index-status.js';
+import {
   type FreshnessRange,
   summarizeFreshnessFromDocument,
   summarizeFreshnessFromSection,
@@ -663,6 +668,25 @@ function formatCount(n: number): string {
   return n.toLocaleString('en-US');
 }
 
+/**
+ * Issue #30: 検索結果に、国税庁の索引から消えた文書が混ざっていることを 1 行で伝える。
+ *
+ * 除外はしない。過去の課税期間を調べたい利用者が引けなくなるため。件数と注記だけを足す。
+ */
+function describeIndexStatusNotes(
+  hits: ReadonlyArray<{ orphanedAt: string | null }>,
+  searchNotes: readonly string[]
+): { search_notes?: string[] } {
+  const removed = hits.filter((h) => h.orphanedAt).length;
+  const notes = [...searchNotes];
+  if (removed > 0) {
+    notes.push(
+      `検索結果 ${hits.length} 件のうち ${removed} 件は国税庁の索引から外れています（\`index_status: "${REMOVED_FROM_INDEX}"\`）。${REMOVED_FROM_INDEX_NOTICE}`
+    );
+  }
+  return notes.length > 0 ? { search_notes: notes } : {};
+}
+
 function withFreshness(freshness: FreshnessRange | undefined): { freshness?: FreshnessRange } {
   return freshness ? { freshness } : {};
 }
@@ -731,9 +755,10 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
         snippet: h.snippet,
         ...(h.score !== undefined ? { score: h.score } : {}),
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
+        ...indexStatusFields(h.orphanedAt),
       })),
       ...(freshness ? { freshness } : {}),
-      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
+      ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   } finally {
@@ -783,7 +808,7 @@ export async function getQa(
 
   // Issue #29: DB を先に引く。bulk DL 済みなら国税庁サイトへ行かない
   const fromDb = readQaFromDb(docId, options.dbPath);
-  if (fromDb) return qaResponse(fromDb, args.format, 'db');
+  if (fromDb) return qaResponse(fromDb.qa, args.format, 'db', fromDb.orphanedAt);
 
   let html: string;
   let sourceUrl: string;
@@ -839,13 +864,16 @@ export async function getQa(
  * `structured_json` を持つ行だけを返す。v0.16.0 より前に投入した行は構造を持たないので、
  * `null` を返して呼び出し側に国税庁サイトから取り直させる。
  */
-function readQaFromDb(docId: string, dbPath?: string): QaJirei | null {
+function readQaFromDb(docId: string, dbPath?: string): { qa: QaJirei; orphanedAt?: string } | null {
   const db = openDb(dbPath);
   try {
     const doc = getDocumentFromDb(db, 'qa-jirei', docId);
     if (!doc?.structured) return null;
     const structured = doc.structured as StoredQaStructure;
-    return { ...structured, sourceUrl: doc.sourceUrl, fetchedAt: doc.fetchedAt };
+    return {
+      qa: { ...structured, sourceUrl: doc.sourceUrl, fetchedAt: doc.fetchedAt },
+      ...(doc.orphanedAt ? { orphanedAt: doc.orphanedAt } : {}),
+    };
   } catch {
     return null;
   } finally {
@@ -882,7 +910,12 @@ function writeBackQa(docId: string, qa: QaJirei, dbPath?: string): void {
 }
 
 /** 質疑応答事例 1 件を応答の形にする（DB / live で同じ形にするため共有する） */
-function qaResponse(qa: QaJirei, format: GetQaArgs['format'], source: DocumentSource) {
+function qaResponse(
+  qa: QaJirei,
+  format: GetQaArgs['format'],
+  source: DocumentSource,
+  orphanedAt?: string
+) {
   if (format === 'json') {
     // Issue #22: 【関係法令通達】を法令と通達の参照に分け、houki-egov-mcp / nta_get_tsutatsu へ案内する
     const { related_laws, related_tsutatsu } = parseRelatedReferences(qa.relatedLaws);
@@ -890,13 +923,15 @@ function qaResponse(qa: QaJirei, format: GetQaArgs['format'], source: DocumentSo
     return {
       qa,
       source,
+      ...indexStatusFields(orphanedAt),
+      ...(orphanedAt ? { notice: REMOVED_FROM_INDEX_NOTICE } : {}),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       ...(related_laws.length > 0 ? { related_laws } : {}),
       ...(related_tsutatsu.length > 0 ? { related_tsutatsu } : {}),
       ...(next_actions.length > 0 ? { next_actions } : {}),
     };
   }
-  return renderQaMarkdown(qa, source);
+  return renderQaMarkdown(qa, source, orphanedAt);
 }
 
 /**
@@ -996,9 +1031,10 @@ export async function handleNtaSearchTaxAnswer(
         snippet: h.snippet,
         ...(h.score !== undefined ? { score: h.score } : {}),
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
+        ...indexStatusFields(h.orphanedAt),
       })),
       ...(freshness ? { freshness } : {}),
-      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
+      ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   } finally {
@@ -1053,7 +1089,7 @@ export async function getTaxAnswer(
 
   // Issue #29: DB を先に引く。bulk DL 済みなら国税庁サイトへ行かない
   const fromDb = readTaxAnswerFromDb(no, options.dbPath);
-  if (fromDb) return taxAnswerResponse(fromDb, args.format, 'db');
+  if (fromDb) return taxAnswerResponse(fromDb.taxAnswer, args.format, 'db', fromDb.orphanedAt);
 
   let html: string;
   let sourceUrl: string;
@@ -1102,13 +1138,19 @@ export async function getTaxAnswer(
  * `structured_json` を持つ行だけを返す。v0.16.0 より前に投入した行は構造を持たないので、
  * `null` を返して呼び出し側に国税庁サイトから取り直させる。
  */
-function readTaxAnswerFromDb(no: string, dbPath?: string): TaxAnswer | null {
+function readTaxAnswerFromDb(
+  no: string,
+  dbPath?: string
+): { taxAnswer: TaxAnswer; orphanedAt?: string } | null {
   const db = openDb(dbPath);
   try {
     const doc = getDocumentFromDb(db, 'tax-answer', no);
     if (!doc?.structured) return null;
     const structured = doc.structured as StoredTaxAnswerStructure;
-    return { ...structured, sourceUrl: doc.sourceUrl, fetchedAt: doc.fetchedAt };
+    return {
+      taxAnswer: { ...structured, sourceUrl: doc.sourceUrl, fetchedAt: doc.fetchedAt },
+      ...(doc.orphanedAt ? { orphanedAt: doc.orphanedAt } : {}),
+    };
   } catch {
     return null;
   } finally {
@@ -1148,16 +1190,19 @@ function writeBackTaxAnswer(ta: TaxAnswer, html: string, dbPath?: string): void 
 function taxAnswerResponse(
   taxAnswer: TaxAnswer,
   format: GetTaxAnswerArgs['format'],
-  source: DocumentSource
+  source: DocumentSource,
+  orphanedAt?: string
 ) {
   if (format === 'json') {
     return {
       taxAnswer,
       source,
+      ...indexStatusFields(orphanedAt),
+      ...(orphanedAt ? { notice: REMOVED_FROM_INDEX_NOTICE } : {}),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   }
-  return renderTaxAnswerMarkdown(taxAnswer, source);
+  return renderTaxAnswerMarkdown(taxAnswer, source, orphanedAt);
 }
 
 /**
@@ -1268,9 +1313,10 @@ export async function handleNtaSearchKaiseiTsutatsu(
         snippet: h.snippet,
         ...(h.score !== undefined ? { score: h.score } : {}),
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
+        ...indexStatusFields(h.orphanedAt),
       })),
       ...(freshness ? { freshness } : {}),
-      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
+      ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   } finally {
@@ -1302,6 +1348,8 @@ export async function handleNtaGetKaiseiTsutatsu(
     if (args.format === 'json') {
       return {
         document: doc,
+        ...indexStatusFields(doc.orphanedAt),
+        ...(doc.orphanedAt ? { notice: REMOVED_FROM_INDEX_NOTICE } : {}),
         legal_status: TSUTATSU_LEGAL_STATUS,
         source: 'db' as const,
       };
@@ -1323,6 +1371,11 @@ function renderKaiseiMarkdown(doc: import('../types/document.js').NtaDocument): 
   lines.push(`- **docId**: \`${doc.docId}\``);
   lines.push(`- **出典**: ${doc.sourceUrl}`);
   lines.push(`- **取得**: ${doc.fetchedAt}`);
+  if (doc.orphanedAt) {
+    lines.push(`- **索引の状態**: ${REMOVED_FROM_INDEX}（${doc.orphanedAt} に確認）`);
+    lines.push('');
+    lines.push(`> ${REMOVED_FROM_INDEX_NOTICE}`);
+  }
   if (doc.issuer) {
     lines.push('');
     lines.push('## 宛先・発出者');
@@ -1406,9 +1459,10 @@ export async function handleNtaSearchJimuUnei(
         snippet: h.snippet,
         ...(h.score !== undefined ? { score: h.score } : {}),
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
+        ...indexStatusFields(h.orphanedAt),
       })),
       ...(freshness ? { freshness } : {}),
-      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
+      ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
   } finally {
@@ -1439,6 +1493,8 @@ export async function handleNtaGetJimuUnei(
     if (args.format === 'json') {
       return {
         document: doc,
+        ...indexStatusFields(doc.orphanedAt),
+        ...(doc.orphanedAt ? { notice: REMOVED_FROM_INDEX_NOTICE } : {}),
         legal_status: TSUTATSU_LEGAL_STATUS,
         source: 'db' as const,
       };
@@ -1467,6 +1523,11 @@ function renderDocumentMarkdown(
   lines.push(`- **docId**: \`${doc.docId}\``);
   lines.push(`- **出典**: ${doc.sourceUrl}`);
   lines.push(`- **取得**: ${doc.fetchedAt}`);
+  if (doc.orphanedAt) {
+    lines.push(`- **索引の状態**: ${REMOVED_FROM_INDEX}（${doc.orphanedAt} に確認）`);
+    lines.push('');
+    lines.push(`> ${REMOVED_FROM_INDEX_NOTICE}`);
+  }
   if (doc.issuer) {
     lines.push('');
     lines.push('## 宛先・発出者');
@@ -1565,9 +1626,10 @@ export async function handleNtaSearchBunshokaitou(
         snippet: h.snippet,
         ...(h.score !== undefined ? { score: h.score } : {}),
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
+        ...indexStatusFields(h.orphanedAt),
       })),
       ...(freshness ? { freshness } : {}),
-      ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
+      ...describeIndexStatusNotes(hits, searchNotes),
       // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
       legal_status: BUNSHOKAITOU_LEGAL_STATUS,
     };
@@ -1599,6 +1661,8 @@ export async function handleNtaGetBunshokaitou(
     if (args.format === 'json') {
       return {
         document: doc,
+        ...indexStatusFields(doc.orphanedAt),
+        ...(doc.orphanedAt ? { notice: REMOVED_FROM_INDEX_NOTICE } : {}),
         // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
         legal_status: BUNSHOKAITOU_LEGAL_STATUS,
         source: 'db' as const,

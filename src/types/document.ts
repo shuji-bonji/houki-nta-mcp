@@ -83,6 +83,13 @@ export interface NtaDocument {
    * 本文が 1 続きの平文なので持たない。
    */
   structured?: StoredStructure;
+  /**
+   * 国税庁の索引から消えたことを最初に確認した日時（Issue #30、v0.17.0 から）。
+   *
+   * 索引にある文書には付かない。索引から消えても行は消さないので、この値で現行の文書と
+   * 区別する。次の bulk download で索引に戻っていれば消える。
+   */
+  orphanedAt?: string;
 }
 
 /** 改正通達索引（kaisei_a.htm 等）のリンクエントリ */

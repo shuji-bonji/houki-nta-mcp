@@ -34,6 +34,7 @@ import { bulkDownloadTsutatsu } from './services/bulk-downloader.js';
 import { bulkDownloadBunshokaitou } from './services/bunshokaitou-bulk-downloader.js';
 import { findStaleSections } from './services/db-search.js';
 import { snapshotDocumentTable } from './services/db-snapshot.js';
+import { markAndCount } from './services/index-status.js';
 import { runHealthCheck } from './services/health-check.js';
 import { loadBaseline } from './services/health-store.js';
 import { bulkDownloadJimuUnei } from './services/jimu-unei-bulk-downloader.js';
@@ -580,6 +581,9 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
   const startMsAll = Date.now();
   const ranAtAll = new Date().toISOString();
   const beforeSnapshot: Map<string, DocSnapshot> = snapshotDocumentTable(db, 'kaisei');
+  // Issue #30: 4 通達分の索引 URL をためる。1 つでも失敗した実行では判定しない
+  const indexedUrls = new Set<string>();
+  let indexFailures = 0;
   try {
     for (const [formalName, indexUrl] of targets) {
       process.stderr.write(`\n[bulk-download-kaisei] ===== ${formalName} =====\n`);
@@ -597,6 +601,7 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
         });
         totalEntriesAll += result.totalEntries;
         documentsFailedAll += result.documentsFailed;
+        for (const u of result.indexedUrls) indexedUrls.add(u);
         summary.push({
           formalName,
           status: 'ok',
@@ -605,6 +610,7 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[bulk-download-kaisei] ${formalName} 失敗: ${msg}\n`);
+        indexFailures++;
         summary.push({ formalName, status: 'error', detail: msg });
       }
     }
@@ -616,6 +622,16 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
 
     // Phase 5 Resilience: kaisei は CLI ラッパーで 1 baseline にまとめる
     const afterSnapshot = snapshotDocumentTable(db, 'kaisei');
+    const finishedAtAll = new Date().toISOString();
+    // Issue #30: 索引から消えた文書に印を付け直す（4 通達の索引をすべて取れたときだけ）
+    const orphanCounts =
+      indexFailures === 0
+        ? markAndCount(db, 'kaisei', {
+            indexUrls: indexedUrls,
+            runStartedAt: ranAtAll,
+            ranAt: finishedAtAll,
+          })
+        : undefined;
     const aggregation = computeBulkAggregation({
       before: beforeSnapshot,
       after: afterSnapshot,
@@ -623,6 +639,7 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
       documentsFailed: documentsFailedAll,
       durationMs: Date.now() - startMsAll,
       ranAt: ranAtAll,
+      ...(orphanCounts ? { orphanCounts } : {}),
     });
     const evaluation = recordBulkRun('kaisei', aggregation);
     if (evaluation.warn) {
