@@ -3,10 +3,7 @@
  * `document` テーブルに格納する（kaisei と同じパターン）。
  */
 
-import { createHash } from 'node:crypto';
-
 import type DatabaseT from 'better-sqlite3';
-import type { NtaDocument } from '../types/document.js';
 import { logger, toMeta } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import { snapshotDocumentTable } from './db-snapshot.js';
@@ -17,6 +14,7 @@ import {
   updateDocumentFetchedAt,
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
+import { computeDocumentHash } from './document-writeback.js';
 import type { BulkRunRecord } from './health-store.js';
 import type { HealthEvaluation } from './health-thresholds.js';
 import { parseJimuUneiIndex, parseJimuUneiPage } from './jimu-unei-parser.js';
@@ -210,18 +208,6 @@ export async function bulkDownloadJimuUnei(
   if (aggregation) result.aggregation = aggregation;
   if (health) result.health = health;
   return result;
-}
-
-function computeDocumentHash(doc: NtaDocument): string {
-  const h = createHash('sha1');
-  h.update(doc.docType);
-  h.update('\n');
-  h.update(doc.docId);
-  h.update('\n');
-  h.update(normalizeJpText(doc.title));
-  h.update('\n');
-  h.update(doc.fullText);
-  return h.digest('hex');
 }
 
 function sleep(ms: number): Promise<void> {

@@ -8,7 +8,6 @@
  * taxonomy = 税目フォルダ（'shotoku' / 'gensen' / 'joto' / 'sozoku' / 'hojin' / 'shohi' / 'inshi' / 'osirase' 等）
  */
 
-import { createHash } from 'node:crypto';
 import type DatabaseT from 'better-sqlite3';
 import * as cheerio from 'cheerio';
 import type { AttachedPdf, NtaDocument } from '../types/document.js';
@@ -22,11 +21,12 @@ import {
   updateDocumentFetchedAt,
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
+import { computeDocumentHash } from './document-writeback.js';
 import type { BulkRunRecord } from './health-store.js';
 import type { HealthEvaluation } from './health-thresholds.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { extractPdfKind } from './pdf-meta.js';
-import { parseTaxAnswer } from './tax-answer-parser.js';
+import { buildTaxAnswerFullText, parseTaxAnswer } from './tax-answer-parser.js';
 import { normalizeJpText } from './text-normalize.js';
 
 /** タックスアンサー索引 URL */
@@ -137,8 +137,8 @@ export async function bulkDownloadTaxAnswer(
   const targets = options.limit ? entries.slice(0, options.limit) : entries;
 
   const upsert = db.prepare(
-    `INSERT INTO document(doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url, fetched_at, full_text, attached_pdfs_json, content_hash, last_modified, etag)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO document(doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url, fetched_at, full_text, attached_pdfs_json, content_hash, last_modified, etag, structured_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(doc_type, doc_id) DO UPDATE SET
        taxonomy=excluded.taxonomy,
        title=excluded.title,
@@ -150,7 +150,8 @@ export async function bulkDownloadTaxAnswer(
        attached_pdfs_json=excluded.attached_pdfs_json,
        content_hash=excluded.content_hash,
        last_modified=excluded.last_modified,
-       etag=excluded.etag`
+       etag=excluded.etag,
+       structured_json=excluded.structured_json`
   );
 
   let documentsFetched = 0;
@@ -169,7 +170,10 @@ export async function bulkDownloadTaxAnswer(
       const state = options.forceReload
         ? null
         : loadDocumentConditionState(db, 'tax-answer', t.url);
-      const fetchOpts = buildConditionalFetchOptions(state, fetchImpl);
+      // Issue #29: structured_json がまだ無い行は、本文が同じでも構造を入れる必要がある。
+      // 条件付き GET を使うと 304 で本文が返らずパースできないので、その行だけ 200 で取り直す
+      const effectiveState = state?.hasStructured === false ? null : state;
+      const fetchOpts = buildConditionalFetchOptions(effectiveState, fetchImpl);
       const fetched = await fetchNtaPage(t.url, fetchOpts);
 
       if (fetched.notModified) {
@@ -181,16 +185,14 @@ export async function bulkDownloadTaxAnswer(
 
       const ta = parseTaxAnswer(fetched.html, fetched.sourceUrl, fetched.fetchedAt);
       // タックスアンサーの本文は sections の text を結合
-      const fullText = normalizeJpText(
-        [
-          ta.title,
-          ta.effectiveDate ? `[${ta.effectiveDate}]` : '',
-          ta.taxCategory ? `税目: ${ta.taxCategory}` : '',
-          ...ta.sections.map((s) => `【${s.heading}】\n${s.paragraphs.join('\n')}`),
-        ]
-          .filter(Boolean)
-          .join('\n\n')
-      );
+      const fullText = buildTaxAnswerFullText(ta);
+      // Issue #29: 取得ツールが DB から live と同じ構造を返せるように、パース結果を残す。
+      // sourceUrl / fetchedAt は列を正とするので構造には入れない
+      const {
+        sourceUrl: _structuredSourceUrl,
+        fetchedAt: _structuredFetchedAt,
+        ...structured
+      } = ta;
       const doc: NtaDocument = {
         docType: 'tax-answer',
         docId: t.no,
@@ -202,10 +204,11 @@ export async function bulkDownloadTaxAnswer(
         fetchedAt: ta.fetchedAt,
         fullText,
         attachedPdfs: extractPdfs(fetched.html, ta.sourceUrl),
+        structured,
       };
-      const hash = computeHash(doc);
+      const hash = computeDocumentHash(doc);
 
-      if (state?.contentHash && state.contentHash === hash) {
+      if (effectiveState?.contentHash && effectiveState.contentHash === hash) {
         updateDocumentMetaOnly(
           db,
           'tax-answer',
@@ -232,7 +235,8 @@ export async function bulkDownloadTaxAnswer(
         JSON.stringify(doc.attachedPdfs),
         hash,
         fetched.lastModified ?? null,
-        fetched.etag ?? null
+        fetched.etag ?? null,
+        JSON.stringify(doc.structured)
       );
       counts.contentChanged++;
       documentsFetched++;
@@ -283,7 +287,11 @@ export async function bulkDownloadTaxAnswer(
 }
 
 /** `[令和7年4月1日現在法令等]` から ISO 8601 の発出日を取り出す（best effort） */
-function parseEffectiveDate(s: string | undefined): string | undefined {
+/**
+ * 「令和7年4月1日現在法令等」から ISO の日付を取り出す。
+ * Issue #29 で `nta_get_tax_answer` の書き戻しからも使うため export している。
+ */
+export function parseEffectiveDate(s: string | undefined): string | undefined {
   if (!s) return undefined;
   const m = s.match(/(令和|平成|昭和|大正|明治)\s*(\d+|元)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/);
   if (!m) return undefined;
@@ -301,7 +309,11 @@ function parseEffectiveDate(s: string | undefined): string | undefined {
   return `${year}-${mm}-${dd}`;
 }
 
-function extractPdfs(html: string, sourceUrl: string): AttachedPdf[] {
+/**
+ * 個別ページの HTML から添付 PDF を拾う。
+ * Issue #29 で `nta_get_tax_answer` の書き戻しからも使うため export している。
+ */
+export function extractPdfs(html: string, sourceUrl: string): AttachedPdf[] {
   const $ = cheerio.load(html);
   const seen = new Set<string>();
   const pdfs: AttachedPdf[] = [];
@@ -320,18 +332,6 @@ function extractPdfs(html: string, sourceUrl: string): AttachedPdf[] {
     pdfs.push({ title, url: abs, kind: extractPdfKind(title) });
   });
   return pdfs;
-}
-
-function computeHash(doc: NtaDocument): string {
-  const h = createHash('sha1');
-  h.update(doc.docType);
-  h.update('\n');
-  h.update(doc.docId);
-  h.update('\n');
-  h.update(doc.title);
-  h.update('\n');
-  h.update(doc.fullText);
-  return h.digest('hex');
 }
 
 function sleep(ms: number): Promise<void> {

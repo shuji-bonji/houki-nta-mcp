@@ -9,8 +9,21 @@ import { NTA_GENERAL_INFO_LEGAL_STATUS } from '../constants.js';
 import type { QaJirei } from '../types/qa.js';
 import type { TaxAnswer } from '../types/tax-answer.js';
 
+/**
+ * 応答をどこから返したか（Issue #29）。
+ *
+ * - `'db'`: ローカル DB（`--bulk-download-*` で取り込んだもの）から返した
+ * - `'live'`: この呼び出しで国税庁サイトから取得した
+ */
+export type DocumentSource = 'db' | 'live';
+
+const SOURCE_LABEL: Record<DocumentSource, string> = {
+  db: 'ローカル DB（bulk download で取り込んだもの）',
+  live: '国税庁サイト（この呼び出しで取得）',
+};
+
 /** タックスアンサーを Markdown に整形 */
-export function renderTaxAnswerMarkdown(t: TaxAnswer): string {
+export function renderTaxAnswerMarkdown(t: TaxAnswer, source?: DocumentSource): string {
   const lines: string[] = [];
   lines.push(`# No.${t.no} ${t.title}`);
   lines.push('');
@@ -30,6 +43,7 @@ export function renderTaxAnswerMarkdown(t: TaxAnswer): string {
   lines.push('---');
   lines.push(`出典: ${t.sourceUrl}`);
   lines.push(`取得: ${t.fetchedAt}`);
+  if (source) lines.push(`取得元: ${SOURCE_LABEL[source]}`);
   lines.push('');
   lines.push(`> ${NTA_GENERAL_INFO_LEGAL_STATUS.note}`);
 
@@ -37,7 +51,7 @@ export function renderTaxAnswerMarkdown(t: TaxAnswer): string {
 }
 
 /** 質疑応答事例を Markdown に整形 */
-export function renderQaMarkdown(q: QaJirei): string {
+export function renderQaMarkdown(q: QaJirei, source?: DocumentSource): string {
   const lines: string[] = [];
   lines.push(`# ${q.title}`);
   lines.push('');
@@ -82,6 +96,7 @@ export function renderQaMarkdown(q: QaJirei): string {
   lines.push('---');
   lines.push(`出典: ${q.sourceUrl}`);
   lines.push(`取得: ${q.fetchedAt}`);
+  if (source) lines.push(`取得元: ${SOURCE_LABEL[source]}`);
   lines.push('');
   lines.push(`> ${NTA_GENERAL_INFO_LEGAL_STATUS.note}`);
 

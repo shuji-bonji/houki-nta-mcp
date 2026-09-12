@@ -7,6 +7,8 @@
  */
 
 import type { PdfKind } from '../services/pdf-meta.js';
+import type { QaJirei } from './qa.js';
+import type { TaxAnswer } from './tax-answer.js';
 
 export type DocType = 'kaisei' | 'jimu-unei' | 'bunshokaitou' | 'tax-answer' | 'qa-jirei';
 
@@ -33,6 +35,24 @@ export interface AttachedPdf {
   kind?: PdfKind;
 }
 
+/**
+ * `document.structured_json` に入れる、質疑応答事例の構造（Issue #29）。
+ *
+ * `sourceUrl` と `fetchedAt` は `document` の列を正とするため、ここには入れない。
+ * DB から読むときに列の値を足して `QaJirei` に戻す。
+ */
+export type StoredQaStructure = Omit<QaJirei, 'sourceUrl' | 'fetchedAt'>;
+
+/**
+ * `document.structured_json` に入れる、タックスアンサーの構造（Issue #29）。
+ *
+ * `StoredQaStructure` と同じく `sourceUrl` / `fetchedAt` は持たない。
+ */
+export type StoredTaxAnswerStructure = Omit<TaxAnswer, 'sourceUrl' | 'fetchedAt'>;
+
+/** `structured_json` に入る構造。`no` を持つかどうかでタックスアンサーと質疑応答事例を見分けられる */
+export type StoredStructure = StoredQaStructure | StoredTaxAnswerStructure;
+
 /** 改正通達 / 事務運営指針 / 文書回答事例の共通レコード */
 export interface NtaDocument {
   /** 種別 */
@@ -55,6 +75,14 @@ export interface NtaDocument {
   fullText: string;
   /** 添付 PDF のリスト */
   attachedPdfs: AttachedPdf[];
+  /**
+   * パーサが組み立てた構造（Issue #29、v0.16.0 から）。
+   *
+   * 質疑応答事例とタックスアンサーだけが持つ。`nta_get_qa` / `nta_get_tax_answer` が
+   * DB から live と同じ形の応答を返すために使う。改正通達・事務運営指針・文書回答事例は
+   * 本文が 1 続きの平文なので持たない。
+   */
+  structured?: StoredStructure;
 }
 
 /** 改正通達索引（kaisei_a.htm 等）のリンクエントリ */

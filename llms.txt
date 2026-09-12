@@ -66,13 +66,16 @@ houki-nta-mcp --bulk-download-qa           # 質疑応答事例
 - `nta_search_tax_answer`: タックスアンサー（約 750 件）を検索（**v0.7.1**: `hasPdf` 対応）
 - `nta_search_qa`: 質疑応答事例（9 税目 / 約 1,840 件）を検索（**v0.7.1**: `hasPdf` 対応、現状は HTML のみで PDF を持たない）
 
-### 取得系（DB-first → live fallback）
+### 取得系（6 つともローカル DB を先に引く。DB に無いときの動きは 2 通り。v0.16.0 / Issue #29）
+DB に無ければ国税庁サイトから取得して書き戻す（応答に `source`: `"db"` / `"live"`）:
 - `nta_get_tsutatsu`: 通達本文を略称＋条項で取得（Normalize-everywhere で全角・半角ゆらぎを吸収）
+- `nta_get_tax_answer`: タックスアンサー番号（先頭桁で税目自動判定）
+- `nta_get_qa`: 質疑応答事例を topic/category/id で取得
+
+DB に無ければ `DOC_NOT_FOUND` を返す（docId から URL を組み立てるのに税目フォルダの世代差を解く必要があるため、国税庁サイトへは取りに行かない。エラーに `--bulk-download-*` の案内が付く）:
 - `nta_get_kaisei_tsutatsu`: 改正通達を docId で取得（本文 + kind 分類付き添付 PDF 表 + pdf-reader-mcp 呼び出し例）
 - `nta_get_jimu_unei`: 事務運営指針を docId で取得
 - `nta_get_bunshokaitou`: 文書回答事例を docId で取得（本庁系・国税局系の 2 系統）
-- `nta_get_tax_answer`: タックスアンサー番号（先頭桁で税目自動判定）
-- `nta_get_qa`: 質疑応答事例を topic/category/id で取得
 
 ### PDF 軸 (Phase 4-2, v0.7.1)
 - `nta_inspect_pdf_meta`: docType + docId で指定文書の添付 PDF メタだけを返す軽量 API。本文を含まないので軽い。`reader_hints.examples` に pdf-reader-mcp の `read_text` 呼び出し例 JSON が入る

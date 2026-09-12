@@ -520,7 +520,7 @@ describe('getTaxAnswer — 6101 (消費税) を取得', () => {
       utf8HtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')
     ) as unknown as typeof fetch;
 
-    const r = (await getTaxAnswer({ no: '6101' }, { fetchImpl })) as string;
+    const r = (await getTaxAnswer({ no: '6101' }, { fetchImpl, dbPath: ':memory:' })) as string;
     expect(typeof r).toBe('string');
     expect(r).toContain('No.6101');
     expect(r).toContain('消費税の基本的なしくみ');
@@ -534,7 +534,10 @@ describe('getTaxAnswer — 6101 (消費税) を取得', () => {
       utf8HtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_shotoku_1120.htm')
     ) as unknown as typeof fetch;
 
-    const r = (await getTaxAnswer({ no: '1120', format: 'json' }, { fetchImpl })) as {
+    const r = (await getTaxAnswer(
+      { no: '1120', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as {
       taxAnswer: { no: string; title: string; sections: unknown[] };
       legal_status: { binds_citizens: boolean };
     };
@@ -552,7 +555,7 @@ describe('getTaxAnswer — 6101 (消費税) を取得', () => {
       utf8HtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_hojin_5759.htm')
     ) as unknown as typeof fetch;
 
-    await getTaxAnswer({ no: '5759', format: 'json' }, { fetchImpl });
+    await getTaxAnswer({ no: '5759', format: 'json' }, { fetchImpl, dbPath: ':memory:' });
     const calls = (fetchImpl as unknown as { mock: { calls: [string][] } }).mock.calls;
     expect(calls[0][0]).toContain('/hojin/5759.htm');
   });
@@ -580,7 +583,10 @@ describe('getQa — 消費税 02/19 を取得', () => {
       sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
     ) as unknown as typeof fetch;
 
-    const r = (await getQa({ topic: 'shohi', category: '02', id: '19' }, { fetchImpl })) as string;
+    const r = (await getQa(
+      { topic: 'shohi', category: '02', id: '19' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as string;
     expect(typeof r).toBe('string');
     expect(r).toContain('ゴルフ会員権');
     expect(r).toContain('【照会要旨】');
@@ -600,7 +606,7 @@ describe('getQa — 消費税 02/19 を取得', () => {
     ) as unknown as typeof fetch;
     const r = (await getQa(
       { topic: 'shohi', category: '02', id: '19', format: 'json' },
-      { fetchImpl }
+      { fetchImpl, dbPath: ':memory:' }
     )) as {
       qa: { relatedLaws: string[]; notice?: string; basisDate?: string };
       related_laws?: Array<Record<string, unknown>>;
@@ -643,7 +649,7 @@ describe('getQa — 消費税 02/19 を取得', () => {
 
     const r = (await getQa(
       { topic: 'shohi', category: '02', id: '19', format: 'json' },
-      { fetchImpl }
+      { fetchImpl, dbPath: ':memory:' }
     )) as {
       qa: { topic: string; title: string; question: string[]; relatedLaws: string[] };
       legal_status: { binds_courts: boolean };
@@ -664,7 +670,10 @@ describe('getQa — 消費税 02/19 を取得', () => {
       sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
     ) as unknown as typeof fetch;
 
-    await getQa({ topic: 'shohi', category: '2', id: '19', format: 'json' }, { fetchImpl });
+    await getQa(
+      { topic: 'shohi', category: '2', id: '19', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    );
     const calls = (fetchImpl as unknown as { mock: { calls: [string][] } }).mock.calls;
     expect(calls[0][0]).toContain('/02/19.htm');
   });
@@ -699,7 +708,7 @@ describe('integration tests (INTEGRATION=1 でのみ実行)', () => {
   itIntegration(
     'getTaxAnswer: 実 nta.go.jp から 6101 (消費税の基本) を取得',
     async () => {
-      const r = (await getTaxAnswer({ no: '6101', format: 'json' })) as {
+      const r = (await getTaxAnswer({ no: '6101', format: 'json' }, { dbPath: ':memory:' })) as {
         taxAnswer?: { no: string; title: string };
         error?: string;
       };
@@ -713,7 +722,10 @@ describe('integration tests (INTEGRATION=1 でのみ実行)', () => {
   itIntegration(
     'getQa: 実 nta.go.jp から消費税 02/19 (ゴルフ会員権) を取得',
     async () => {
-      const r = (await getQa({ topic: 'shohi', category: '02', id: '19', format: 'json' })) as {
+      const r = (await getQa(
+        { topic: 'shohi', category: '02', id: '19', format: 'json' },
+        { dbPath: ':memory:' }
+      )) as {
         qa?: { title: string };
         error?: string;
       };

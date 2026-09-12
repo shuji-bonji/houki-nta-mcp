@@ -8,7 +8,6 @@
  * taxonomy = 税目 (`QA_TOPICS` の各値)
  */
 
-import { createHash } from 'node:crypto';
 import type DatabaseT from 'better-sqlite3';
 import * as cheerio from 'cheerio';
 import type { QaTopic } from '../constants.js';
@@ -24,10 +23,11 @@ import {
   updateDocumentFetchedAt,
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
+import { computeDocumentHash } from './document-writeback.js';
 import type { BulkRunRecord } from './health-store.js';
 import type { HealthEvaluation } from './health-thresholds.js';
 import { fetchNtaPage } from './nta-scraper.js';
-import { parseQaJirei } from './qa-parser.js';
+import { buildQaFullText, parseQaJirei } from './qa-parser.js';
 import { normalizeJpText } from './text-normalize.js';
 
 export interface BulkQaProgress {
@@ -152,8 +152,8 @@ export async function bulkDownloadQa(
 
   // 2. 個別事例 fetch + DB 投入 (Phase 6-2: conditional GET + 3-way diff)
   const upsert = db.prepare(
-    `INSERT INTO document(doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url, fetched_at, full_text, attached_pdfs_json, content_hash, last_modified, etag)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO document(doc_type, doc_id, taxonomy, title, issued_at, issuer, source_url, fetched_at, full_text, attached_pdfs_json, content_hash, last_modified, etag, structured_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(doc_type, doc_id) DO UPDATE SET
        taxonomy=excluded.taxonomy,
        title=excluded.title,
@@ -165,7 +165,8 @@ export async function bulkDownloadQa(
        attached_pdfs_json=excluded.attached_pdfs_json,
        content_hash=excluded.content_hash,
        last_modified=excluded.last_modified,
-       etag=excluded.etag`
+       etag=excluded.etag,
+       structured_json=excluded.structured_json`
   );
 
   let documentsFetched = 0;
@@ -185,7 +186,10 @@ export async function bulkDownloadQa(
 
     try {
       const state = options.forceReload ? null : loadDocumentConditionState(db, 'qa-jirei', t.url);
-      const fetchOpts = buildConditionalFetchOptions(state, fetchImpl);
+      // Issue #29: structured_json がまだ無い行は、本文が同じでも構造を入れる必要がある。
+      // 条件付き GET を使うと 304 で本文が返らずパースできないので、その行だけ 200 で取り直す
+      const effectiveState = state?.hasStructured === false ? null : state;
+      const fetchOpts = buildConditionalFetchOptions(effectiveState, fetchImpl);
       const fetched = await fetchNtaPage(t.url, fetchOpts);
 
       if (fetched.notModified) {
@@ -206,18 +210,16 @@ export async function bulkDownloadQa(
         fetchedAt: fetched.fetchedAt,
       });
 
-      const fullText = normalizeJpText(
-        [
-          qa.title,
-          qa.question.length ? `【照会要旨】\n${qa.question.join('\n')}` : '',
-          qa.answer.length ? `【回答要旨】\n${qa.answer.join('\n')}` : '',
-          qa.relatedLaws.length ? `【関係法令通達】\n${qa.relatedLaws.join('\n')}` : '',
-        ]
-          .filter(Boolean)
-          .join('\n\n')
-      );
+      const fullText = buildQaFullText(qa);
 
       const docId = `${t.topic}/${t.category}/${t.id}`;
+      // Issue #29: 取得ツールが DB から live と同じ構造を返せるように、パース結果を残す。
+      // sourceUrl / fetchedAt は列を正とするので構造には入れない
+      const {
+        sourceUrl: _structuredSourceUrl,
+        fetchedAt: _structuredFetchedAt,
+        ...structured
+      } = qa;
       const doc: NtaDocument = {
         docType: 'qa-jirei',
         docId,
@@ -229,10 +231,11 @@ export async function bulkDownloadQa(
         fetchedAt: qa.fetchedAt,
         fullText,
         attachedPdfs: [],
+        structured,
       };
-      const hash = computeHash(doc);
+      const hash = computeDocumentHash(doc);
 
-      if (state?.contentHash && state.contentHash === hash) {
+      if (effectiveState?.contentHash && effectiveState.contentHash === hash) {
         updateDocumentMetaOnly(
           db,
           'qa-jirei',
@@ -261,7 +264,8 @@ export async function bulkDownloadQa(
         JSON.stringify(doc.attachedPdfs),
         hash,
         fetched.lastModified ?? null,
-        fetched.etag ?? null
+        fetched.etag ?? null,
+        JSON.stringify(doc.structured)
       );
       counts.contentChanged++;
       documentsFetched++;
@@ -317,18 +321,6 @@ export async function bulkDownloadQa(
   if (aggregation) result.aggregation = aggregation;
   if (health) result.health = health;
   return result;
-}
-
-function computeHash(doc: NtaDocument): string {
-  const h = createHash('sha1');
-  h.update(doc.docType);
-  h.update('\n');
-  h.update(doc.docId);
-  h.update('\n');
-  h.update(doc.title);
-  h.update('\n');
-  h.update(doc.fullText);
-  return h.digest('hex');
 }
 
 function sleep(ms: number): Promise<void> {

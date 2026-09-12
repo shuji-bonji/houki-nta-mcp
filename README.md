@@ -15,8 +15,8 @@
 ## 主な機能
 
 - **6 大コンテンツに対応**: 基本通達 4 種 + 改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例
-- **14 ツール提供**: 取得（DB-first → live fallback） + FTS5 全文検索 + PDF メタ取得 + 略称解決
-- **高速応答**: bulk DL 済なら DB から即時応答（~10ms）。未投入なら live fetch（~700ms/件）でフォールバック
+- **14 ツール提供**: 取得 + FTS5 全文検索 + PDF メタ取得 + 略称解決
+- **高速応答**: bulk DL 済なら DB から即時応答（~10ms）。未投入のときの動きは取得ツールごとに違います（[取得ツールが DB をどう使うか](#取得ツールが-db-をどう使うか)）
 - **正規化済み検索**: Normalize-everywhere 原則で全角・半角ゆらぎを吸収（数字・英字・ハイフン・チルダ・空白。実装は houki-hub family 共通の `@shuji-bonji/houki-abbreviations`）
 - **改正検知**: SHA-1 content_hash で個別文書の変化を検知、4 パターン集計（新規 / 更新 / 削除 / 移動）
 - **HP 構造変更耐性 (v0.6.0 / v0.9.4)**: 9 種別 baseline で履歴管理 + `--health-check` CLI で週次 canary 検証 + `--check-baseline-drift` で `menu.htm` を真の正典として世代移行 (`sozoku2` / `hyoka_new` 等) を**事前検知** + soft-404 (`/error/404.htm` 着地) を `fetchNtaPage` で自動 fail させる二重防御
@@ -28,7 +28,7 @@
 
 ### データフロー全体俯瞰
 
-国税庁 HP の 6 大コンテンツを bulk DL で SQLite cache に投入し、MCP tool は **DB-first → live fallback** で応答します。
+国税庁 HP の 6 大コンテンツを bulk DL で SQLite cache に投入し、MCP tool はローカル DB を先に引いて応答します。DB に無かったときの動きは取得ツールごとに違うので、[取得ツールが DB をどう使うか](#取得ツールが-db-をどう使うか)を参照してください。
 
 ```mermaid
 flowchart TB
@@ -79,20 +79,37 @@ flowchart TB
 
 | Tool                         | 用途                                                                                                                             |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `nta_get_tsutatsu`           | 通達本文を取得（DB-first → live fallback、4 通達対応）                                                                           |
+| `nta_get_tsutatsu`           | 通達本文を取得（DB → 無ければ国税庁サイト、4 通達対応）                                                                          |
 | `nta_search_tsutatsu`        | 通達を FTS5 全文検索（`freshness` 付き）                                                                                         |
-| `nta_get_kaisei_tsutatsu`    | 改正通達を docId で取得（本文 + kind 分類付き PDF 表）                                                                           |
+| `nta_get_kaisei_tsutatsu`    | 改正通達を docId で取得（DB のみ。本文 + kind 分類付き PDF 表）                                                                  |
 | `nta_search_kaisei_tsutatsu` | 改正通達を FTS5 検索（`hasPdf` フィルタ・`freshness`）                                                                           |
-| `nta_get_jimu_unei`          | 事務運営指針を取得                                                                                                               |
+| `nta_get_jimu_unei`          | 事務運営指針を取得（DB のみ）                                                                                                    |
 | `nta_search_jimu_unei`       | 事務運営指針を FTS5 検索（`hasPdf` フィルタ・`freshness`）                                                                       |
-| `nta_get_bunshokaitou`       | 文書回答事例を取得                                                                                                               |
+| `nta_get_bunshokaitou`       | 文書回答事例を取得（DB のみ）                                                                                                    |
 | `nta_search_bunshokaitou`    | 文書回答事例を FTS5 検索（`hasPdf` フィルタ・`freshness`）                                                                       |
-| `nta_get_tax_answer`         | タックスアンサー本文を取得                                                                                                       |
+| `nta_get_tax_answer`         | タックスアンサー本文を取得（DB → 無ければ国税庁サイト）                                                                          |
 | `nta_search_tax_answer`      | タックスアンサーを FTS5 全文検索（`hasPdf` フィルタ・`freshness`）                                                               |
-| `nta_get_qa`                 | 質疑応答事例の本文を取得                                                                                                         |
+| `nta_get_qa`                 | 質疑応答事例の本文を取得（DB → 無ければ国税庁サイト）                                                                            |
 | `nta_search_qa`              | 質疑応答事例を FTS5 全文検索（`topic` で税目の絞り込み・`freshness` 付き）                                                                |
 | `nta_inspect_pdf_meta`       | 指定文書の添付 PDF メタ + `pdf-reader-mcp` 呼び出し例（kind 別 / extract_tables 推奨）だけを返す軽量 API (v0.7.1, v0.7.2 で拡張) |
 | `resolve_abbreviation`       | 略称→エントリ解決（houki-abbreviations 経由）                                                                                    |
+
+### 取得ツールが DB をどう使うか
+
+取得ツール 6 つは、ローカル DB を先に引く点は同じですが、**DB に無かったときの動きが 2 通りに分かれます**（v0.16.0 / Issue #29）。
+
+| ツール | DB を先に引く | DB に無いとき | DB へ書き戻す | 応答の `source` |
+| --- | --- | --- | --- | --- |
+| `nta_get_tsutatsu` | 引く | 国税庁サイトから取得 | 書き戻す | `"db"` / `"live"` |
+| `nta_get_qa` | 引く | 国税庁サイトから取得 | 書き戻す | `"db"` / `"live"` |
+| `nta_get_tax_answer` | 引く | 国税庁サイトから取得 | 書き戻す | `"db"` / `"live"` |
+| `nta_get_kaisei_tsutatsu` | 引く | `DOC_NOT_FOUND` を返す | — | 付かない |
+| `nta_get_jimu_unei` | 引く | `DOC_NOT_FOUND` を返す | — | 付かない |
+| `nta_get_bunshokaitou` | 引く | `DOC_NOT_FOUND` を返す | — | 付かない |
+
+改正通達・事務運営指針・文書回答事例の 3 つは、docId から個別ページの URL を組み立てるのに税目フォルダの世代差（`sozoku` / `sozoku2` など）を解く必要があるため、国税庁サイトへは取りに行きません。エラーには `--bulk-download-*` の案内が付きます。
+
+`nta_get_qa` と `nta_get_tax_answer` が DB から返せるのは、**`structured_json` を持つ行**だけです。この列は v0.16.0 で増えたので、v0.15.x までに投入した行は持っていません。持っていない行は国税庁サイトから取得して書き戻すので、1 度引けば次からは DB から返ります。`--bulk-download-qa` / `--bulk-download-tax-answer` を実行しても埋まります（この 2 種別では、構造を持たない行は条件付き GET を使わずに取り直します）。
 
 ### 対応通達（4 種）
 
