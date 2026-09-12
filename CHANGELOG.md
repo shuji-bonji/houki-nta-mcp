@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.15.0] - 2026-09-12
+
+**minor リリース** — 全角英字が半角にならず、`ＮＩＳＡ` と `NISA` で検索結果が分断されていた問題を直した（Issue #27）。既存 DB は起動時に一度だけ入れ直す。
+
+### Fixed
+
+- **正規化を houki-abbreviations の共通実装に揃える**: `src/services/text-normalize.ts` の独自実装をやめ、`@shuji-bonji/houki-abbreviations` の `normalizeJpText` / `normalizeSearchQuery` を再 export する形にした。独自実装は全角数字・ハイフン・チルダ・全角スペースだけを半角にしていて、**全角英字（`Ａ-Ｚ` `ａ-ｚ`）を残していた**
+  - 症状: `nta_search_tax_answer` で `NISA` は 3 件（1535 / 1464 / 1474）、`ＮＩＳＡ` は 1 件（3105）を返し、**重なりが無かった**。`e-Tax` と `ｅ－Ｔａｘ` も同様。国税庁の HTML 自体が両方の表記を混ぜているため、どちらで打っても取りこぼしていた
+  - `normalizeClauseNumber`（条番号から空白を全部落とす）は houki-nta-mcp 固有なので `text-normalize.ts` に残した
+  - 依存の版は変えていない（`^0.4.1`。この 2 関数は 0.3.0 からある）
+
+### Changed
+
+- **SCHEMA_VERSION を 4 → 5 に上げ、既存 DB を起動時に入れ直す**: `clause` の条番号・題名・本文・段落 JSON、`section` の題名、`document` の題名・本文を新しい正規化で UPDATE する。FTS5 は trigger で追随するので索引も入れ替わる
+  - **国税庁サイトへの再アクセスは発生しない**。古い正規化の変換は新しい正規化の変換の部分集合で互いに干渉しないため、保存済みの文字列にもう一度通せば原文から通したのと同じ結果になる
+  - `document` の `content_hash` は入れ直した文字列で計算し直す。こうしないと次の bulk DL で全件が「更新された」と判定される
+  - `section` の `content_hash` は NULL（未計算）に戻す。この hash は配下 clause の並び順に依存し、その順序を DB から復元できないため。次の bulk DL でその節だけ入れ直され、hash が付き直る
+  - v3 の DB からも v3 → v4 → v5 と順に進む
+
+### Tests
+
+- `text-normalize.test.ts`: 全角英字・検索クエリの小文字化・前後空白・冪等性で 5 ケース追加
+- `schema.test.ts`: v4 相当の DB を作って移行を走らせ、条番号・題名・本文・段落 JSON が半角になること、半角キーワードで FTS5 が引けること、`document` の `content_hash` が bulk downloader と同じ式で計算し直されること、`section` の `content_hash` が NULL に戻ること、二度開いても変わらないことを確認する 6 ケース追加
+
+### 関連
+
+- [Issue #27](https://github.com/shuji-bonji/houki-nta-mcp/issues/27)
+
 ## [0.14.2] - 2026-09-12
 
 **patch リリース** — bulk download の税目フラグが値を検証していなかった問題を直した（Issue #25）。打ち間違えると、何も投入されないまま正常終了していた。

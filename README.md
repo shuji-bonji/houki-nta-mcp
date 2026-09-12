@@ -17,7 +17,7 @@
 - **6 大コンテンツに対応**: 基本通達 4 種 + 改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例
 - **14 ツール提供**: 取得（DB-first → live fallback） + FTS5 全文検索 + PDF メタ取得 + 略称解決
 - **高速応答**: bulk DL 済なら DB から即時応答（~10ms）。未投入なら live fetch（~700ms/件）でフォールバック
-- **正規化済み検索**: Normalize-everywhere 原則で全角・半角ゆらぎを吸収
+- **正規化済み検索**: Normalize-everywhere 原則で全角・半角ゆらぎを吸収（数字・英字・ハイフン・チルダ・空白。実装は houki-hub family 共通の `@shuji-bonji/houki-abbreviations`）
 - **改正検知**: SHA-1 content_hash で個別文書の変化を検知、4 パターン集計（新規 / 更新 / 削除 / 移動）
 - **HP 構造変更耐性 (v0.6.0 / v0.9.4)**: 9 種別 baseline で履歴管理 + `--health-check` CLI で週次 canary 検証 + `--check-baseline-drift` で `menu.htm` を真の正典として世代移行 (`sozoku2` / `hyoka_new` 等) を**事前検知** + soft-404 (`/error/404.htm` 着地) を `fetchNtaPage` で自動 fail させる二重防御
 - **添付 PDF kind 分類 (v0.7.0)**: タイトルから 6 種別（新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）に自動分類。Markdown 出力は kind 優先度ソートの表 + `pdf-reader-mcp` 呼び出し例つき
@@ -103,7 +103,9 @@ flowchart TB
 | 法人税基本通達   | 法基通 | hojin        | 3 階層、節の2 を含む `1-3の2-N`                |
 | 相続税法基本通達 | 相基通 | sozoku       | flat 構造、ナカグロ複数条共通 `1の3・1の4共-1` |
 
-clause 番号は **Normalize-everywhere** で全角→半角統一されているため、ユーザーが半角・全角どちらで入力してもヒットします。
+clause 番号は **Normalize-everywhere** で全角→半角統一されているため、ユーザーが半角・全角どちらで入力してもヒットします。全角英字（`ＮＩＳＡ` → `NISA`、`ｅ－Ｔａｘ` → `e-Tax`）も v0.15.0 から半角に揃います。
+
+v0.14.2 以前に作った DB は、v0.15.0 で最初にサーバーを起動したときに一度だけ入れ直されます。国税庁サイトへの再アクセスは発生しません。
 
 ### 検索キーワードの文字数（v0.10.1、Issue #18）
 

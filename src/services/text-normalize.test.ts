@@ -57,3 +57,31 @@ describe('normalizeSearchQuery', () => {
     expect(normalizeSearchQuery('1－4－13　通則')).toBe('1-4-13 通則');
   });
 });
+
+describe('共通パッケージに揃えた分の挙動（Issue #27）', () => {
+  it('全角英字 → 半角英字', () => {
+    expect(normalizeJpText('ＮＩＳＡ')).toBe('NISA');
+    expect(normalizeJpText('ｅ－Ｔａｘ')).toBe('e-Tax');
+    expect(normalizeJpText('ｉＤｅＣｏ')).toBe('iDeCo');
+    expect(normalizeJpText('ＤＸ投資促進税制')).toBe('DX投資促進税制');
+  });
+
+  it('全角英字を含む条番号も半角になる', () => {
+    expect(normalizeClauseNumber('Ａ－１')).toBe('A-1');
+  });
+
+  it('検索クエリは英字を小文字に寄せる', () => {
+    expect(normalizeSearchQuery('ＮＩＳＡ')).toBe('nisa');
+    expect(normalizeSearchQuery('e-Tax')).toBe('e-tax');
+  });
+
+  it('前後の空白を落とす', () => {
+    expect(normalizeJpText('　軽減税率　')).toBe('軽減税率');
+  });
+
+  it('保存済みの文字列にもう一度通しても結果が変わらない（冪等）', () => {
+    for (const s of ['ＮＩＳＡ', 'ｅ－Ｔａｘ', '1の3・1の4共－1', '第１２条第１項関係']) {
+      expect(normalizeJpText(normalizeJpText(s))).toBe(normalizeJpText(s));
+    }
+  });
+});
