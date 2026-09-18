@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.shuji-bonji/houki-nta-mcp",
+  "description": "MCP server for Japanese National Tax Agency (NTA) notices and Q&A: basic circulars (tsutatsu), amendments, Q&A cases and Tax Answer, each marked with legal_status (not binding on taxpayers) and linked back to the statute. 実装する前に、国税庁の取扱いが条文とどう違うかを確かめる MCP サーバー。houki-hub family.",
+  "repository": {
+    "url": "https://github.com/shuji-bonji/houki-nta-mcp",
+    "source": "github"
+  },
+  "version": "0.18.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@shuji-bonji/houki-nta-mcp",
+      "version": "0.18.1",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
