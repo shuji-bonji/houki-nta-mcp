@@ -22,9 +22,9 @@ import {
   updateDocumentMetaOnly,
 } from './document-conditional-fetch.js';
 import { computeDocumentHash } from './document-writeback.js';
-import { markAndCount } from './index-status.js';
 import type { BulkRunRecord } from './health-store.js';
 import type { HealthEvaluation } from './health-thresholds.js';
+import { markAndCount } from './index-status.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { extractPdfKind } from './pdf-meta.js';
 import { buildTaxAnswerFullText, parseTaxAnswer } from './tax-answer-parser.js';

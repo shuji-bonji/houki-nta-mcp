@@ -2,8 +2,8 @@
  * Issue #30: 国税庁の索引から消えた文書に印を付け、応答で区別できるようにする。
  */
 
-import Database from 'better-sqlite3';
 import type DatabaseT from 'better-sqlite3';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { initSchema } from '../db/schema.js';

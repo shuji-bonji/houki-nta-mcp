@@ -6,7 +6,12 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { formatInvalidTaxonomyValues, parseArgs, runCliIfRequested } from './cli.js';
+import {
+  formatBulkEstimates,
+  formatInvalidTaxonomyValues,
+  parseArgs,
+  runCliIfRequested,
+} from './cli.js';
 
 // v0.10.2: --refresh が bulkDownloadTsutatsu の forceReload に渡ることを確認するため、
 // 実際の DL は mock する (国税庁サイトには触れない)
@@ -287,5 +292,93 @@ describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
     expect(text.trimEnd().split('\n')).toHaveLength(2);
     expect(text).toContain('[houki-nta-mcp] --qa-topic="zzz" は使えません。使える値: shohi');
     expect(text).toContain('（国税局の別表記 souzoku も使えます）');
+  });
+});
+
+describe('--quickstart: まず数分で試す入口 (Issue #35)', () => {
+  // describe 直下で spyOn すると、前の describe が mockRestore した時点で同じ spy が外れ、
+  // 出力が記録されない。他の describe と同じく、テストごとに張り直して written に集める
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  const stdoutWritten: string[] = [];
+  const stderrWritten: string[] = [];
+
+  beforeEach(() => {
+    stdoutWritten.length = 0;
+    stderrWritten.length = 0;
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutWritten.push(String(chunk));
+      return true;
+    });
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrWritten.push(String(chunk));
+      return true;
+    });
+  });
+  afterEach(() => {
+    vi.mocked(bulkDownloadTsutatsu).mockClear();
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+  });
+
+  it('parseArgs: 既定は false、--quickstart で true', () => {
+    expect(parseArgs([]).quickstart).toBe(false);
+    expect(parseArgs(['--quickstart']).quickstart).toBe(true);
+  });
+
+  it('--quickstart は消費税法基本通達 1 本だけを差分更新で投入する', async () => {
+    const handled = await runCliIfRequested(['--quickstart', '--db-path=:memory:']);
+    expect(handled).toBe(true);
+    expect(bulkDownloadTsutatsu).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(bulkDownloadTsutatsu).mock.calls[0][1]).toMatchObject({
+      formalName: '消費税法基本通達',
+      forceReload: false,
+    });
+  });
+
+  it('--quickstart --tsutatsu=<正式名> で別の通達 1 本にできる', async () => {
+    await runCliIfRequested(['--quickstart', '--tsutatsu=所得税基本通達', '--db-path=:memory:']);
+    expect(bulkDownloadTsutatsu).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(bulkDownloadTsutatsu).mock.calls[0][1]).toMatchObject({
+      formalName: '所得税基本通達',
+    });
+  });
+
+  it('--quickstart は実行前と完了後に、所要時間と次の一手を stderr に出す', async () => {
+    await runCliIfRequested(['--quickstart', '--db-path=:memory:']);
+    const out = stderrWritten.join('');
+    expect(out).toContain('約 3〜5 分');
+    expect(out).toContain('nta_search_tsutatsu');
+    expect(out).toContain('--bulk-download-everything');
+  });
+
+  it('formatBulkEstimates: 6 種別と合計 約 100 分、--quickstart への案内を含む', () => {
+    const text = formatBulkEstimates();
+    expect(text).toContain('合計 約 100 分');
+    expect(text).toContain('--quickstart');
+    for (const label of [
+      '通達本体',
+      '改正通達',
+      '事務運営指針',
+      '文書回答事例',
+      'タックスアンサー',
+      '質疑応答事例',
+    ]) {
+      expect(text).toContain(label);
+    }
+  });
+
+  it('--bulk-download-everything は開始時に目安表を出す', async () => {
+    await runCliIfRequested(['--bulk-download-everything', '--db-path=:memory:']);
+    const out = stderrWritten.join('');
+    expect(out).toContain('合計 約 100 分');
+  });
+
+  it('--help に「まず試す」と --quickstart がある', async () => {
+    await runCliIfRequested(['--help']);
+    const out = stdoutWritten.join('');
+    expect(out).toContain('まず試す');
+    expect(out).toContain('--quickstart');
+    expect(out.indexOf('--quickstart')).toBeLessThan(out.indexOf('--bulk-download-everything'));
   });
 });

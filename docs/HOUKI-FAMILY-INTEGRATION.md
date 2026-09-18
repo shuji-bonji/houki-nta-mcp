@@ -140,10 +140,13 @@ claude mcp add pdf-reader -- npx -y @shuji-bonji/pdf-reader-mcp
 
 **houki-nta-mcp は事前に bulk DL してローカル SQLite に投入することで、ローカル DB から返せる（≈10ms）ようになります**。未投入のまま検索を呼ぶと「DB に未登録」エラーが返ります。取得ツールが DB に無いときにどうするかは種別ごとに違うので、README の「取得ツールが DB をどう使うか」を参照してください。
 
-別ターミナルで以下を実行してください (合計 30〜60 分。範囲を絞れば短縮可):
+別ターミナルで以下を実行してください。まず試すなら通達 1 本 (約 3〜5 分)、全部入りは 6 種別で約 100 分 (税目を絞れば短縮可):
 
 ```bash
-# 推奨: 6 種別を一括投入
+# まず試す: 消費税法基本通達 1 本だけ (v0.18.0)
+npx -y @shuji-bonji/houki-nta-mcp --quickstart
+
+# 全部入り: 6 種別を一括投入 (約 100 分。開始前に種別ごとの目安を表示)
 npx -y @shuji-bonji/houki-nta-mcp --bulk-download-everything --bunsho-taxonomy=shotoku
 
 # または個別実行 (必要なものだけ)

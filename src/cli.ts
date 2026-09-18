@@ -34,9 +34,9 @@ import { bulkDownloadTsutatsu } from './services/bulk-downloader.js';
 import { bulkDownloadBunshokaitou } from './services/bunshokaitou-bulk-downloader.js';
 import { findStaleSections } from './services/db-search.js';
 import { snapshotDocumentTable } from './services/db-snapshot.js';
-import { markAndCount } from './services/index-status.js';
 import { runHealthCheck } from './services/health-check.js';
 import { loadBaseline } from './services/health-store.js';
+import { markAndCount } from './services/index-status.js';
 import { bulkDownloadJimuUnei } from './services/jimu-unei-bulk-downloader.js';
 import { bulkDownloadKaisei, KAISEI_INDEX_URLS } from './services/kaisei-bulk-downloader.js';
 import { bulkDownloadQa } from './services/qa-bulk-downloader.js';
@@ -64,6 +64,8 @@ interface CliArgs {
   qaTopics: QaTopic[] | undefined;
   /** v0.4.0: 通達本体 + 改正通達 + 事務運営指針 + 文書回答事例 を一括 bulk DL */
   bulkDownloadEverything: boolean;
+  /** Issue #35: まず数分で試す入口。`--tsutatsu` の通達 1 本（既定: 消費税法基本通達）だけを投入する */
+  quickstart: boolean;
   /** Issue #25: 税目フラグに渡された、一覧に無い値（あれば CLI は何もせず exit 1） */
   invalidTaxonomyValues: InvalidTaxonomyValue[];
   /** N 日より古い section を列挙（dry-run）。`--refresh-stale=<days>` */
@@ -146,6 +148,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     qaTopics: undefined,
     invalidTaxonomyValues: [],
     bulkDownloadEverything: false,
+    quickstart: false,
     staleDays: undefined,
     refreshStale: false,
     healthCheck: false,
@@ -159,6 +162,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
   };
   for (const a of argv) {
     if (a === '--bulk-download-everything') args.bulkDownloadEverything = true;
+    else if (a === '--quickstart') args.quickstart = true;
     else if (a === '--bulk-download-kaisei') args.bulkDownloadKaisei = true;
     else if (a === '--bulk-download-jimu-unei') args.bulkDownloadJimuUnei = true;
     else if (a === '--bulk-download-bunshokaitou') args.bulkDownloadBunshokaitou = true;
@@ -216,28 +220,42 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
 
 使い方:
   houki-nta-mcp                              MCP サーバを起動（既定）
-  houki-nta-mcp --bulk-download-everything   通達本体 + 改正通達 + 事務運営指針 + 文書回答事例 + タックスアンサー + 質疑応答事例 の 6 種別を一括投入（推奨、約 100 分 / --bunsho-taxonomy・--tax-answer-taxonomy・--qa-topic で短縮可）
-  houki-nta-mcp --bulk-download              特定通達を bulk DL してローカル DB に投入
-  houki-nta-mcp --bulk-download-all          登録済み通達を全て順次 bulk DL（消基通/所基通/法基通/相基通）
-  houki-nta-mcp --bulk-download-kaisei       4 通達分の改正通達一覧を順次 bulk DL（document テーブルへ投入）
-  houki-nta-mcp --bulk-download-jimu-unei    事務運営指針（jimu-unei）一覧を bulk DL（document テーブルへ投入）
-  houki-nta-mcp --bulk-download-bunshokaitou 文書回答事例（bunshokaitou）を bulk DL（全税目で 30 分超のため、--bunsho-taxonomy=shotoku,hojin で絞り込み推奨）
-                                             --bunsho-taxonomy の値: ${BUNSHO_MAIN_TAXONOMIES.join(', ')}（国税局の別表記 ${BUNSHO_TAXONOMY_ALIASES.join('・')} も可）
-  houki-nta-mcp --bulk-download-tax-answer   タックスアンサー（taxanswer）を bulk DL（約 850 件 / 約 15 分。--tax-answer-taxonomy=shohi,shotoku で絞り込み可）
+
+まず試す（数分）:
+  houki-nta-mcp --quickstart                 消費税法基本通達 1 本だけを投入（約 3〜5 分）。終わると、その通達に対して
+                                             nta_search_tsutatsu / nta_get_tsutatsu が使える。--tsutatsu=<正式名> で別の通達にもできる
+  ※ DB が無くても nta_get_* は国税庁サイトから直接取る（約 700ms）。検索（nta_search_*）だけは DB が要る
+
+種別を足す（必要なものだけ）:
+  houki-nta-mcp --bulk-download              特定通達を 1 本投入（--tsutatsu=<正式名>。既定: 消費税法基本通達）
+  houki-nta-mcp --bulk-download-all          基本通達 4 種（消基通/所基通/法基通/相基通。10〜15 分）
+  houki-nta-mcp --bulk-download-kaisei       4 通達分の改正通達（5〜10 分）
+  houki-nta-mcp --bulk-download-jimu-unei    事務運営指針（約 1 分）
+  houki-nta-mcp --bulk-download-tax-answer   タックスアンサー（約 750 件 / 約 14 分。--tax-answer-taxonomy=shohi,shotoku で絞り込み可）
                                              --tax-answer-taxonomy の値: ${TAX_ANSWER_TAXONOMIES.join(', ')}
-  houki-nta-mcp --bulk-download-qa           質疑応答事例（shitsugi）を bulk DL（9 税目で計 2000+ 件、--qa-topic=shohi,shotoku で絞り込み推奨）
+  houki-nta-mcp --bulk-download-qa           質疑応答事例（9 税目で計 2000+ 件 / 約 35 分。--qa-topic=shohi,shotoku で絞り込み推奨）
                                              --qa-topic の値: ${QA_TOPICS.join(', ')}
-  houki-nta-mcp --refresh-stale=<日数>     N 日以上古い section を列挙（dry-run）
+  houki-nta-mcp --bulk-download-bunshokaitou 文書回答事例（全税目で 30 分超。--bunsho-taxonomy=shotoku,hojin で絞り込み推奨）
+                                             --bunsho-taxonomy の値: ${BUNSHO_MAIN_TAXONOMIES.join(', ')}（国税局の別表記 ${BUNSHO_TAXONOMY_ALIASES.join('・')} も可）
+
+全部入り（約 100 分）:
+  houki-nta-mcp --bulk-download-everything   上の 6 種別をすべて順に投入。開始前に種別ごとの目安を表示する。
+                                             --bunsho-taxonomy / --tax-answer-taxonomy / --qa-topic で短縮可
+
+保守:
+  houki-nta-mcp --refresh-stale=<日数>       N 日以上古い section を列挙（dry-run）
   houki-nta-mcp --refresh-stale=<日数> --apply  N 日以上古い section の通達を実際に再 DL
-  houki-nta-mcp --health-check              6 大コンテンツ + 4 通達（計 9 種別）の代表 URL を canary fetch + parse 検証
-  houki-nta-mcp --health-check --strict     fail があれば exit code 1（CI 用）
-  houki-nta-mcp --check-baseline-drift      /law/tsutatsu/menu.htm を正典として CANARY_TARGETS の世代移行を事前検知（Phase 5 Lv-3b）
+  houki-nta-mcp --health-check               6 大コンテンツ + 4 通達（計 9 種別）の代表 URL を canary fetch + parse 検証
+  houki-nta-mcp --health-check --strict      fail があれば exit code 1（CI 用）
+  houki-nta-mcp --check-baseline-drift       /law/tsutatsu/menu.htm を正典として CANARY_TARGETS の世代移行を事前検知（Phase 5 Lv-3b）
   houki-nta-mcp --check-baseline-drift --strict  drift があれば exit code 1（CI 用）
-  houki-nta-mcp --version                  バージョンを表示
-  houki-nta-mcp --help                     このメッセージを表示
+
+その他:
+  houki-nta-mcp --version                    バージョンを表示
+  houki-nta-mcp --help                       このメッセージを表示
 
 オプション:
-  --tsutatsu=<formal名>   --bulk-download 用。bulk DL する通達の正式名（既定: 消費税法基本通達）
+  --tsutatsu=<formal名>   --quickstart / --bulk-download 用。投入する通達の正式名（既定: 消費税法基本通達）
   --db-path=<path>        DB ファイルパスを上書き（既定: \${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db）
   --refresh               既存 DB を消去して再 DL
   --apply                 --refresh-stale と組み合わせて実際の再 DL を実行
@@ -283,6 +301,10 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
   if (args.invalidTaxonomyValues.length > 0) {
     process.stderr.write(formatInvalidTaxonomyValues(args.invalidTaxonomyValues));
     process.exitCode = 1;
+    return true;
+  }
+  if (args.quickstart) {
+    await runQuickstart(args);
     return true;
   }
   if (args.bulkDownloadEverything) {
@@ -385,9 +407,74 @@ async function runBaselineDriftCli(args: CliArgs): Promise<void> {
  * 1 種別が失敗しても次の種別へ進む（fail-soft）。失敗した種別は DB に入らないので、
  * その種別の検索は DOC_NOT_FOUND を返す（v0.13.0 / Issue #23）。
  */
+/**
+ * Issue #35: 6 種別の件数と所要時間の目安。README「初回セットアップ」の表と同じ値を持つ。
+ * 全部入りを始める前に出し、何が何分かかるかを実行前に分かるようにする。
+ */
+interface BulkEstimate {
+  readonly label: string;
+  readonly count: string;
+  readonly minutes: string;
+}
+
+const BULK_ESTIMATES: readonly BulkEstimate[] = [
+  { label: '通達本体（4 通達）', count: '約 2,800 節', minutes: '10〜15 分' },
+  { label: '改正通達', count: '約 125 件', minutes: '5〜10 分' },
+  { label: '事務運営指針', count: '約 32 件', minutes: '約 1 分' },
+  { label: '文書回答事例', count: '数百〜2,000 件超', minutes: '30 分超（税目で絞ると短い）' },
+  { label: 'タックスアンサー', count: '約 750 件', minutes: '約 14 分' },
+  { label: '質疑応答事例', count: '約 1,840 件', minutes: '約 35 分' },
+];
+
+/** Issue #35: 目安表を stderr 用の文字列にする（`--bulk-download-everything` の開始時に出す） */
+export function formatBulkEstimates(): string {
+  const rows = BULK_ESTIMATES.map((e) => `  - ${e.label}: ${e.count}、${e.minutes}`);
+  return [
+    '[bulk-download-everything] 目安（合計 約 100 分。--bunsho-taxonomy / --tax-answer-taxonomy / --qa-topic で税目を絞ると短くなります）:',
+    ...rows,
+    '[bulk-download-everything] 数分で試したいだけなら --quickstart（消費税法基本通達 1 本、約 3〜5 分）を先に使ってください',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Issue #35: まず数分で試すための入口。
+ *
+ * 指定した通達 1 本（既定: 消費税法基本通達）だけを DB に入れる。全部入り（`--bulk-download-everything`）は
+ * 6 種別で約 100 分かかり、初めて入れた人がそこで止まっていた。1 本なら約 3〜5 分で、
+ * その通達に対する nta_search_tsutatsu / nta_get_tsutatsu が動く。
+ *
+ * 中身は `--bulk-download` と同じ。違いは、実行前に何を入れるかを出し、終わったあとに次の一手を出すこと。
+ */
+async function runQuickstart(args: CliArgs): Promise<void> {
+  const dbPath = args.dbPath ?? defaultDbPath();
+  process.stderr.write(
+    [
+      `[quickstart] まず ${args.tsutatsu} 1 本だけを投入します（約 3〜5 分）`,
+      `[quickstart] DB: ${dbPath}`,
+      '[quickstart] 終わると、この通達に対して nta_search_tsutatsu と nta_get_tsutatsu が使えます',
+      '[quickstart] ほかの種別はあとから足せます（--help の「種別を足す」を参照）',
+      '',
+    ].join('\n')
+  );
+  await runBulkDownload(args);
+  process.stderr.write(
+    [
+      '',
+      '[quickstart] 完了しました。次に試すこと:',
+      '  - Claude から:        nta_search_tsutatsu { "keyword": "インボイス" }',
+      '  - 別の通達を足す:     houki-nta-mcp --bulk-download --tsutatsu=所得税基本通達',
+      '  - 基本通達 4 種:      houki-nta-mcp --bulk-download-all（10〜15 分）',
+      '  - 全部入り:           houki-nta-mcp --bulk-download-everything（約 100 分）',
+      '',
+    ].join('\n')
+  );
+}
+
 async function runBulkDownloadEverything(args: CliArgs): Promise<void> {
   const dbPath = args.dbPath ?? defaultDbPath();
   process.stderr.write(`[bulk-download-everything] DB: ${dbPath}\n`);
+  process.stderr.write(formatBulkEstimates());
   process.stderr.write(
     `[bulk-download-everything] 順次実行: 通達本体 → 改正通達 → 事務運営指針 → 文書回答事例 → タックスアンサー → 質疑応答事例\n`
   );
