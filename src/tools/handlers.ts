@@ -47,15 +47,15 @@ import {
 } from '../services/db-search.js';
 import { writeBackLiveDocument } from '../services/document-writeback.js';
 import {
-  indexStatusFields,
-  REMOVED_FROM_INDEX,
-  REMOVED_FROM_INDEX_NOTICE,
-} from '../services/index-status.js';
-import {
   type FreshnessRange,
   summarizeFreshnessFromDocument,
   summarizeFreshnessFromSection,
 } from '../services/freshness.js';
+import {
+  indexStatusFields,
+  REMOVED_FROM_INDEX,
+  REMOVED_FROM_INDEX_NOTICE,
+} from '../services/index-status.js';
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
 import {
   buildReaderHintExamples,

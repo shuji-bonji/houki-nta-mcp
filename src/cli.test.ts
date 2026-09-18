@@ -296,14 +296,29 @@ describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
 });
 
 describe('--quickstart: まず数分で試す入口 (Issue #35)', () => {
-  const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-  const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  // describe 直下で spyOn すると、前の describe が mockRestore した時点で同じ spy が外れ、
+  // 出力が記録されない。他の describe と同じく、テストごとに張り直して written に集める
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  const stdoutWritten: string[] = [];
+  const stderrWritten: string[] = [];
+
   beforeEach(() => {
-    stdoutSpy.mockClear();
-    stderrSpy.mockClear();
+    stdoutWritten.length = 0;
+    stderrWritten.length = 0;
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutWritten.push(String(chunk));
+      return true;
+    });
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrWritten.push(String(chunk));
+      return true;
+    });
   });
   afterEach(() => {
     vi.mocked(bulkDownloadTsutatsu).mockClear();
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
   });
 
   it('parseArgs: 既定は false、--quickstart で true', () => {
@@ -331,7 +346,7 @@ describe('--quickstart: まず数分で試す入口 (Issue #35)', () => {
 
   it('--quickstart は実行前と完了後に、所要時間と次の一手を stderr に出す', async () => {
     await runCliIfRequested(['--quickstart', '--db-path=:memory:']);
-    const out = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+    const out = stderrWritten.join('');
     expect(out).toContain('約 3〜5 分');
     expect(out).toContain('nta_search_tsutatsu');
     expect(out).toContain('--bulk-download-everything');
@@ -355,17 +370,15 @@ describe('--quickstart: まず数分で試す入口 (Issue #35)', () => {
 
   it('--bulk-download-everything は開始時に目安表を出す', async () => {
     await runCliIfRequested(['--bulk-download-everything', '--db-path=:memory:']);
-    const out = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+    const out = stderrWritten.join('');
     expect(out).toContain('合計 約 100 分');
   });
 
   it('--help に「まず試す」と --quickstart がある', async () => {
     await runCliIfRequested(['--help']);
-    const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join('');
+    const out = stdoutWritten.join('');
     expect(out).toContain('まず試す');
     expect(out).toContain('--quickstart');
     expect(out.indexOf('--quickstart')).toBeLessThan(out.indexOf('--bulk-download-everything'));
-    stdoutSpy.mockRestore();
-    stderrSpy.mockRestore();
   });
 });

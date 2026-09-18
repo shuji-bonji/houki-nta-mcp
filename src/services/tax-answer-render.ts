@@ -6,9 +6,9 @@
  */
 
 import { NTA_GENERAL_INFO_LEGAL_STATUS } from '../constants.js';
-import { REMOVED_FROM_INDEX, REMOVED_FROM_INDEX_NOTICE } from './index-status.js';
 import type { QaJirei } from '../types/qa.js';
 import type { TaxAnswer } from '../types/tax-answer.js';
+import { REMOVED_FROM_INDEX, REMOVED_FROM_INDEX_NOTICE } from './index-status.js';
 
 /**
  * 応答をどこから返したか（Issue #29）。
