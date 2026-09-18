@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/Node-%3E%3D22-brightgreen)](https://nodejs.org/)
 
-国税庁（NTA）公式サイトの **基本通達・改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例** をローカル SQLite に取得し、FTS5 で全文検索する MCP server。
+**実装する前に、国税庁の取扱いが条文とどう違うかを確かめる**ための MCP server。国税庁（NTA）公式サイトの **基本通達・改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例** をローカル SQLite に取り込み、FTS5 で全文検索し、「法律で決まっている」と「通達でそうなっている」を混ぜずに、`legal_status`（通達は国民を拘束しない旨）と根拠条文への案内と鮮度を添えて返します。
 
-法律本文（法・政令・省令）は別 MCP の [`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp) が担当します。
+法律本文（法・政令・省令）は別 MCP の [`@shuji-bonji/houki-egov-mcp`](https://github.com/shuji-bonji/houki-egov-mcp) が担当します。通達の応答からは `next_actions` で houki-egov-mcp の `get_law` へ戻れます。
 
 > **🔗 4 つを併用したい方へ** — `houki-egov-mcp` (法令本文) と `pdf-reader-mcp` (添付 PDF 抽出) と組み合わせた **install → 設定 → 実例 4 ユースケース** をまとめた統合ガイドを用意しています。
 >

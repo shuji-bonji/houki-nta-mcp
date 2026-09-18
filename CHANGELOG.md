@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.18.1] - 2026-09-19
+
+**patch リリース** — コードは変えていない。README の冒頭と npm の説明を houki-hub family で決めた仕事の 1 行に揃え、公式 MCP Registry に載せるための `mcpName` を足した。
+
+### Docs
+
+- **README の 1 行目と npm の `description` を揃えた**（houki-hub#22 の (c)）。「実装する前に、国税庁の取扱いが条文とどう違うかを確かめる」。family の 1 行「実装する前に、その仕様が法令のどこに触れるかを条文で確かめる」の nta 側の言い方で、「法律で決まっている」と「通達でそうなっている」を混ぜないこと、`legal_status` と根拠条文への案内を添えることを冒頭に書いた。npm の `description` は英語を先にした
+
+### Added
+
+- **`package.json` に `mcpName: "io.github.shuji-bonji/houki-nta-mcp"`**: 公式 MCP Registry（registry.modelcontextprotocol.io）が npm パッケージの所有確認に使う印。Registry への登録そのものは `server.json` と `mcp-publisher` で行う（この版の publish 後）
+
 ## [0.18.0] - 2026-09-18
 
 **minor リリース** — 初めて入れた人が数分で 1 件の通達を引けるようにした（Issue #35）。全部入りは 6 種別で約 100 分かかり、そこで止まる人が多かった。取り込みの中身は変えていない。

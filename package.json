@@ -1,7 +1,8 @@
 {
   "name": "@shuji-bonji/houki-nta-mcp",
-  "version": "0.18.0",
-  "description": "MCP server for Japanese National Tax Agency (NTA) tsutatsu, Q&A, and tax answer. Part of the houki-hub MCP family.",
+  "version": "0.18.1",
+  "description": "MCP server for Japanese National Tax Agency (NTA) notices and Q&A: basic circulars (tsutatsu), amendments, Q&A cases and Tax Answer, each marked with legal_status (not binding on taxpayers) and linked back to the statute. 実装する前に、国税庁の取扱いが条文とどう違うかを確かめる MCP サーバー。houki-hub family.",
+  "mcpName": "io.github.shuji-bonji/houki-nta-mcp",
   "keywords": [
     "mcp",
     "japan",
