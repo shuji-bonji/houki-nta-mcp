@@ -285,6 +285,18 @@ v0.10.2 以前に構築した DB の文書回答事例には本文が入って�
 
 通達本体・改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例を事前に bulk DL してローカル SQLite (FTS5) に投入します。1 度実行すれば DB から即時応答（fetch なし）。
 
+### まず数分で試す（v0.18.0 / Issue #35）
+
+全部入りは 6 種別で約 100 分かかります。初めて入れたときは、通達 1 本だけを入れて動くことを確かめてください。
+
+```bash
+npx -y @shuji-bonji/houki-nta-mcp --quickstart   # 消費税法基本通達 1 本だけ。約 3〜5 分
+```
+
+終わると、その通達に対して `nta_search_tsutatsu` と `nta_get_tsutatsu` が使えます。別の通達にしたいときは `--quickstart --tsutatsu=所得税基本通達` のように指定します。ほかの種別はあとから、必要なものだけ足せます（下の「個別実行」）。
+
+DB が無い状態でも、`nta_get_*`（取得ツール）は国税庁サイトから直接取ります（約 700ms。結果は DB に書き戻します）。DB が要るのは `nta_search_*`（検索ツール）だけです。
+
 ### コマンドの呼び出し形式
 
 bulk DL コマンドは利用形態に応じて以下の 3 形式があります。以降の例は **A. グローバルインストール済み** の形式で記載しています。`B` / `C` を使う場合は同様に置き換えてください。
@@ -299,7 +311,7 @@ bulk DL コマンドは利用形態に応じて以下の 3 形式があります
 > Claude Desktop / Claude Code で MCP サーバとして登録する場合は別問題で、`mcp_servers` 設定の `npx -y @shuji-bonji/houki-nta-mcp` (= 形式 B) を使います（後述「Claude Desktop / Claude Code への登録例」を参照）。bulk DL は **MCP サーバ起動とは別プロセス** で人間が実行するため、ここではどの形式でも構いません。
 
 ```bash
-# 推奨: 6 種別を一括投入（約 50 分。--bunsho-taxonomy / --tax-answer-taxonomy / --qa-topic で短縮可）
+# 全部入り: 6 種別を一括投入（約 100 分。--bunsho-taxonomy / --tax-answer-taxonomy / --qa-topic で短縮可。開始前に種別ごとの目安を表示します）
 
 # A. グローバル install 済み
 houki-nta-mcp --bulk-download-everything --bunsho-taxonomy=shotoku
@@ -312,7 +324,8 @@ node /path/to/houki-nta-mcp/dist/index.js --bulk-download-everything --bunsho-ta
 ```
 
 ```bash
-# 個別実行（以下は形式 A の例。B / C は上記対応表で置き換え）
+# 個別実行 — 必要な種別だけ足す（以下は形式 A の例。B / C は上記対応表で置き換え）
+houki-nta-mcp --quickstart                 # 通達 1 本（既定: 消基通、--tsutatsu= で変更可）
 houki-nta-mcp --bulk-download-all          # 通達本体 4 種
 houki-nta-mcp --bulk-download-kaisei       # 改正通達
 houki-nta-mcp --bulk-download-jimu-unei    # 事務運営指針
@@ -525,7 +538,7 @@ cron 設定例:
 
 ### 初回 bulk DL の注意
 
-- **MCP サーバ起動とは別プロセス** で `npx -y @shuji-bonji/houki-nta-mcp --bulk-download-everything` を事前実行することを推奨（計 50 分前後）。
+- **MCP サーバ起動とは別プロセス** で bulk DL を事前実行します。まず試すなら `npx -y @shuji-bonji/houki-nta-mcp --quickstart`（通達 1 本、約 3〜5 分）、全部入りは `--bulk-download-everything`（6 種別、約 100 分）。
 - [`pdf-reader-mcp`](https://www.npmjs.com/package/@shuji-bonji/pdf-reader-mcp) を併用すると、改正通達の添付 PDF（新旧対照表など）も内容取得できます。v0.7.0 以降は kind 分類で「どの PDF を最優先で読むべきか」が Markdown 出力に明示され、**v0.7.2 + pdf-reader-mcp v0.3.0 以降では `comparison` / `attachment` 系の PDF に対して `extract_tables` 呼び出し例を自動で出力**します（表構造を保持したまま改正後/改正前を分離）。
 
 ### prerelease (alpha) チャンネル
