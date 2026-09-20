@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.18.3] - 2026-09-21
+
+**patch リリース** — コードは変えていない。npm・公式 MCP Registry・GitHub の About に出る説明を揃えた（houki-hub#29 の続き）。
+
+### Changed
+
+- **npm の `description`**（`package.json`）: 日本語の 1 文のあとに英語の 1 文を付けた（日本語 → 英語の順）。npm レジストリは `description` を 255 文字で切り落とすため、0.18.2 では英語が先で日本語が「タックスア」で切れて表示されていた。今回は合計 185 文字
+- **`server.json` の `description`**（公式 MCP Registry に出る英文）: 末尾の `statute` を `law` に変え、npm と同じ英語の 1 文 "Japan NTA tax notices (tsutatsu) and Q&A, marked with legal_status and linked back to the law."（94 文字。Registry の上限は 100 文字）にした。GitHub のリポジトリ検索 `japanese law mcp` は description の語に当たるため、`law` が無いと結果に出ない（2026-09-21 の実測で houki-nta-mcp だけが出ていなかった）
+- GitHub の About（description・topics）は、リポジトリの設定で同じ日本語 → 英語の文に直し、topics の `mcp-serve` を `mcp-server` に直す（コードの変更ではないため、ここには記録だけ残す）
+
 ## [0.18.2] - 2026-09-20
 
 **patch リリース** — コードは変えていない。README の 1 行目と npm の `description`、plugin の `description` から「実装する前に」を外し、このサーバーができることだけの 1 行にした。houki-egov-mcp 0.12.1 と同じ直し。
