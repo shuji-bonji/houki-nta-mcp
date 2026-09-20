@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.18.2] - 2026-09-20
+
+**patch リリース** — コードは変えていない。README の 1 行目と npm の `description`、plugin の `description` から「実装する前に」を外し、このサーバーができることだけの 1 行にした。houki-egov-mcp 0.12.1 と同じ直し。
+
+### Changed
+
+- **README の 1 行目と npm の `description`、`.claude-plugin/plugin.json` の `description`**: 「実装する前に、国税庁の取扱いが条文とどう違うかを確かめる」を外し、「国税庁公式サイトの基本通達・改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例をローカル SQLite に取り込み、FTS5 で全文検索する MCP server」にした。「実装する前に」が入っていると、実装の前にしか使えない道具に読めるため
+- `server.json` の `description`（公式 MCP Registry に出る英文）は元から「実装する前に」を含まないので変えていない
+
 ## [0.18.1] - 2026-09-19
 
 **patch リリース** — コードは変えていない。README の冒頭と npm の説明を houki-hub family で決めた仕事の 1 行に揃え、公式 MCP Registry に載せるための `mcpName` を足した。
