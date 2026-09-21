@@ -22,6 +22,7 @@ import type { Element } from 'domhandler';
 import type { AttachedPdf, KaiseiIndexEntry, NtaDocument } from '../types/document.js';
 import { parsePdfSizeKb } from './kaisei-parser.js';
 import { extractIssuedAt } from './kaisei-toc-parser.js';
+import { isNtaNavigationText } from './nta-navigation-text.js';
 import { extractPdfKind } from './pdf-meta.js';
 import { normalizeJpText } from './text-normalize.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
@@ -122,6 +123,8 @@ export function parseJimuUneiPage(
     if (!t) return;
     if (/^ページの先頭へ戻る$/.test(t)) return;
     if (/^法令等$/.test(t)) return;
+    // サイト共通の「※PDFファイルが開けない…こちらをご覧ください。」など（Issue #45 の続き）
+    if (isNtaNavigationText(t)) return;
     paragraphs.push(t);
   });
   // h2/h3 (章節タイトル) も本文として取り込む

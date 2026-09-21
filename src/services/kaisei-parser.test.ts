@@ -19,6 +19,12 @@ describe('parseKaiseiPage — 消基通 令和8年4月1日改正', () => {
   const url = 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/kaisei/0026003-067/index.htm';
   const doc = parseKaiseiPage(html, url, '2026-05-02T00:00:00.000Z');
 
+  it('サイト共通の PDF の案内は本文に入れない (Issue #45 の続き)', () => {
+    expect(html).toContain('PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。');
+    expect(doc.fullText).not.toContain('PDFファイルが開けない');
+    expect(doc.fullText).not.toContain('こちらをご覧ください');
+  });
+
   it('docType / docId / taxonomy を URL から正しく抽出する', () => {
     expect(doc.docType).toBe('kaisei');
     expect(doc.docId).toBe('0026003-067');

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.20.2] - 2026-09-21
+
+**patch リリース** — 0.20.1 の「見つかったこと」の対応。改正通達と事務運営指針の `fullText` に入っていた、サイト共通の案内文「※PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。」を除いた（#45 の続き）。DB に入っている本文は起動時に直り、再ダウンロードは要らない。
+
+### Fixed
+
+- **`nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` の `fullText`**: 本文の直後にある案内文を本文の段落として拾っていた（fixture の `kaisei/0026003-067` と `jimu-unei/shotoku/shinkoku/170331` で確認）。0.20.1 で文書回答事例に入れた判定（`isNtaNavigationText`）を `parseKaiseiPage` / `parseJimuUneiPage` にも掛ける。質疑応答事例とタックスアンサーは parser が本文の要素だけを選んで組み立てるので、もともと入っていない（`taxanswer/shotoku/1120` で確認）
+- **DB（schema v8 → v9）**: `doc_type IN ('kaisei', 'jimu-unei')` の `full_text` から案内文の行を除き、`content_hash` を計算し直す。v7 → v8 と同じ手順（`stripNavigationLines(db, docTypes)` に一般化）で、国税庁サイトへのアクセスは発生しない。FTS5 の索引は trigger で追随する
+- `isNtaNavigationText` / `stripNtaNavigationLines` を `src/services/nta-navigation-text.ts` に移した。`bunshokaitou-parser.ts` からの再 export は残してある
+- テスト: kaisei / jimu-unei の parser に 1 件ずつ、schema に v8 → v9 の 6 件を足した。v7 → v8 のテストの「他の種別」は、v9 でも触らない `tax-answer` に変えた
+
 ## [0.20.1] - 2026-09-21
 
 **patch リリース** — 文書回答事例（本庁系）の `fullText` の末尾に、国税庁サイトの案内文「←上記照会の内容に対する回答はこちら」が混ざっていたのを直した（#45、houki-hub#32 の「契約の確認 — houki-nta-mcp」）。DB に入っている本文は起動時に直り、再ダウンロードは要らない。
