@@ -10,9 +10,11 @@ import {
   extractBunshoAppendixUrls,
   extractDocIdFromBunshoUrl,
   extractTaxonomyFromBunshoUrl,
+  isNtaNavigationText,
   parseBunshoMainIndex,
   parseBunshoPage,
   parseBunshoTaxonomyIndex,
+  stripNtaNavigationLines,
 } from './bunshokaitou-parser.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 
@@ -137,6 +139,17 @@ describe('parseBunshoPage — 別紙 (another.htm) の連結 (250416)', () => {
     // 別紙は index 本文より長い (実測 2,700 文字超。normalize で空白が縮む)
     expect(appendix.length).toBeGreaterThan(2500);
   });
+
+  it('別紙の末尾にある index.htm へ戻るリンクの文言は本文に入れない (Issue #45)', () => {
+    // another.htm の末尾は <p class="right">以上</p> の次に
+    // <p class="right"><a href="…/index.htm">←上記照会の内容に対する回答はこちら</a></p> がある
+    expect(appendixHtml).toContain('←上記照会の内容に対する回答はこちら');
+    const doc = parseBunshoPage(indexHtml, url, '2026-09-08T00:00:00.000Z', [
+      { url: appendixUrl, html: appendixHtml },
+    ]);
+    expect(doc.fullText.endsWith('\n以上')).toBe(true);
+    expect(doc.fullText).not.toContain('回答はこちら');
+  });
 });
 
 describe('parseBunshoPage — 2008 年の文書も同じ構造 (081102)', () => {
@@ -255,5 +268,48 @@ describe('parseBunshoPage — 国税局系の回答表と別紙 (tokyo/shohi/251
       { url: appendixUrl, html: appendixHtml },
     ]);
     expect(doc.fullText.indexOf('回答内容:')).toBeLessThan(doc.fullText.indexOf('【別紙】'));
+  });
+
+  it('国税局系の本文は Issue #45 の前後で変わらない（戻るリンクは #bodyArea の外にある）', () => {
+    // 01.htm にも「上記照会の内容に対する回答はこちら」はあるが、#bodyArea を閉じた後に置かれている
+    expect(appendixHtml).toContain('上記照会の内容に対する回答はこちら');
+    const doc = parseBunshoPage(indexHtml, url, '2026-09-08T00:00:00.000Z', [
+      { url: appendixUrl, html: appendixHtml },
+    ]);
+    expect(doc.fullText.endsWith('\n以上')).toBe(true);
+    expect(doc.fullText).not.toContain('回答はこちら');
+  });
+});
+
+describe('isNtaNavigationText / stripNtaNavigationLines (Issue #45)', () => {
+  it('戻るリンクと PDF の案内は案内文', () => {
+    expect(isNtaNavigationText('←上記照会の内容に対する回答はこちら')).toBe(true);
+    expect(isNtaNavigationText('上記照会の内容に対する回答はこちら')).toBe(true);
+    expect(
+      isNtaNavigationText('※PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。')
+    ).toBe(true);
+  });
+
+  it('本文の行は案内文ではない', () => {
+    expect(isNtaNavigationText('以上')).toBe(false);
+    expect(isNtaNavigationText('【別紙】')).toBe(false);
+    expect(
+      isNtaNavigationText(
+        '回答内容: 標題のことについては、ご照会に係る事実関係を前提とする限り、貴見のとおりで差し支えありません。'
+      )
+    ).toBe(false);
+    expect(isNtaNavigationText('')).toBe(false);
+  });
+
+  it('stripNtaNavigationLines は案内文の行だけを除き、他の行と改行はそのまま', () => {
+    const before =
+      '回答内容: 貴見のとおり\n【別紙】\n照会の趣旨\n以上\n←上記照会の内容に対する回答はこちら';
+    expect(stripNtaNavigationLines(before)).toBe(
+      '回答内容: 貴見のとおり\n【別紙】\n照会の趣旨\n以上'
+    );
+    // 案内文が無ければ何も変わらない（冪等）
+    expect(stripNtaNavigationLines(stripNtaNavigationLines(before))).toBe(
+      stripNtaNavigationLines(before)
+    );
   });
 });
