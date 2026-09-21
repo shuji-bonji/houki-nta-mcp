@@ -22,7 +22,7 @@
 - **HP 構造変更耐性 (v0.6.0 / v0.9.4)**: 9 種別 baseline で履歴管理 + `--health-check` CLI で週次 canary 検証 + `--check-baseline-drift` で `menu.htm` を真の正典として世代移行 (`sozoku2` / `hyoka_new` 等) を**事前検知** + soft-404 (`/error/404.htm` 着地) を `fetchNtaPage` で自動 fail させる二重防御
 - **添付 PDF kind 分類 (v0.7.0)**: タイトルから 6 種別（新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）に自動分類。Markdown 出力は kind 優先度ソートの表 + `pdf-reader-mcp` 呼び出し例つき
 - **`hasPdf` 検索フィルタ + `nta_inspect_pdf_meta` (v0.7.1)**: PDF 付きの重要文書だけを抽出 / PDF メタだけを軽量に返す軽量 API を提供
-- **kind 別 `reader_hints` + `extract_tables` 推奨 (v0.7.2)**: 添付 PDF の kind ごとに `pdf-reader-mcp` 呼び出し例を生成。`comparison`（新旧対照表）/ `attachment`（別紙・別表）は `pdf-reader-mcp@0.3.0+` の `extract_tables` で表構造を保持したまま抽出するよう誘導。「新旧**対応**表」など表記ゆれにも対応。v0.6.0 期に投入された DB レコードでも kind は応答時に動的補完
+- **添付 PDF の読み方を返し、読み手は固定しない (v0.19.0)**: 添付 PDF の kind（`comparison`=新旧対照表 / `attachment`=別紙・別表 など。「新旧**対応**表」の表記ゆれにも対応）ごとに `read_strategy`（表として取る / 本文として読む / 先頭を見て決める）と `layout_note`（紙面の組み方）を付ける。`save: true` で PDF をサーバー側に保存して絶対パスを返す。`next_actions` に pdf-reader-mcp の呼び出し例（保存済みなら `extract_tables` / `read_text` に `file_path`、未保存なら `read_url` に `url`）と、他の PDF 読み取りツール向けの汎用の 1 件を置く。houki-nta-mcp 自身は PDF の本文を読まない
 - **レスポンスに `freshness` 付き**: 利用者（LLM）が staleness を判定できる
 - **法的位置付けを明示**: 各レスポンスに `legal_status` フィールド（通達 = 税務署員のみ拘束、QA = 参考情報、等）
 
@@ -91,7 +91,7 @@ flowchart TB
 | `nta_search_tax_answer`      | タックスアンサーを FTS5 全文検索（`hasPdf` フィルタ・`freshness`）                                                               |
 | `nta_get_qa`                 | 質疑応答事例の本文を取得（DB → 無ければ国税庁サイト）                                                                            |
 | `nta_search_qa`              | 質疑応答事例を FTS5 全文検索（`topic` で税目の絞り込み・`freshness` 付き）                                                                |
-| `nta_inspect_pdf_meta`       | 指定文書の添付 PDF メタ + `pdf-reader-mcp` 呼び出し例（kind 別 / extract_tables 推奨）だけを返す軽量 API (v0.7.1, v0.7.2 で拡張) |
+| `nta_inspect_pdf_meta`       | 指定文書の添付 PDF の一覧に kind と読み方（`read_strategy` / `layout_note`）を付けて返す。`save: true` で PDF を保存して絶対パスを返し、`next_actions` に pdf-reader-mcp の呼び出し例と汎用の 1 件を置く。本文は読まない (v0.7.1、v0.19.0 で読み手を固定しない形に) |
 | `resolve_abbreviation`       | 略称→エントリ解決（houki-abbreviations 経由）                                                                                    |
 
 ### 取得ツールが DB をどう使うか

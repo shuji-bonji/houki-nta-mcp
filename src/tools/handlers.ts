@@ -57,10 +57,12 @@ import {
   REMOVED_FROM_INDEX_NOTICE,
 } from '../services/index-status.js';
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
+import { type SavedPdf, savePdf } from '../services/pdf-files.js';
 import {
-  buildReaderHintExamples,
+  buildPdfNextActions,
   fillMissingKinds,
   renderAttachedPdfsMarkdown,
+  withPdfReading,
 } from '../services/pdf-meta.js';
 import { buildQaFullText, parseQaJirei } from '../services/qa-parser.js';
 import type { RelatedLawRef, RelatedTsutatsuRef } from '../services/related-law-parser.js';
@@ -1676,17 +1678,22 @@ export async function handleNtaGetBunshokaitou(
 
 /* -------------------------------------------------------------------------- */
 /* Phase 4-2 (v0.7.1): nta_inspect_pdf_meta — PDF メタだけを返す軽量 API       */
+/* v0.19.0 (#36): 読み方の事実 + save: true + next_actions。読み手は固定しない   */
 /* -------------------------------------------------------------------------- */
 
 /**
- * 指定文書の添付 PDF メタ一覧 + pdf-reader-mcp 呼び出し例だけを返す。
- * 本文は含まないので軽量。`nta_get_*` で全文取得すると重い場合に便利。
+ * 指定文書の添付 PDF のメタ情報と読み方を返す。本文は読まない。
+ *
+ * 応答は 3 層に分かれる（docs/PHASE4-PDF.md §6、houki-hub の docs/DECISIONS.md 2026-09-21）:
+ *  - 事実の層: `attachedPdfs[]` の url / kind / read_strategy / layout_note。どの読み手でも使える
+ *  - 入手の層: `save: true` のとき PDF をサーバー側のキャッシュに置き、`saved[]` に絶対パスを返す
+ *  - 呼び出し例の層: `next_actions`。pdf-reader-mcp を第一候補にし、最後に汎用の 1 件を置く
  *
  * 質疑応答事例 (qa-jirei) は PDF を持たないため対象外（tool definition で enum 制限済）。
  */
 export async function handleNtaInspectPdfMeta(
   args: InspectPdfMetaArgs,
-  options: { dbPath?: string } = {}
+  options: { dbPath?: string; filesDir?: string; fetchImpl?: typeof fetch } = {}
 ) {
   const db = openDb(options.dbPath);
   try {
@@ -1702,7 +1709,8 @@ export async function handleNtaInspectPdfMeta(
     }
 
     // v0.7.2: kind 未設定（v0.6.0 期に投入された DB レコード）はタイトルから動的補完。
-    const filled = fillMissingKinds(doc.attachedPdfs);
+    // v0.19.0: kind ごとの read_strategy / layout_note を付ける。
+    const described = withPdfReading(fillMissingKinds(doc.attachedPdfs));
 
     // kind 優先度（Phase 4-1 と同じ並び順）
     const kindOrder: Record<string, number> = {
@@ -1713,31 +1721,58 @@ export async function handleNtaInspectPdfMeta(
       notice: 4,
       unknown: 5,
     };
-    const sorted = [...filled].sort(
-      (a, b) => (kindOrder[a.kind ?? 'unknown'] ?? 5) - (kindOrder[b.kind ?? 'unknown'] ?? 5)
+    const sorted = [...described].sort(
+      (a, b) => (kindOrder[a.kind] ?? 5) - (kindOrder[b.kind] ?? 5)
     );
 
-    // v0.7.2: 含まれる kind ごとに代表例 1 件ずつを生成。
-    // comparison / attachment は pdf-reader-mcp v0.3.0+ の `extract_tables` を最優先推奨。
-    const examples = buildReaderHintExamples(sorted);
+    // v0.19.0: kind で絞る。該当が無いときは空で返し、ある種別を note に書く（黙って空にしない）
+    const filtered = args.kind ? sorted.filter((p) => p.kind === args.kind) : sorted;
+    const availableKinds = Array.from(new Set(sorted.map((p) => p.kind)));
+
+    // v0.19.0: save: true のときだけ PDF を取得して保存する。失敗した PDF も saved[] に error 付きで残す
+    let saved: SavedPdf[] | undefined;
+    if (args.save && filtered.length > 0) {
+      saved = [];
+      for (const pdf of filtered) {
+        saved.push(
+          await savePdf(pdf.url, {
+            docType: doc.docType,
+            docId: doc.docId,
+            filesDir: options.filesDir,
+            fetchImpl: options.fetchImpl,
+          })
+        );
+      }
+    }
+    const savedPathByUrl = new Map<string, string>();
+    for (const s of saved ?? []) {
+      if (s.path) savedPathByUrl.set(s.url, s.path);
+    }
+
+    const next_actions = buildPdfNextActions(filtered, savedPathByUrl);
+
+    const failed = (saved ?? []).filter((s) => s.error);
+    const noteParts: string[] = [];
+    if (args.kind && filtered.length === 0) {
+      noteParts.push(
+        `kind="${args.kind}" の PDF はありません。この文書にある種別: ${availableKinds.join(', ') || 'なし'}`
+      );
+    }
+    if (failed.length > 0) {
+      noteParts.push(
+        `${failed.length} 件の PDF を保存できませんでした（saved[].error を参照）。その PDF は URL のまま読んでください`
+      );
+    }
 
     return {
       docType: doc.docType,
       docId: doc.docId,
       title: doc.title,
       sourceUrl: doc.sourceUrl,
-      attachedPdfs: sorted,
-      reader_hints: {
-        tool: '@shuji-bonji/pdf-reader-mcp',
-        // 主軸 action は kind ごとに変わるが、レスポンスでは「最も多い」傾向に合わせて
-        // 表組み中心 → extract_tables、それ以外 → read_text を hint として置く。
-        primary_action: examples.some((e) => e.tool === 'extract_tables')
-          ? 'extract_tables'
-          : 'read_text',
-        min_pdf_reader_version: '0.3.0',
-        note: '本文取得は pdf-reader-mcp に委譲（責務分離）。comparison / attachment は extract_tables (v0.3.0+) で表構造を保持したまま抽出するのが最優先。それ以外は read_text。examples を kind 別に参考にしてください。',
-        examples,
-      },
+      attachedPdfs: filtered,
+      ...(saved ? { saved } : {}),
+      ...(next_actions.length > 0 ? { next_actions } : {}),
+      ...(noteParts.length > 0 ? { note: noteParts.join('。') } : {}),
       // v0.9.1: docType 別の legal_status を返す (Issue #1)
       legal_status: LEGAL_STATUS_BY_DOCTYPE[doc.docType] ?? TSUTATSU_LEGAL_STATUS,
     };

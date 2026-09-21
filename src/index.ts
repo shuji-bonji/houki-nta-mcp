@@ -32,7 +32,7 @@ async function main() {
   process.on('SIGTERM', shutdown);
   logger.info(
     'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (MCP SDK v2 / Phase 4 self-feedback: kind 別 reader_hints + extract_tables 推奨 + 「新旧対応表」表記ゆれ対応 / Phase 4-2: has_pdf filter / nta_inspect_pdf_meta / Phase 4-1: PDF kind classification / Phase 5: Resilience + Lv-3a soft-404 detection + Lv-3b menu.htm baseline drift)`
+    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (MCP SDK v2 / #36: 添付 PDF の read_strategy / layout_note + save: true + next_actions（読み手は固定しない） + 「新旧対応表」表記ゆれ対応 / Phase 4-2: has_pdf filter / nta_inspect_pdf_meta / Phase 4-1: PDF kind classification / Phase 5: Resilience + Lv-3a soft-404 detection + Lv-3b menu.htm baseline drift)`
   );
 }
 
