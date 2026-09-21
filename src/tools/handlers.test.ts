@@ -825,7 +825,8 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
 
   it('#36: kind 優先度ソート + read_strategy / layout_note + next_actions（未保存は read_url）', async () => {
     const tmpFile = seedPdfDoc('sample-001', [
-      { title: '別紙', url: 'https://x/b.pdf', sizeKb: 120, kind: 'attachment' },
+      // #44: 「別紙」だけだと kaisei では comparison に補正されるので、他の語を含む別紙にする
+      { title: '別紙1 計算明細書', url: 'https://x/b.pdf', sizeKb: 120, kind: 'attachment' },
       { title: '新旧対照表', url: 'https://x/a.pdf', sizeKb: 470, kind: 'comparison' },
     ]);
 
@@ -864,7 +865,7 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
 
   it('#36: kind で絞る。該当なしは空 + note にある種別', async () => {
     const tmpFile = seedPdfDoc('sample-002', [
-      { title: '別紙', url: 'https://x/b.pdf', kind: 'attachment' },
+      { title: '別紙1 計算明細書', url: 'https://x/b.pdf', kind: 'attachment' },
       { title: '新旧対照表', url: 'https://x/a.pdf', kind: 'comparison' },
     ]);
     const only = (await handleNtaInspectPdfMeta(
@@ -955,13 +956,67 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
 
     // タイトルから推定された kind が attachedPdfs に入る
     expect(r.attachedPdfs.find((p) => p.title === '新旧対応表')?.kind).toBe('comparison');
-    expect(r.attachedPdfs.find((p) => p.title === '別紙1')?.kind).toBe('attachment');
-    // next_actions も kind 別に出る（+ 汎用 1 件）
-    expect(r.next_actions?.map((a) => a.action)).toEqual([
-      'pdf-reader-mcp:read_url',
-      'pdf-reader-mcp:read_url',
-      'read_pdf',
+    // #44: kaisei の「別紙1」は新旧対照表本体として comparison に補正される
+    expect(r.attachedPdfs.find((p) => p.title === '別紙1')?.kind).toBe('comparison');
+    // next_actions は kind ごとに 1 件なので comparison 1 件 + 汎用 1 件
+    expect(r.next_actions?.map((a) => a.action)).toEqual(['pdf-reader-mcp:read_url', 'read_pdf']);
+  });
+
+  it('#44: 改正通達の「別紙 N」だけの PDF は comparison として返り、kind: "comparison" で絞れる', async () => {
+    const tmpFile = seedPdfDoc('0025004-026', [
+      {
+        title:
+          '【参考】令和８年11月１日から適用される「消費税法基本通達（第８章）」の構成及び新旧対応表（令和７年４月１日）（PDF/399KB）',
+        url: 'https://x/b0025003-111.pdf',
+        sizeKb: 399,
+        kind: 'comparison',
+      },
+      { title: '別紙1（PDF/221KB）', url: 'https://x/01.pdf', sizeKb: 221, kind: 'attachment' },
+      { title: '別紙2（PDF/449KB）', url: 'https://x/02.pdf', sizeKb: 449, kind: 'attachment' },
+      { title: '別紙3 様式', url: 'https://x/03.pdf', sizeKb: 10, kind: 'attachment' },
     ]);
+
+    const r = (await handleNtaInspectPdfMeta(
+      { docType: 'kaisei', docId: '0025004-026', kind: 'comparison' },
+      { dbPath: tmpFile }
+    )) as InspectResult;
+    expect(r.attachedPdfs.map((p) => p.url)).toEqual([
+      'https://x/b0025003-111.pdf',
+      'https://x/01.pdf',
+      'https://x/02.pdf',
+    ]);
+    for (const p of r.attachedPdfs) {
+      expect(p.kind).toBe('comparison');
+      expect(p.read_strategy).toBe('tables');
+      // 丸括弧と墨付き括弧の両方の記号が書いてある
+      expect(p.layout_note).toContain('（同左）');
+      expect(p.layout_note).toContain('【新設】');
+      expect(p.layout_note).toContain('【一部改正】');
+    }
+    expect(r.note).toBeUndefined();
+
+    // 他の語を含む別紙は attachment のまま
+    const att = (await handleNtaInspectPdfMeta(
+      { docType: 'kaisei', docId: '0025004-026', kind: 'attachment' },
+      { dbPath: tmpFile }
+    )) as InspectResult;
+    expect(att.attachedPdfs.map((p) => p.url)).toEqual(['https://x/03.pdf']);
+    expect(att.attachedPdfs[0].layout_note).toContain(
+      '改正通達（kaisei）の別紙は新旧対照表本体のことが多い'
+    );
+  });
+
+  it('#44: 改正通達で comparison が 0 件・attachment があるときは note に別紙を読むよう書く', async () => {
+    const tmpFile = seedPdfDoc('kaisei-att-only', [
+      { title: '別紙1 計算明細書', url: 'https://x/01.pdf', kind: 'attachment' },
+    ]);
+    const r = (await handleNtaInspectPdfMeta(
+      { docType: 'kaisei', docId: 'kaisei-att-only', kind: 'comparison' },
+      { dbPath: tmpFile }
+    )) as InspectResult;
+    expect(r.attachedPdfs).toEqual([]);
+    expect(r.note).toContain('kind="comparison" の PDF はありません');
+    expect(r.note).toContain('kind="attachment" の別紙も読んでください');
   });
 });
 

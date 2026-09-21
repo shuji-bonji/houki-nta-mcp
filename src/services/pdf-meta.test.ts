@@ -6,9 +6,11 @@ import {
   describePdfReading,
   extractPdfKind,
   fillMissingKinds,
+  isBareAppendixTitle,
   PDF_KIND_EMOJI,
   PDF_KIND_LABEL,
   type PdfKind,
+  refinePdfKindsForDoc,
   renderAttachedPdfsMarkdown,
   withPdfReading,
 } from './pdf-meta.js';
@@ -398,5 +400,68 @@ describe('fillMissingKinds (v0.7.2)', () => {
     const out = fillMissingKinds(input);
     expect(input[0].kind).toBeUndefined();
     expect(out[0].kind).toBe('comparison');
+  });
+});
+
+describe('isBareAppendixTitle / refinePdfKindsForDoc (#44, v0.20.0)', () => {
+  it('「別紙」と番号（とサイズ）だけのタイトルを見分ける', () => {
+    for (const t of [
+      '別紙',
+      '別紙1',
+      '別紙１',
+      '別紙 １',
+      '（別紙2）',
+      '別紙1（PDF/221KB）',
+      '別紙２(PDFファイル/76KB)',
+      '別紙1-2',
+    ]) {
+      expect(isBareAppendixTitle(t), t).toBe(true);
+    }
+    for (const t of [
+      '',
+      '別紙1 計算明細書',
+      '別紙 新旧対照表',
+      '別表1',
+      '新旧対照表（別紙）',
+      '様式',
+    ]) {
+      expect(isBareAppendixTitle(t), t).toBe(false);
+    }
+  });
+
+  it('kaisei では「別紙 N」だけの attachment を comparison にし、他は変えない', () => {
+    const pdfs = [
+      { title: '別紙1（PDF/221KB）', url: 'https://x/01.pdf', kind: 'attachment' as const },
+      { title: '別紙2 様式', url: 'https://x/02.pdf', kind: 'attachment' as const },
+      { title: '参考資料', url: 'https://x/03.pdf', kind: 'related' as const },
+      { title: '別紙3', url: 'https://x/04.pdf' }, // kind なし（v0.6.0 期）
+    ];
+    const out = refinePdfKindsForDoc(pdfs, 'kaisei');
+    expect(out.map((p) => p.kind)).toEqual(['comparison', 'attachment', 'related', 'comparison']);
+    // 入力は変えない
+    expect(pdfs[0].kind).toBe('attachment');
+    expect(pdfs[3].kind).toBeUndefined();
+  });
+
+  it('kaisei 以外の docType では何も変えない', () => {
+    const pdfs = [{ title: '別紙1', url: 'https://x/01.pdf', kind: 'attachment' as const }];
+    for (const docType of ['jimu-unei', 'bunshokaitou', 'tax-answer']) {
+      expect(refinePdfKindsForDoc(pdfs, docType).map((p) => p.kind)).toEqual(['attachment']);
+    }
+  });
+
+  it('comparison の layout_note に丸括弧と墨付き括弧の両方の記号がある', () => {
+    const note = describePdfReading('comparison').layout_note;
+    for (const sym of [
+      '（同左）',
+      '（省略）',
+      '（新設）',
+      '（削除）',
+      '【新設】',
+      '【削除】',
+      '【一部改正】',
+    ]) {
+      expect(note).toContain(sym);
+    }
   });
 });

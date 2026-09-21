@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/.claude-plugin/plugin.schema.json",
   "name": "houki-nta-mcp",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "description": "国税庁サイトの基本通達・改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例を取り込んで全文検索する MCP server。「法律で決まっている」と「通達でそうなっている」を混ぜずに、legal_status と根拠条文への案内と鮮度を添えて返す。--quickstart で通達 1 本を約 3〜5 分で試せる。houki-hub family の一員。",
   "author": {
     "name": "shuji-bonji",

@@ -100,6 +100,14 @@ function extractPdfKind(title: string): PdfKind {
 
 優先順位は配列の上から（`comparison` を先に判定）。Normalize-everywhere 原則に従い、全角・半角ゆらぎ対応。
 
+### 3.3 応答時の補正: 改正通達の「別紙 N」は新旧対照表本体（v0.20.0、#44）
+
+改正通達（kaisei）の本文には「別紙のとおり改める」とあり、「別紙1」「別紙2」とだけ題した PDF が本文の新旧対照表であることが多い（例: 0025004-026 の別紙 1・別紙 2。「【参考】…新旧対応表」の方は章の構成の対応表だった）。タイトルの語で決める `extractPdfKind` では `attachment` になり、`kind: "comparison"` で絞ると読まれない。
+
+そこで `refinePdfKindsForDoc(pdfs, docType)` を応答時に通す。`docType === 'kaisei'` で、タイトルが「別紙」と番号（とサイズの「（PDF/221KB）」）だけのもの（`isBareAppendixTitle`）を `comparison` に付け替える。「別紙1 計算明細書」のように他の語を含む別紙と、kaisei 以外の docType は変えない。DB の `attached_pdfs_json` は変えない（再投入は不要）。`nta_inspect_pdf_meta` と `nta_get_kaisei_tsutatsu`（json / markdown）の両方で通す。
+
+`kind: "comparison"` で 0 件になり、`attachment` があるときは、`note` に「改正通達の別紙は新旧対照表本体のことが多いので attachment の別紙も読む」と書く（黙って空にしない）。
+
 ## 4. 拡張する型・スキーマ
 
 ### 4.1 `AttachedPdf` 型（後方互換拡張）

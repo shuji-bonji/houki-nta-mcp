@@ -61,6 +61,7 @@ import { type SavedPdf, savePdf } from '../services/pdf-files.js';
 import {
   buildPdfNextActions,
   fillMissingKinds,
+  refinePdfKindsForDoc,
   renderAttachedPdfsMarkdown,
   withPdfReading,
 } from '../services/pdf-meta.js';
@@ -1335,8 +1336,8 @@ export async function handleNtaGetKaiseiTsutatsu(
 ) {
   const db = openDb(options.dbPath);
   try {
-    const doc = getDocumentFromDb(db, 'kaisei', args.docId);
-    if (!doc) {
+    const stored = getDocumentFromDb(db, 'kaisei', args.docId);
+    if (!stored) {
       return explainDocIdNotFound(
         db,
         'kaisei',
@@ -1346,6 +1347,8 @@ export async function handleNtaGetKaiseiTsutatsu(
         options
       );
     }
+    // v0.20.0 (#44): 「別紙 N」だけの PDF は新旧対照表本体として comparison にする（DB は変えない）
+    const doc = { ...stored, attachedPdfs: refinePdfKindsForDoc(stored.attachedPdfs, 'kaisei') };
 
     if (args.format === 'json') {
       return {
@@ -1709,8 +1712,11 @@ export async function handleNtaInspectPdfMeta(
     }
 
     // v0.7.2: kind 未設定（v0.6.0 期に投入された DB レコード）はタイトルから動的補完。
+    // v0.20.0 (#44): 改正通達の「別紙 N」は新旧対照表本体のことが多いので comparison に補正。
     // v0.19.0: kind ごとの read_strategy / layout_note を付ける。
-    const described = withPdfReading(fillMissingKinds(doc.attachedPdfs));
+    const described = withPdfReading(
+      refinePdfKindsForDoc(fillMissingKinds(doc.attachedPdfs), doc.docType)
+    );
 
     // kind 優先度（Phase 4-1 と同じ並び順）
     const kindOrder: Record<string, number> = {
@@ -1757,6 +1763,16 @@ export async function handleNtaInspectPdfMeta(
       noteParts.push(
         `kind="${args.kind}" の PDF はありません。この文書にある種別: ${availableKinds.join(', ') || 'なし'}`
       );
+      // v0.20.0 (#44): 改正通達で comparison が無く attachment があるときは、別紙を読むよう書く
+      if (
+        args.kind === 'comparison' &&
+        doc.docType === 'kaisei' &&
+        availableKinds.includes('attachment')
+      ) {
+        noteParts.push(
+          '改正通達（kaisei）の別紙は新旧対照表本体のことが多いので、kind="attachment" の別紙も読んでください'
+        );
+      }
     }
     if (failed.length > 0) {
       noteParts.push(
