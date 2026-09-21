@@ -382,7 +382,8 @@ export const ntaInspectPdfMetaTool = {
       kind: {
         type: 'string',
         enum: ['comparison', 'attachment', 'qa-pdf', 'related', 'notice', 'unknown'],
-        description: 'この種別の PDF だけを返す。改正点だけ見たいときは comparison。省略すると全件',
+        description:
+          'この種別の PDF だけを返す。改正点だけ見たいときは comparison。改正通達（kaisei）でタイトルが「別紙 N」だけの PDF は新旧対照表本体のことが多いので comparison として返す。省略すると全件',
       },
       save: {
         type: 'boolean',

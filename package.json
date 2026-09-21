@@ -1,6 +1,6 @@
 {
   "name": "@shuji-bonji/houki-nta-mcp",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "description": "国税庁の基本通達・改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例を全文検索し、legal_status と根拠条文への案内と鮮度を添えて返す MCP サーバー。Japan NTA tax notices (tsutatsu) and Q&A, marked with legal_status and linked back to the law.",
   "mcpName": "io.github.shuji-bonji/houki-nta-mcp",
   "keywords": [

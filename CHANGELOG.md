@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.20.0] - 2026-09-21
+
+**minor リリース** — 改正通達（kaisei）で「別紙 N」とだけ題した PDF を、新旧対照表本体として `comparison` で返すようにした（#44、houki-hub#32 の「見つかったこと」2・3）。DB の再投入は不要。
+
+### Changed
+
+- **`nta_inspect_pdf_meta` / `nta_get_kaisei_tsutatsu` の `attachedPdfs[].kind`**: `docType: "kaisei"` で、タイトルが「別紙」と番号（とサイズの「（PDF/221KB）」）だけの PDF は、応答時に `attachment` から `comparison` に付け替える（`refinePdfKindsForDoc` / `isBareAppendixTitle`）。改正通達の本文には「別紙のとおり改める」とあり、その別紙が本文の新旧対照表であることが多い（0025004-026 では「【参考】…新旧対応表」が章の構成の対応表で、本文の新旧対照表は別紙 1・別紙 2 だった）。これまでは `kind: "comparison"` で絞ると参考の対応表だけが返り、本文の新旧対照表を読まずに終わっていた。「別紙1 計算明細書」のように他の語を含む別紙と、kaisei 以外の docType は変えない。DB の `attached_pdfs_json` はそのまま
+- **`comparison` の `layout_note`**: 記号の説明を実物に合わせた。改正前の側の「（同左）」は改正後と同じ文、両側の「（省略）」は改正に関係しない部分の省略。新設・削除の印は丸括弧「（新設）」「（削除）」のものと、墨付き括弧「【新設】」「【削除】」「【一部改正】」のものの 2 通りがある、と書いた（0.19.0 は丸括弧だけだった）。改正通達の「別紙 N」は本文の新旧対照表、「【参考】…対応表」は章の構成（通達番号）の対応表のことがある、も足した
+- **`attachment` の `layout_note`**: 「改正通達（kaisei）の別紙は新旧対照表本体のことが多いので、改正点を探すときは comparison だけでなく別紙も読む」を足した
+- **`nta_inspect_pdf_meta` の `note`**: 改正通達で `kind: "comparison"` が 0 件、`attachment` があるときは、「kind="attachment" の別紙も読んでください」を足す
+- `nta_inspect_pdf_meta` の `kind` 引数の `description` に、上の補正を書いた
+- テスト: `isBareAppendixTitle` / `refinePdfKindsForDoc` を 4 件、`nta_inspect_pdf_meta` を 2 件（0025004-026 を模した 4 PDF の絞り込み、0 件時の `note`）足し、既存の 3 件は「別紙」だけの見本を「別紙1 計算明細書」に変えるか、`comparison` に補正される期待値に直した
+
 ## [0.19.0] - 2026-09-21
 
 **minor リリース** — `nta_inspect_pdf_meta` の応答を、読み手を pdf-reader-mcp に固定しない形にした（#36、houki-hub#24 の劣 5）。houki-nta-mcp は PDF の本文を読まない、という分担は変えていない。決定の経緯は houki-hub の `docs/DECISIONS.md`（2026-09-21）。

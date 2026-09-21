@@ -8,6 +8,9 @@
  * （`read_strategy` / `layout_note`）を道具の名前を使わずに書き、pdf-reader-mcp への
  * 呼び出し例は `next_actions` に置く。
  *
+ * v0.20.0（#44）: 改正通達（kaisei）の「別紙 N」は新旧対照表本体のことが多いので、
+ * 応答時に `comparison` へ補正する（`refinePdfKindsForDoc`）。DB の kind は変えない。
+ *
  * 設計詳細: docs/PHASE4-PDF.md §3・§6、houki-hub の docs/DECISIONS.md（2026-09-21）
  */
 
@@ -163,12 +166,12 @@ const KIND_READING: Record<PdfKind, PdfReading> = {
   comparison: {
     read_strategy: 'tables',
     layout_note:
-      '改正後と改正前を左右 2 列に並べた表。国税庁の新旧対照表は左が改正後、右が改正前のことが多いが、見出し行で確かめる。変更箇所には下線が引かれ、改正前の側に「（同左）」、両側に「（省略）」「（新設）」「（削除）」の欄がある。表として取れるなら表で、取れないなら左右 2 列に分けて読む（1 列として読むと改正後と改正前の文が混ざる）',
+      '改正後と改正前を左右 2 列に並べた表。国税庁の新旧対照表は左が改正後、右が改正前のことが多いが、見出し行で確かめる。変更箇所には下線が引かれる。改正前の側の「（同左）」は改正後と同じ文、両側の「（省略）」は改正に関係しない部分の省略。新設・削除の印は丸括弧「（新設）」「（削除）」のものと、墨付き括弧「【新設】」「【削除】」「【一部改正】」（改正前にもある項で内容が変わったもの）のものの 2 通りがある。どちらも新設の印は改正前の側、削除の印は改正後の側に置かれる。改正通達の「別紙 N」は本文の新旧対照表、「【参考】…対応表」は章の構成（通達番号）の対応表のことがある。表として取れるなら表で、取れないなら左右 2 列に分けて読む（1 列として読むと改正後と改正前の文が混ざる）',
   },
   attachment: {
     read_strategy: 'tables',
     layout_note:
-      '別紙・別表・様式。表組みか記入欄の書式が多い。表として取れるなら表で、取れなければ本文として読む',
+      '別紙・別表・様式。表組みか記入欄の書式が多い。表として取れるなら表で、取れなければ本文として読む。改正通達（kaisei）の別紙は新旧対照表本体のことが多いので、改正点を探すときは comparison だけでなく別紙も読む',
   },
   'qa-pdf': {
     read_strategy: 'text',
@@ -317,6 +320,42 @@ function pdfReaderAction(kind: PdfKind, url: string, savedPath: string | undefin
  */
 export function fillMissingKinds<T extends AttachedPdfLike>(pdfs: ReadonlyArray<T>): T[] {
   return pdfs.map((pdf) => (pdf.kind ? pdf : { ...pdf, kind: extractPdfKind(pdf.title) }));
+}
+
+/**
+ * タイトルが「別紙」と番号だけか（#44、v0.20.0）。
+ *
+ * 「別紙1」「別紙 １」「（別紙2）」「別紙1（PDF/221KB）」「別紙1-2」は true。
+ * 「別紙1 計算明細書」「別紙 新旧対照表」のように別の語を含むものは false。
+ * サイズの「（PDF/221KB）」「(PDFファイル/76KB)」は国税庁のリンク文字列に付く定型なので、語として数えない。
+ */
+export function isBareAppendixTitle(title: string): boolean {
+  if (!title) return false;
+  const stripped = normalizeForKind(title).replace(/[（(]PDF[^）)]*[）)]/gi, '');
+  return /^[（(]?別紙[0-9]*(-[0-9]+)?[）)]?$/.test(stripped);
+}
+
+/**
+ * 文書種別に応じて、応答時に kind を補正する（#44、v0.20.0）。
+ *
+ * 改正通達（kaisei）の本文には「別紙のとおり改める」とあり、「別紙 N」とだけ題した PDF は
+ * 本文の新旧対照表であることが多い（例: 0025004-026 の別紙 1・別紙 2）。タイトルの語で決める
+ * `extractPdfKind` では `attachment` になり、`kind: "comparison"` で絞ると読まれないので、
+ * kaisei に限って `comparison` に付け替える。他の docType と、別の語を含む別紙は変えない。
+ *
+ * DB の `attached_pdfs_json` は変えない（再投入は不要）。純関数。新しい配列を返す。
+ */
+export function refinePdfKindsForDoc<T extends AttachedPdfLike>(
+  pdfs: ReadonlyArray<T>,
+  docType: string
+): T[] {
+  if (docType !== 'kaisei') return [...pdfs];
+  return pdfs.map((pdf) => {
+    const kind = pdf.kind ?? extractPdfKind(pdf.title);
+    return kind === 'attachment' && isBareAppendixTitle(pdf.title)
+      ? { ...pdf, kind: 'comparison' as const }
+      : pdf;
+  });
 }
 
 /**

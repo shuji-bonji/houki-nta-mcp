@@ -22,7 +22,7 @@
 - **HP 構造変更耐性 (v0.6.0 / v0.9.4)**: 9 種別 baseline で履歴管理 + `--health-check` CLI で週次 canary 検証 + `--check-baseline-drift` で `menu.htm` を真の正典として世代移行 (`sozoku2` / `hyoka_new` 等) を**事前検知** + soft-404 (`/error/404.htm` 着地) を `fetchNtaPage` で自動 fail させる二重防御
 - **添付 PDF kind 分類 (v0.7.0)**: タイトルから 6 種別（新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）に自動分類。Markdown 出力は kind 優先度ソートの表 + `pdf-reader-mcp` 呼び出し例つき
 - **`hasPdf` 検索フィルタ + `nta_inspect_pdf_meta` (v0.7.1)**: PDF 付きの重要文書だけを抽出 / PDF メタだけを軽量に返す軽量 API を提供
-- **添付 PDF の読み方を返し、読み手は固定しない (v0.19.0)**: 添付 PDF の kind（`comparison`=新旧対照表 / `attachment`=別紙・別表 など。「新旧**対応**表」の表記ゆれにも対応）ごとに `read_strategy`（表として取る / 本文として読む / 先頭を見て決める）と `layout_note`（紙面の組み方）を付ける。`save: true` で PDF をサーバー側に保存して絶対パスを返す。`next_actions` に pdf-reader-mcp の呼び出し例（保存済みなら `extract_tables` / `read_text` に `file_path`、未保存なら `read_url` に `url`）と、他の PDF 読み取りツール向けの汎用の 1 件を置く。houki-nta-mcp 自身は PDF の本文を読まない
+- **添付 PDF の読み方を返し、読み手は固定しない (v0.19.0)**: 添付 PDF の kind（`comparison`=新旧対照表 / `attachment`=別紙・別表 など。「新旧**対応**表」の表記ゆれにも対応）ごとに `read_strategy`（表として取る / 本文として読む / 先頭を見て決める）と `layout_note`（紙面の組み方）を付ける。`save: true` で PDF をサーバー側に保存して絶対パスを返す。`next_actions` に pdf-reader-mcp の呼び出し例（保存済みなら `extract_tables` / `read_text` に `file_path`、未保存なら `read_url` に `url`）と、他の PDF 読み取りツール向けの汎用の 1 件を置く。houki-nta-mcp 自身は PDF の本文を読まない。改正通達で「別紙 N」とだけ題した PDF は新旧対照表本体のことが多いので、`comparison` として返す (v0.20.0)
 - **レスポンスに `freshness` 付き**: 利用者（LLM）が staleness を判定できる
 - **法的位置付けを明示**: 各レスポンスに `legal_status` フィールド（通達 = 税務署員のみ拘束、QA = 参考情報、等）
 
