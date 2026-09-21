@@ -15,7 +15,7 @@
 import { createHash } from 'node:crypto';
 import type DatabaseT from 'better-sqlite3';
 
-import { stripNtaNavigationLines } from '../services/bunshokaitou-parser.js';
+import { stripNtaNavigationLines } from '../services/nta-navigation-text.js';
 import { normalizeClauseNumber, normalizeJpText } from '../services/text-normalize.js';
 
 /**
@@ -29,8 +29,9 @@ import { normalizeClauseNumber, normalizeJpText } from '../services/text-normali
  * - v6: document に structured_json を追加（Issue #29: 取得ツールが DB から live と同じ構造を返せるようにする）
  * - v7: document に orphaned_at を追加（Issue #30: 国税庁の索引から消えた文書に印を付ける）
  * - v8: 文書回答事例の full_text から国税庁サイトの案内文の行を除く（Issue #45: 「←上記照会の内容に対する回答はこちら」）
+ * - v9: 改正通達・事務運営指針の full_text からも案内文の行を除く（Issue #45 の続き: 「※PDFファイルが開けない…こちらをご覧ください。」）
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -223,6 +224,10 @@ export function initSchema(db: DatabaseT.Database): void {
     migrateV7ToV8(db);
     version = 8;
   }
+  if (version === 8) {
+    migrateV8ToV9(db);
+    version = 9;
+  }
   if (version === SCHEMA_VERSION) {
     setSchemaVersion(db, SCHEMA_VERSION);
     return;
@@ -341,18 +346,34 @@ function migrateV6ToV7(db: DatabaseT.Database): void {
  */
 function migrateV7ToV8(db: DatabaseT.Database): void {
   const tx = db.transaction(() => {
-    stripBunshoNavigationLines(db);
+    stripNavigationLines(db, ['bunshokaitou']);
   });
   tx();
 }
 
-/** 文書回答事例の full_text から案内文の行を除き、content_hash を計算し直す */
-function stripBunshoNavigationLines(db: DatabaseT.Database): void {
+/**
+ * v8 → v9 マイグレーション（Issue #45 の続き: 改正通達・事務運営指針の本文からも案内文を除く）
+ *
+ * 0.20.1 までの `parseKaiseiPage` / `parseJimuUneiPage` は、本文の直後にあるサイト共通の
+ * 「※PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。」を本文の段落として
+ * 拾っていた。v7 → v8 と同じ手順を `doc_type IN ('kaisei', 'jimu-unei')` に掛ける。
+ * 質疑応答事例とタックスアンサーは parser が本文の要素だけを選んで組み立てるので、この文言は入らない。
+ */
+function migrateV8ToV9(db: DatabaseT.Database): void {
+  const tx = db.transaction(() => {
+    stripNavigationLines(db, ['kaisei', 'jimu-unei']);
+  });
+  tx();
+}
+
+/** 指定した種別の full_text から案内文の行を除き、content_hash を計算し直す */
+function stripNavigationLines(db: DatabaseT.Database, docTypes: string[]): void {
+  const placeholders = docTypes.map(() => '?').join(', ');
   const rows = db
     .prepare(
-      "SELECT id, doc_type, doc_id, title, full_text, content_hash FROM document WHERE doc_type = 'bunshokaitou'"
+      `SELECT id, doc_type, doc_id, title, full_text, content_hash FROM document WHERE doc_type IN (${placeholders})`
     )
-    .all() as Array<{
+    .all(...docTypes) as Array<{
     id: number;
     doc_type: string;
     doc_id: string;

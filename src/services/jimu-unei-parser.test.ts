@@ -45,6 +45,12 @@ describe('parseJimuUneiPage — 平成17年所得税 (170331)', () => {
   const url = 'https://www.nta.go.jp/law/jimu-unei/shotoku/shinkoku/170331/index.htm';
   const doc = parseJimuUneiPage(html, url, '2026-05-02T00:00:00.000Z');
 
+  it('サイト共通の PDF の案内は本文に入れない (Issue #45 の続き)', () => {
+    expect(html).toContain('PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。');
+    expect(doc.fullText).not.toContain('PDFファイルが開けない');
+    expect(doc.fullText).not.toContain('こちらをご覧ください');
+  });
+
   it('docType / docId / taxonomy を URL から抽出する', () => {
     expect(doc.docType).toBe('jimu-unei');
     expect(doc.docId).toBe('shotoku/shinkoku/170331');

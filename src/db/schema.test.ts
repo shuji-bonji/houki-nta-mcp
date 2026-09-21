@@ -279,7 +279,7 @@ describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入�
 
   it('schema_version が最新になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(8);
+    expect(SCHEMA_VERSION).toBe(9);
   });
 
   it('clause の条番号・題名・本文・段落 JSON が半角になる', () => {
@@ -515,17 +515,17 @@ describe('initSchema — v7 → v8 (Issue #45): 文書回答事例の本文か�
       '[]',
       null
     );
-    // 他の種別は触らない（同じ文言があっても）
+    // 他の種別は触らない（同じ文言があっても）。v8 → v9 でも触らない種別として tax-answer を使う
     insert.run(
-      'jimu-unei',
-      '170331',
+      'tax-answer',
+      '1535',
       'shotoku',
-      '申告所得税の事務運営指針',
-      'https://example.com/170331/01.htm',
+      'NISA制度',
+      'https://example.com/1535.htm',
       '2026-09-07T00:00:00Z',
       hojoTextWithNav,
       '[]',
-      'hash-170331'
+      'hash-1535'
     );
     db.prepare(`UPDATE schema_meta SET value = '7' WHERE key = 'schema_version'`).run();
   }
@@ -547,7 +547,7 @@ describe('initSchema — v7 → v8 (Issue #45): 文書回答事例の本文か�
 
   it('schema_version が最新になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(8);
+    expect(SCHEMA_VERSION).toBe(9);
   });
 
   it('本庁系の本文は「以上」で終わり、content_hash は計算し直される', () => {
@@ -572,10 +572,10 @@ describe('initSchema — v7 → v8 (Issue #45): 文書回答事例の本文か�
     expect(row.content_hash).toBeNull();
   });
 
-  it('他の種別（jimu-unei）は触らない', () => {
-    const row = selectDoc('170331');
+  it('他の種別（tax-answer）は触らない', () => {
+    const row = selectDoc('1535');
     expect(row.full_text).toBe(hojoTextWithNav);
-    expect(row.content_hash).toBe('hash-170331');
+    expect(row.content_hash).toBe('hash-1535');
   });
 
   it('FTS5 の索引からも案内文が消える', () => {
@@ -584,7 +584,7 @@ describe('initSchema — v7 → v8 (Issue #45): 文書回答事例の本文か�
         `SELECT d.doc_id FROM document_fts f JOIN document d ON d.id = f.rowid WHERE document_fts MATCH ? ORDER BY d.doc_id`
       )
       .all('"回答はこちら"') as Array<{ doc_id: string }>;
-    expect(hits.map((h) => h.doc_id)).toEqual(['170331']);
+    expect(hits.map((h) => h.doc_id)).toEqual(['1535']);
   });
 
   it('もう一度開いても何も変わらない（冪等）', () => {
@@ -592,5 +592,114 @@ describe('initSchema — v7 → v8 (Issue #45): 文書回答事例の本文か�
     initSchema(db);
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
     expect(selectDoc('shotoku/250416')).toEqual(before);
+  });
+});
+
+describe('initSchema — v8 → v9 (Issue #45 の続き): 改正通達・事務運営指針の本文からも案内文を除く', () => {
+  let db: DatabaseT.Database;
+
+  const body =
+    '課税局 課個 2-3\n各国税局長 殿\n消費税法基本通達の一部改正について\n別紙のとおり改める';
+  const guidance = '※PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。';
+  const bodyWithGuidance = `${body}\n${guidance}`;
+
+  /** v9 のスキーマに 0.20.1 までの parser が入れた本文を置き、schema_version だけ v8 に戻した DB を作る */
+  function seedV8Database(): void {
+    initSchema(db);
+    const insert = db.prepare(
+      `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    insert.run(
+      'kaisei',
+      '0026003-067',
+      'shohi',
+      '消費税法基本通達の一部改正について（法令解釈通達）',
+      'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/kaisei/0026003-067/index.htm',
+      '2026-09-08T07:27:21.701Z',
+      bodyWithGuidance,
+      '[]',
+      'hash-0026003-067-old'
+    );
+    insert.run(
+      'jimu-unei',
+      'shotoku/shinkoku/170331',
+      'shotoku',
+      '申告所得税の事務運営指針',
+      'https://www.nta.go.jp/law/jimu-unei/shotoku/shinkoku/170331/index.htm',
+      '2026-09-08T07:27:21.701Z',
+      bodyWithGuidance,
+      '[]',
+      null
+    );
+    // 案内文の無い行は触らない
+    insert.run(
+      'kaisei',
+      '0025004-026',
+      'hojin',
+      '法人税基本通達の一部改正について',
+      'https://www.nta.go.jp/law/tsutatsu/kihon/hojin/kaisei/0025004-026/index.htm',
+      '2026-09-08T07:27:21.701Z',
+      body,
+      '[]',
+      'hash-0025004-026'
+    );
+    db.prepare(`UPDATE schema_meta SET value = '8' WHERE key = 'schema_version'`).run();
+  }
+
+  function selectDoc(docId: string): { full_text: string; content_hash: string | null } {
+    return db
+      .prepare('SELECT full_text, content_hash FROM document WHERE doc_id = ?')
+      .get(docId) as { full_text: string; content_hash: string | null };
+  }
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    seedV8Database();
+    initSchema(db); // v8 と判定され migrateV8ToV9 が走る
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('schema_version が最新になる', () => {
+    expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
+    expect(SCHEMA_VERSION).toBe(9);
+  });
+
+  it('改正通達の本文から案内文が消え、content_hash は計算し直される', () => {
+    const row = selectDoc('0026003-067');
+    expect(row.full_text).toBe(body);
+    const expected = createHash('sha1')
+      .update('kaisei\n0026003-067\n消費税法基本通達の一部改正について（法令解釈通達）\n')
+      .update(body)
+      .digest('hex');
+    expect(row.content_hash).toBe(expected);
+  });
+
+  it('事務運営指針の本文から案内文が消え、hash を持っていなかった行は NULL のまま', () => {
+    const row = selectDoc('shotoku/shinkoku/170331');
+    expect(row.full_text).toBe(body);
+    expect(row.content_hash).toBeNull();
+  });
+
+  it('案内文の無い行は本文も content_hash も変わらない', () => {
+    const row = selectDoc('0025004-026');
+    expect(row.full_text).toBe(body);
+    expect(row.content_hash).toBe('hash-0025004-026');
+  });
+
+  it('FTS5 の索引からも案内文が消える', () => {
+    const hits = db
+      .prepare(`SELECT COUNT(*) AS n FROM document_fts WHERE document_fts MATCH ?`)
+      .get('"PDFファイルが開けない"') as { n: number };
+    expect(hits.n).toBe(0);
+  });
+
+  it('もう一度開いても何も変わらない（冪等）', () => {
+    const before = selectDoc('0026003-067');
+    initSchema(db);
+    expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
+    expect(selectDoc('0026003-067')).toEqual(before);
   });
 });
