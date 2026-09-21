@@ -4,9 +4,14 @@
  * Phase 4 で追加。pdf-reader-mcp との責務分離原則に従い、houki-nta-mcp は
  * PDF 本文を読まず「メタ情報の整理と分類」のみ担う。
  *
- * 設計詳細: docs/PHASE4-PDF.md §3
+ * v0.19.0（#36）: 読み手を pdf-reader-mcp に固定しない。kind ごとに「どう読むか」
+ * （`read_strategy` / `layout_note`）を道具の名前を使わずに書き、pdf-reader-mcp への
+ * 呼び出し例は `next_actions` に置く。
+ *
+ * 設計詳細: docs/PHASE4-PDF.md §3・§6、houki-hub の docs/DECISIONS.md（2026-09-21）
  */
 
+import type { NextAction } from '../errors.js';
 import { normalizeJpText } from './text-normalize.js';
 
 /** 添付 PDF の種別。LLM が「どの PDF を読むべきか」を判断する材料 */
@@ -139,90 +144,169 @@ const KIND_PRIORITY: Record<PdfKind, number> = {
 };
 
 /**
- * pdf-reader-mcp 呼び出しの一言コメント（kind ごと）。
- * 「呼び出し例」JSON の前に `// ...` 形式で添える。
- */
-const KIND_CALL_HINT: Record<PdfKind, string> = {
-  comparison: '// 新旧対照表を読む（改正点を知りたい時に最優先）',
-  attachment: '// 別紙・別表を読む（通達本文の参照先）',
-  'qa-pdf': '// Q&A PDF を読む',
-  related: '// 参考資料を読む',
-  notice: '// 通知・連絡を読む',
-  unknown: '// この PDF を読む',
-};
-
-/**
- * kind ごとの推奨 pdf-reader-mcp tool。
+ * PDF の読み方（道具に依存しない）。
  *
- * v0.7.2 で `extract_tables` (pdf-reader-mcp v0.3.0+) を導入。
- *  - comparison: 新旧対照表は表構造が必須なので `extract_tables` 最優先。失敗時 `read_text` フォールバック。
- *  - attachment: 別紙・別表・様式は半分以上が表組み。`extract_tables` を推奨し、`read_text` を補助に。
- *  - qa-pdf / related / notice / unknown: 散文中心なので `read_text` のみ。
+ * - `tables`: 表として取る。表として取れないときは本文として読む
+ * - `text`:   本文として通して読む
+ * - `sample`: 先頭ページを読んで中身を確かめてから決める
  */
-const KIND_PRIMARY_TOOL: Record<PdfKind, 'extract_tables' | 'read_text'> = {
-  comparison: 'extract_tables',
-  attachment: 'extract_tables',
-  'qa-pdf': 'read_text',
-  related: 'read_text',
-  notice: 'read_text',
-  unknown: 'read_text',
+export type PdfReadStrategy = 'tables' | 'text' | 'sample';
+
+/** `attachedPdfs[]` に付ける読み方の説明。どの PDF 読み取りツールでも使える言葉で書く */
+export interface PdfReading {
+  read_strategy: PdfReadStrategy;
+  /** 紙面の組み方と、読むときに気を付ける点 */
+  layout_note: string;
+}
+
+const KIND_READING: Record<PdfKind, PdfReading> = {
+  comparison: {
+    read_strategy: 'tables',
+    layout_note:
+      '改正後と改正前を左右 2 列に並べた表。国税庁の新旧対照表は左が改正後、右が改正前のことが多いが、見出し行で確かめる。変更箇所には下線が引かれ、改正前の側に「（同左）」、両側に「（省略）」「（新設）」「（削除）」の欄がある。表として取れるなら表で、取れないなら左右 2 列に分けて読む（1 列として読むと改正後と改正前の文が混ざる）',
+  },
+  attachment: {
+    read_strategy: 'tables',
+    layout_note:
+      '別紙・別表・様式。表組みか記入欄の書式が多い。表として取れるなら表で、取れなければ本文として読む',
+  },
+  'qa-pdf': {
+    read_strategy: 'text',
+    layout_note: '問と答が交互に並ぶ散文。本文として通して読む',
+  },
+  related: {
+    read_strategy: 'text',
+    layout_note: '参考資料。本文として読む。調査に要るかどうかは文脈で決める',
+  },
+  notice: {
+    read_strategy: 'text',
+    layout_note: '通知・連絡。本文として読む。調査の結論には通常含めない',
+  },
+  unknown: {
+    read_strategy: 'sample',
+    layout_note:
+      'タイトルから種別を判定できなかった。先頭ページを読んで中身を確かめてから、表として取るか本文として読むかを決める',
+  },
 };
 
-/**
- * 推奨 tool の説明文（kind ごと）。`reader_hints.examples` の `note` に添える。
- */
-const KIND_TOOL_NOTE: Record<PdfKind, string> = {
-  comparison:
-    'extract_tables で改正後/改正前の差分を表として抽出するのが最優先。失敗時は read_text に fallback。',
-  attachment:
-    'extract_tables で表組みの別紙・別表・様式を構造化抽出。本文ベースで読みたい時は read_text を併用。',
-  'qa-pdf': 'read_text で全文を取得し、Q/A の流れを読む。',
-  related: 'read_text で全文を取得。文脈次第で読むか判断。',
-  notice: 'read_text で連絡内容を確認。LLM 要約には通常含めない。',
-  unknown: 'read_text で先頭ページをサンプリングし、内容を把握する。',
+/** `read_strategy` の日本語ラベル（Markdown の表用） */
+const READ_STRATEGY_LABEL: Record<PdfReadStrategy, string> = {
+  tables: '表として取る',
+  text: '本文として読む',
+  sample: '先頭を見て決める',
 };
 
-/** `reader_hints.examples` の 1 件分。 */
-export interface ReaderHintExample {
-  kind: PdfKind;
-  /** 推奨される pdf-reader-mcp tool 名 */
-  tool: 'extract_tables' | 'read_text';
-  /** 呼び出し引数。`extract_tables` でも `read_text` でも `url` を主軸にする */
-  args: { url: string };
-  /** kind ごとの一言ガイド */
-  note: string;
+/** kind に対応する読み方を返す */
+export function describePdfReading(kind: PdfKind): PdfReading {
+  return KIND_READING[kind];
 }
 
 /**
- * 添付 PDF 群から `reader_hints.examples` を生成する。
- *
- * 仕様 (v0.7.2):
- *  - 含まれる kind ごとに **代表例 1 件ずつ** を生成する。
- *  - 各 kind の代表例は KIND_PRIORITY 内で同 kind の先頭 PDF。
- *  - 推奨 tool は kind に応じて `extract_tables` (comparison/attachment) または `read_text`。
- *  - 出力順は KIND_PRIORITY と同じ（comparison が先頭）。
- *
- * これにより LLM は「どの PDF を、どの tool で、なぜ読むべきか」を 1 つのフィールドで判断できる。
+ * 添付 PDF に `read_strategy` / `layout_note` を付ける。kind が無ければタイトルから補う。
+ * 純関数。新しい配列を返す。
  */
-export function buildReaderHintExamples(pdfs: ReadonlyArray<AttachedPdfLike>): ReaderHintExample[] {
+export function withPdfReading<T extends AttachedPdfLike>(
+  pdfs: ReadonlyArray<T>
+): Array<T & { kind: PdfKind } & PdfReading> {
+  return pdfs.map((pdf) => {
+    const kind = pdf.kind ?? extractPdfKind(pdf.title);
+    return { ...pdf, kind, ...KIND_READING[kind] };
+  });
+}
+
+/** `buildPdfNextActions` に渡す「保存済みの絶対パス」。キーは `attachedPdfs[].url` */
+export type SavedPathByUrl = ReadonlyMap<string, string>;
+
+/**
+ * 添付 PDF 群から `next_actions` を生成する（#36、v0.19.0）。
+ *
+ * 方針:
+ *  - 含まれる kind ごとに 1 件（同 kind 内は先頭の PDF）。順序は KIND_PRIORITY（comparison が先頭）
+ *  - pdf-reader-mcp を第一候補として、`action` は houki-egov-mcp と同じ `pdf-reader-mcp:<tool>` の書式
+ *  - `example` は引数だけ（`mcp` / `tool` は入れない）
+ *  - 保存済みパスがあれば `file_path` を使う経路（extract_tables / read_text / summarize）、
+ *    無ければ `read_url` の経路（URL のまま読む。表として取る経路にはならない）
+ *  - 最後に、pdf-reader-mcp が無い環境向けの汎用の 1 件（`read_pdf`）を置く。読み手は固定しない
+ */
+export function buildPdfNextActions(
+  pdfs: ReadonlyArray<AttachedPdfLike>,
+  savedPathByUrl: SavedPathByUrl = new Map()
+): NextAction[] {
   if (pdfs.length === 0) return [];
 
-  // kind ごとに「最初に出現した PDF」を覚える
   const seenByKind = new Map<PdfKind, AttachedPdfLike>();
   for (const pdf of pdfs) {
     const kind = pdf.kind ?? extractPdfKind(pdf.title);
     if (!seenByKind.has(kind)) seenByKind.set(kind, pdf);
   }
+  const representatives = Array.from(seenByKind.entries()).sort(
+    ([a], [b]) => KIND_PRIORITY[a] - KIND_PRIORITY[b]
+  );
 
-  // KIND_PRIORITY 順で並べる
-  return Array.from(seenByKind.entries())
-    .sort(([a], [b]) => KIND_PRIORITY[a] - KIND_PRIORITY[b])
-    .map(([kind, pdf]) => ({
-      kind,
-      tool: KIND_PRIMARY_TOOL[kind],
-      args: { url: pdf.url },
-      note: KIND_TOOL_NOTE[kind],
-    }));
+  const actions: NextAction[] = representatives.map(([kind, pdf]) =>
+    pdfReaderAction(kind, pdf.url, savedPathByUrl.get(pdf.url))
+  );
+
+  const first = representatives[0][1];
+  const firstPath = savedPathByUrl.get(first.url);
+  actions.push({
+    action: 'read_pdf',
+    reason:
+      'pdf-reader-mcp が無いときは、使っている PDF 読み取りツールに url（save: true で保存したときは path）を渡す。読み方は attachedPdfs[].read_strategy と layout_note のとおり',
+    example: firstPath ? { url: first.url, path: firstPath } : { url: first.url },
+  });
+  return actions;
+}
+
+/** kind と保存状態から pdf-reader-mcp への 1 件を組み立てる */
+function pdfReaderAction(kind: PdfKind, url: string, savedPath: string | undefined): NextAction {
+  const label = PDF_KIND_LABEL[kind];
+  const strategy = KIND_READING[kind].read_strategy;
+
+  if (savedPath) {
+    if (strategy === 'tables') {
+      return {
+        action: 'pdf-reader-mcp:extract_tables',
+        reason: `${label}を表として取る。タグ付き PDF なら行と列がそのまま返る。表が 0 件（タグ無し）なら read_text に split_columns: 2 を付けて同じ file_path を読む`,
+        example: { file_path: savedPath },
+      };
+    }
+    if (strategy === 'text') {
+      return {
+        action: 'pdf-reader-mcp:read_text',
+        reason: `${label}を本文として読む。長いときは pages で範囲を切る`,
+        example: { file_path: savedPath },
+      };
+    }
+    return {
+      action: 'pdf-reader-mcp:summarize',
+      reason: `${label}。ページ数・タグの有無・文字が取れるかを見てから、extract_tables か read_text を選ぶ`,
+      example: { file_path: savedPath },
+    };
+  }
+
+  if (strategy === 'tables') {
+    const isComparison = kind === 'comparison';
+    return {
+      action: 'pdf-reader-mcp:read_url',
+      reason: `${label}を URL のまま本文として読む。${
+        isComparison ? '左右の列が混ざらないよう split_columns: 2 を付ける。' : ''
+      }表として取るには、この tool を save: true で呼び直して saved[].path を extract_tables に渡す`,
+      example: isComparison ? { url, split_columns: 2 } : { url },
+    };
+  }
+  if (strategy === 'text') {
+    return {
+      action: 'pdf-reader-mcp:read_url',
+      reason: `${label}を URL のまま本文として読む。長いときは pages で範囲を切る`,
+      example: { url },
+    };
+  }
+  return {
+    action: 'pdf-reader-mcp:read_url',
+    reason: `${label}。先頭ページだけ読んで中身を確かめてから、読み方を決める`,
+    example: { url, pages: '1' },
+  };
 }
 
 /**
@@ -256,9 +340,9 @@ interface AttachedPdfLike {
  *
  * 出力構造:
  *   - `## 添付 PDF (N 件)` ヘッダ
- *   - pdf-reader-mcp 案内
- *   - 種別 / タイトル / サイズ / URL の表（kind 優先度でソート）
- *   - `### pdf-reader-mcp 呼び出し例` JSON ブロック（先頭 PDF）
+ *   - 読み手を固定しない案内（URL のまま読む / save: true で保存して表として取る）
+ *   - 種別 / タイトル / サイズ / 読み方 / URL の表（kind 優先度でソート）
+ *   - `### 読み方` kind ごとの layout_note
  *
  * `pdfs` が空のときは空配列を返す。kind が undefined の PDF（v0.6.0 以前のレコード）
  * は `unknown` 扱いで描画する。
@@ -281,35 +365,30 @@ export function renderAttachedPdfsMarkdown(pdfs: ReadonlyArray<AttachedPdfLike>)
   const lines: string[] = [];
   lines.push(`## 添付 PDF (${pdfs.length} 件)`);
   lines.push('');
-  lines.push('> PDF 本文は `pdf-reader-mcp` の `read_text` で取得してください。');
+  lines.push(
+    '> houki-nta-mcp は PDF の本文を読みません。URL のまま読むなら pdf-reader-mcp の `read_url`（新旧対照表は `split_columns: 2`）、表として取るなら `nta_inspect_pdf_meta` を `save: true` で呼び、`saved[].path` を `extract_tables` に渡してください。他の PDF 読み取りツールでも、url か path を渡せば同じように読めます。'
+  );
   lines.push('');
-  lines.push('| 種別 | タイトル | サイズ | URL |');
-  lines.push('| --- | --- | --- | --- |');
+  lines.push('| 種別 | タイトル | サイズ | 読み方 | URL |');
+  lines.push('| --- | --- | --- | --- | --- |');
   for (const pdf of sorted) {
     const kind = pdf.kind ?? 'unknown';
     const emoji = PDF_KIND_EMOJI[kind];
     const label = PDF_KIND_LABEL[kind];
     const size = pdf.sizeKb ? `${pdf.sizeKb}KB` : '—';
+    const strategy = READ_STRATEGY_LABEL[KIND_READING[kind].read_strategy];
     lines.push(
-      `| ${emoji} ${label} | ${escapeMdTableCell(pdf.title)} | ${size} | [link](${pdf.url}) |`
+      `| ${emoji} ${label} | ${escapeMdTableCell(pdf.title)} | ${size} | ${strategy} | [link](${pdf.url}) |`
     );
   }
 
-  // 呼び出し例 (v0.7.2 〜): 含まれる kind ごとに 1 例ずつ生成。
-  // comparison / attachment は extract_tables を最優先で推奨し、それ以外は read_text。
-  const examples = buildReaderHintExamples(sorted);
-  if (examples.length > 0) {
-    lines.push('');
-    lines.push('### pdf-reader-mcp 呼び出し例');
-    lines.push('');
-    lines.push('```json');
-    for (let i = 0; i < examples.length; i++) {
-      const ex = examples[i];
-      lines.push(KIND_CALL_HINT[ex.kind]);
-      lines.push(`{ "tool": "${ex.tool}", "args": { "url": "${ex.args.url}" } }`);
-      if (i < examples.length - 1) lines.push('');
-    }
-    lines.push('```');
+  // 読み方の補足 (v0.19.0 〜): kind ごとに 1 行。道具の名前は使わない
+  const kindsInOrder = Array.from(new Set(sorted.map((p) => p.kind ?? 'unknown')));
+  lines.push('');
+  lines.push('### 読み方');
+  lines.push('');
+  for (const kind of kindsInOrder) {
+    lines.push(`- ${PDF_KIND_LABEL[kind]}: ${KIND_READING[kind].layout_note}`);
   }
 
   return lines;

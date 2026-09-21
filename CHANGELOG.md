@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.19.0] - 2026-09-21
+
+**minor リリース** — `nta_inspect_pdf_meta` の応答を、読み手を pdf-reader-mcp に固定しない形にした（#36、houki-hub#24 の劣 5）。houki-nta-mcp は PDF の本文を読まない、という分担は変えていない。決定の経緯は houki-hub の `docs/DECISIONS.md`（2026-09-21）。
+
+### Added
+
+- **`attachedPdfs[].read_strategy` / `layout_note`**: kind ごとの読み方を、道具の名前を使わずに書いた。`read_strategy` は `tables`（表として取る。comparison / attachment）、`text`（本文として読む。qa-pdf / related / notice）、`sample`（先頭を見て決める。unknown）の 3 値。`layout_note` は紙面の組み方（新旧対照表なら「左右 2 列。多くは左が改正後、右が改正前。見出し行で確かめる。変更箇所に下線」）。どの PDF 読み取りツールを使っていても、この 2 つで読み方を決められる
+- **`save: true`**: 返す PDF をサーバー側の保存先に取得し、`saved[]` に `{ url, path, bytes, cached }` を返す。保存先は `HOUKI_NTA_FILES_DIR`、無ければ `${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/files/<docType>/<docId>/<ファイル名>`（houki-egov-mcp の `get_attachment` と同じ形）。同じパスにファイルがあれば再取得しない（`cached: true`）。pdf-reader-mcp の `extract_tables` / `read_text` / `summarize` は `file_path` しか受け取らず、`read_url` は読んだバイト列を保存しないため、表として取る経路にはこれが要る。取得に失敗した PDF は `saved[].error`（`HTTP 404`、`PDF ではありません（Content-Type: text/html）`、上限 50MB 超過、ネットワークエラーの文）を付けて残し、`note` に件数を書く。黙って落とさない
+- **`kind` 引数**: その種別の PDF だけを返す（改正点だけ見たいときは `comparison`）。該当が無いときは `attachedPdfs: []` と、この文書にある種別を `note` に書く
+- **`next_actions`**: kind ごとに 1 件（同 kind 内は先頭の PDF）+ 汎用の 1 件。`action` は houki-egov-mcp と同じ `pdf-reader-mcp:<tool>` の書式で、`example` は引数だけ（`mcp` / `tool` は入れない）。保存済みなら `extract_tables` / `read_text` / `summarize` に `file_path`、未保存なら `read_url` に `url`（新旧対照表は `split_columns: 2` 付き、unknown は `pages: "1"`）。最後の `read_pdf` は pdf-reader-mcp が無い環境向けで、`url`（保存済みなら `path` も）を使っている PDF 読み取りツールに渡す、と `reason` に書いてある
+- `src/services/pdf-files.ts`（`savePdf` / `defaultFilesDir` / `pdfFileNameFromUrl`）と、そのテスト 11 件。`nta_inspect_pdf_meta` のテストは `save` / `kind` / 失敗の混在を含めて 4 件に書き直した
+
+### Removed
+
+- **`reader_hints`**（v0.7.1〜v0.18.3）。`next_actions` に置き換えた。`reader_hints.examples` は `extract_tables` に `args: { url }` を渡す形を示していたが、pdf-reader-mcp の `extract_tables` は `file_path` しか受け取らないので、そのままでは呼べなかった。`primary_action` / `min_pdf_reader_version` も無くした（版の条件は `next_actions[].reason` に書く程度で足りる）
+
+### Changed
+
+- **`nta_get_*` の Markdown の「添付 PDF」節**: 先頭の案内を「houki-nta-mcp は PDF の本文を読みません。URL のまま読むなら pdf-reader-mcp の `read_url`（新旧対照表は `split_columns: 2`）、表として取るなら `nta_inspect_pdf_meta` を `save: true` で呼び、`saved[].path` を `extract_tables` に渡す。他の PDF 読み取りツールでも url か path を渡せば同じように読める」に変え、表に「読み方」列を足した。末尾の `### pdf-reader-mcp 呼び出し例`（JSON）は、上と同じ理由（`url` を `extract_tables` に渡していた）で外し、代わりに `### 読み方` に kind ごとの `layout_note` を並べる
+- `nta_inspect_pdf_meta` の `description` を、応答の 3 層（読み方の事実 / `save: true` / `next_actions`）と「読み手は固定しない」を書く形にした
+
 ## [0.18.3] - 2026-09-21
 
 **patch リリース** — コードは変えていない。npm・公式 MCP Registry・GitHub の About に出る説明を揃えた（houki-hub#29 の続き）。

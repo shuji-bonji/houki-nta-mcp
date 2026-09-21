@@ -201,43 +201,77 @@ Phase 4 (v0.7.0) で構造化:
 - `related` → 文脈次第
 - `notice` → 一般的には読まない（要約には含まない）
 
-## 6. 新規 tool: `nta_inspect_pdf_meta` (Phase 4-2)
+## 6. 新規 tool: `nta_inspect_pdf_meta` (Phase 4-2、v0.19.0 で改訂)
 
 PDF メタだけを返す軽量 tool。get 系で全文を取得すると重いので、PDF だけを確認したい時用。
+
+v0.19.0（#36）で応答を 3 層に分けた。houki-nta-mcp は PDF の本文を読まない、という分担はそのまま。読み手を pdf-reader-mcp に固定せず、「読み方の事実」と「特定の読み手への呼び出し例」を分ける。
+
+| 層 | フィールド | 役目 |
+|---|---|---|
+| 事実 | `attachedPdfs[].kind` / `read_strategy` / `layout_note` | 道具の名前を使わずに読み方を書く。どの PDF 読み取りツールでも使える |
+| 入手 | `save: true` → `saved[]`（`url` / `path` / `bytes` / `cached` / `error?`） | URL を直接読めない読み手（Claude Code の Read、手元の PDF ツール）と、pdf-reader-mcp の `extract_tables` / `read_text`（`file_path` しか受け取らない）のためにファイルを置く |
+| 呼び出し例 | `next_actions[]` | pdf-reader-mcp を第一候補にした具体的な引数。最後に汎用の `read_pdf` を置く |
 
 ```typescript
 // schema 概念
 {
   name: 'nta_inspect_pdf_meta',
-  description: '指定した文書の添付 PDF メタ一覧（kind / size / URL）のみを返す。本文は含まない。',
   inputSchema: {
     type: 'object',
     properties: {
       docType: { enum: ['kaisei', 'jimu-unei', 'bunshokaitou', 'tax-answer'] },
-      docId: { type: 'string' }
+      docId: { type: 'string' },
+      kind: { enum: ['comparison', 'attachment', 'qa-pdf', 'related', 'notice', 'unknown'] }, // 省略で全件
+      save: { type: 'boolean' } // true で PDF を保存し saved[] に絶対パス
     },
-    required: ['docType', 'docId']
+    required: ['docType', 'docId'],
+    additionalProperties: false
   }
 }
 ```
 
-レスポンス:
+レスポンス（`save: true`、新旧対照表は保存できて別紙は 404 だった例）:
 
 ```json
 {
   "docType": "kaisei",
   "docId": "0026003-067",
   "title": "消費税法基本通達の一部改正について",
-  "attachedPdfs": [{ "title": "新旧対照表", "url": "...", "sizeKb": 470, "kind": "comparison" }],
-  "reader_hints": {
-    "tool": "pdf-reader-mcp",
-    "primary_action": "read_text",
-    "examples": [{ "kind": "comparison", "args": { "url": "..." } }]
-  }
+  "attachedPdfs": [
+    {
+      "title": "新旧対照表", "url": "https://.../a.pdf", "sizeKb": 470, "kind": "comparison",
+      "read_strategy": "tables",
+      "layout_note": "改正後と改正前を左右 2 列に並べた表。国税庁の新旧対照表は左が改正後、右が改正前のことが多いが、見出し行で確かめる。…"
+    },
+    { "title": "別紙", "url": "https://.../b.pdf", "kind": "attachment", "read_strategy": "tables", "layout_note": "…" }
+  ],
+  "saved": [
+    { "url": "https://.../a.pdf", "path": "/Users/me/.cache/houki-nta-mcp/files/kaisei/0026003-067/a.pdf", "bytes": 481280, "cached": false },
+    { "url": "https://.../b.pdf", "path": null, "bytes": null, "cached": false, "error": "HTTP 404" }
+  ],
+  "next_actions": [
+    { "action": "pdf-reader-mcp:extract_tables", "reason": "新旧対照表を表として取る。…", "example": { "file_path": "/Users/me/.cache/houki-nta-mcp/files/kaisei/0026003-067/a.pdf" } },
+    { "action": "pdf-reader-mcp:read_url", "reason": "別紙・別表を URL のまま本文として読む。…", "example": { "url": "https://.../b.pdf" } },
+    { "action": "read_pdf", "reason": "pdf-reader-mcp が無いときは、使っている PDF 読み取りツールに url（save: true で保存したときは path）を渡す。…", "example": { "url": "https://.../a.pdf", "path": "/Users/me/.cache/houki-nta-mcp/files/kaisei/0026003-067/a.pdf" } }
+  ],
+  "note": "1 件の PDF を保存できませんでした（saved[].error を参照）。その PDF は URL のまま読んでください",
+  "legal_status": { "...": "..." }
 }
 ```
 
-これは Phase 4-2 で実装。
+`next_actions[].example` は引数だけで、`mcp` / `tool` は入れない（`additionalProperties: false` の tool にそのまま渡せる）。`reader_hints`（v0.7.1〜v0.18.3）はこの改訂で無くした。
+
+kind 別の既定:
+
+| kind | `read_strategy` | 保存済みのとき | 未保存のとき |
+|---|---|---|---|
+| comparison | tables | `extract_tables { file_path }` | `read_url { url, split_columns: 2 }` |
+| attachment | tables | `extract_tables { file_path }` | `read_url { url }` |
+| qa-pdf / related / notice | text | `read_text { file_path }` | `read_url { url }` |
+| unknown | sample | `summarize { file_path }` | `read_url { url, pages: "1" }` |
+
+新旧対照表の中身（どこが変わったか）を取り出すのは、表を読んだ後の LLM の仕事で、houki-research-skill の手順に置く（左右どちらが改正後か、「（同左）」「（省略）」「（新設）」「（削除）」の扱い、下線部だけを差分として拾う）。nta が構造化した差分を返す案（issue #36 の選択肢 2）は、pdf-reader-mcp の `extract_tables` を実際の改正通達 PDF に当ててから判断する。
 
 ## 7. search 系の `has_pdf` フィルタ (Phase 4-2)
 

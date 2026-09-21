@@ -364,7 +364,7 @@ export const ntaGetBunshokaitouTool = {
 export const ntaInspectPdfMetaTool = {
   name: 'nta_inspect_pdf_meta',
   description:
-    '指定した文書の添付 PDF メタ一覧（kind / size / URL）と pdf-reader-mcp 呼び出し例だけを返す軽量 API。本文は含まない。`nta_get_*` で全文を取得すると重い場合や、PDF だけを確認したい時に使う。Phase 4-2 (v0.7.1) で追加。',
+    '指定した文書の添付 PDF の一覧を返す。本文は読まない。各 PDF に kind（comparison=新旧対照表 / attachment=別紙・別表 / qa-pdf / related / notice / unknown）と、読み方（read_strategy: tables=表として取る / text=本文として読む / sample=先頭を見て決める、layout_note: 紙面の組み方）を付ける。save: true のときだけ PDF をサーバー側の保存先（既定は XDG_CACHE_HOME か ~/.cache の下の houki-nta-mcp/files/。環境変数 HOUKI_NTA_FILES_DIR で変更）に取得し、saved[] に絶対パスを返す。next_actions に pdf-reader-mcp の呼び出し例（保存済みなら extract_tables / read_text に file_path、未保存なら read_url に url）と、他の PDF 読み取りツール向けの汎用の 1 件を置く。読み手は固定しない。`nta_get_*` で全文を取得すると重い場合や、PDF だけを確認したい時に使う。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -378,6 +378,16 @@ export const ntaInspectPdfMetaTool = {
         type: 'string',
         description:
           '文書 ID。各 docType の `nta_search_*` 結果や `nta_get_*` のレスポンスから得られる',
+      },
+      kind: {
+        type: 'string',
+        enum: ['comparison', 'attachment', 'qa-pdf', 'related', 'notice', 'unknown'],
+        description: 'この種別の PDF だけを返す。改正点だけ見たいときは comparison。省略すると全件',
+      },
+      save: {
+        type: 'boolean',
+        description:
+          'true のとき、返す PDF をサーバー側の保存先に取得し、saved[] に絶対パスを返す。pdf-reader-mcp の extract_tables / read_text はローカルファイルしか読まないので、表として取るときに使う。既に保存済みなら再取得しない（saved[].cached が true）。既定 false',
       },
     },
     required: ['docType', 'docId'],

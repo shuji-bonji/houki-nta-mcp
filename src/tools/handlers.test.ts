@@ -773,14 +773,14 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
     expect(r.hint).toContain('--bulk-download');
   });
 
-  it('PDF 付き文書: kind 優先度ソート + reader_hints を返す', async () => {
-    // in-file seed のために temp DB を使う
-    const Database = (await import('better-sqlite3')).default;
-    const tmpFile = `/tmp/inspect-pdf-meta-test-${Date.now()}.db`;
+  /** PDF 付きの改正通達を 1 件入れた一時 DB を作る */
+  function seedPdfDoc(
+    docId: string,
+    pdfs: Array<{ title: string; url: string; sizeKb?: number; kind?: string }>
+  ): string {
+    const tmpFile = join(mkdtempSync(join(tmpdir(), 'inspect-pdf-meta-')), 'cache.db');
     const seedDb = new Database(tmpFile);
-    const { initSchema } = await import('../db/schema.js');
     initSchema(seedDb);
-
     seedDb
       .prepare(
         `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
@@ -788,106 +788,180 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
       )
       .run(
         'kaisei',
-        'sample-001',
+        docId,
         'shohi',
         'インボイス改正',
         'https://x/index.htm',
         '2026-05-06T00:00:00Z',
         '本文',
-        JSON.stringify([
-          { title: '別紙', url: 'https://x/b.pdf', sizeKb: 120, kind: 'attachment' },
-          {
-            title: '新旧対照表',
-            url: 'https://x/a.pdf',
-            sizeKb: 470,
-            kind: 'comparison',
-          },
-        ]),
+        JSON.stringify(pdfs),
         'h1'
       );
     seedDb.close();
+    return tmpFile;
+  }
+
+  type InspectResult = {
+    docType: string;
+    docId: string;
+    title: string;
+    attachedPdfs: Array<{
+      kind: string;
+      url: string;
+      title: string;
+      read_strategy: string;
+      layout_note: string;
+    }>;
+    saved?: Array<{
+      url: string;
+      path: string | null;
+      bytes: number | null;
+      cached: boolean;
+      error?: string;
+    }>;
+    next_actions?: Array<{ action: string; reason: string; example?: Record<string, unknown> }>;
+    note?: string;
+  };
+
+  it('#36: kind 優先度ソート + read_strategy / layout_note + next_actions（未保存は read_url）', async () => {
+    const tmpFile = seedPdfDoc('sample-001', [
+      { title: '別紙', url: 'https://x/b.pdf', sizeKb: 120, kind: 'attachment' },
+      { title: '新旧対照表', url: 'https://x/a.pdf', sizeKb: 470, kind: 'comparison' },
+    ]);
 
     const r = (await handleNtaInspectPdfMeta(
       { docType: 'kaisei', docId: 'sample-001' },
       { dbPath: tmpFile }
-    )) as {
-      docType: string;
-      docId: string;
-      title: string;
-      attachedPdfs: Array<{ kind?: string; url: string }>;
-      reader_hints: {
-        tool: string;
-        primary_action: string;
-        min_pdf_reader_version?: string;
-        examples: Array<{ kind: string; tool: string; args: { url: string } }>;
-      };
-    };
+    )) as InspectResult;
 
     expect(r.docType).toBe('kaisei');
     expect(r.docId).toBe('sample-001');
     expect(r.title).toBe('インボイス改正');
     // comparison が attachment より先
-    expect(r.attachedPdfs[0].kind).toBe('comparison');
-    expect(r.attachedPdfs[1].kind).toBe('attachment');
-    // v0.7.2: kind 別に複数の examples が出る (comparison + attachment の 2 件)
-    expect(r.reader_hints.tool).toContain('pdf-reader-mcp');
-    expect(r.reader_hints.primary_action).toBe('extract_tables');
-    expect(r.reader_hints.min_pdf_reader_version).toBe('0.3.0');
-    expect(r.reader_hints.examples).toHaveLength(2);
-    expect(r.reader_hints.examples[0]).toMatchObject({
-      kind: 'comparison',
-      tool: 'extract_tables',
-      args: { url: 'https://x/a.pdf' },
-    });
-    expect(r.reader_hints.examples[1]).toMatchObject({
-      kind: 'attachment',
-      tool: 'extract_tables',
-      args: { url: 'https://x/b.pdf' },
-    });
+    expect(r.attachedPdfs.map((p) => p.kind)).toEqual(['comparison', 'attachment']);
+    // 読み方の事実は道具の名前を含まない
+    expect(r.attachedPdfs[0].read_strategy).toBe('tables');
+    expect(r.attachedPdfs[0].layout_note).toContain('改正後');
+    expect(r.attachedPdfs[0].layout_note).not.toContain('pdf-reader');
+    // reader_hints は無くなった
+    expect((r as Record<string, unknown>).reader_hints).toBeUndefined();
+    // next_actions: kind ごとに 1 件 + 汎用 1 件。未保存なので read_url
+    expect(r.next_actions?.map((a) => a.action)).toEqual([
+      'pdf-reader-mcp:read_url',
+      'pdf-reader-mcp:read_url',
+      'read_pdf',
+    ]);
+    expect(r.next_actions?.[0].example).toEqual({ url: 'https://x/a.pdf', split_columns: 2 });
+    expect(r.next_actions?.[1].example).toEqual({ url: 'https://x/b.pdf' });
+    expect(r.next_actions?.[2].example).toEqual({ url: 'https://x/a.pdf' });
+    // example に mcp / tool は入れない（additionalProperties: false の tool にそのまま渡せる）
+    for (const a of r.next_actions ?? []) {
+      expect(a.example).not.toHaveProperty('mcp');
+      expect(a.example).not.toHaveProperty('tool');
+    }
+    expect(r.saved).toBeUndefined();
+  });
+
+  it('#36: kind で絞る。該当なしは空 + note にある種別', async () => {
+    const tmpFile = seedPdfDoc('sample-002', [
+      { title: '別紙', url: 'https://x/b.pdf', kind: 'attachment' },
+      { title: '新旧対照表', url: 'https://x/a.pdf', kind: 'comparison' },
+    ]);
+    const only = (await handleNtaInspectPdfMeta(
+      { docType: 'kaisei', docId: 'sample-002', kind: 'comparison' },
+      { dbPath: tmpFile }
+    )) as InspectResult;
+    expect(only.attachedPdfs.map((p) => p.url)).toEqual(['https://x/a.pdf']);
+    expect(only.next_actions?.map((a) => a.action)).toEqual([
+      'pdf-reader-mcp:read_url',
+      'read_pdf',
+    ]);
+
+    const none = (await handleNtaInspectPdfMeta(
+      { docType: 'kaisei', docId: 'sample-002', kind: 'qa-pdf' },
+      { dbPath: tmpFile }
+    )) as InspectResult;
+    expect(none.attachedPdfs).toEqual([]);
+    expect(none.next_actions).toBeUndefined();
+    expect(none.note).toContain('kind="qa-pdf" の PDF はありません');
+    expect(none.note).toContain('comparison, attachment');
+  });
+
+  it('#36: save: true で PDF を保存し、saved[].path を extract_tables / read_text の file_path に使う', async () => {
+    const tmpFile = seedPdfDoc('sample-003', [
+      { title: '新旧対照表', url: 'https://x/a.pdf', kind: 'comparison' },
+      { title: '参考資料', url: 'https://x/r.pdf', kind: 'related' },
+      { title: '壊れたリンク', url: 'https://x/missing.pdf', kind: 'unknown' },
+    ]);
+    const filesDir = mkdtempSync(join(tmpdir(), 'nta-files-'));
+    const pdfBytes = Buffer.from('%PDF-1.7\n%test\n');
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('missing.pdf')) return new Response('not found', { status: 404 });
+      return new Response(pdfBytes, {
+        status: 200,
+        headers: { 'content-type': 'application/pdf' },
+      });
+    }) as unknown as typeof fetch;
+
+    const r = (await handleNtaInspectPdfMeta(
+      { docType: 'kaisei', docId: 'sample-003', save: true },
+      { dbPath: tmpFile, filesDir, fetchImpl }
+    )) as InspectResult;
+
+    expect(r.saved).toHaveLength(3);
+    const a = r.saved?.find((s) => s.url === 'https://x/a.pdf');
+    expect(a?.path).toBe(resolve(filesDir, 'kaisei', 'sample-003', 'a.pdf'));
+    expect(a?.bytes).toBe(pdfBytes.byteLength);
+    expect(a?.cached).toBe(false);
+    expect(readFileSync(a?.path as string)).toEqual(pdfBytes);
+    const missing = r.saved?.find((s) => s.url === 'https://x/missing.pdf');
+    expect(missing?.path).toBeNull();
+    expect(missing?.error).toBe('HTTP 404');
+    expect(r.note).toContain('1 件の PDF を保存できませんでした');
+
+    // 保存済みは file_path、失敗分は URL のまま
+    expect(r.next_actions?.map((a) => a.action)).toEqual([
+      'pdf-reader-mcp:extract_tables',
+      'pdf-reader-mcp:read_text',
+      'pdf-reader-mcp:read_url',
+      'read_pdf',
+    ]);
+    expect(r.next_actions?.[0].example).toEqual({ file_path: a?.path });
+    expect(r.next_actions?.[2].example).toEqual({ url: 'https://x/missing.pdf', pages: '1' });
+    expect(r.next_actions?.[3].example).toEqual({ url: 'https://x/a.pdf', path: a?.path });
+
+    // 2 回目は再取得しない
+    const again = (await handleNtaInspectPdfMeta(
+      { docType: 'kaisei', docId: 'sample-003', save: true, kind: 'comparison' },
+      { dbPath: tmpFile, filesDir, fetchImpl }
+    )) as InspectResult;
+    expect(again.saved?.[0].cached).toBe(true);
+    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(3);
+    rmSync(filesDir, { recursive: true, force: true });
   });
 
   it('v0.6.0 期の DB レコード (kind なし) はタイトルから動的補完される (v0.7.2)', async () => {
-    const Database = (await import('better-sqlite3')).default;
-    const tmpFile = `/tmp/inspect-pdf-meta-fillkind-${Date.now()}.db`;
-    const seedDb = new Database(tmpFile);
-    const { initSchema } = await import('../db/schema.js');
-    initSchema(seedDb);
-
-    seedDb
-      .prepare(
-        `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        'kaisei',
-        'legacy-001',
-        'shohi',
-        '改正通達',
-        'https://x/index.htm',
-        '2026-05-06T00:00:00Z',
-        '本文',
-        // kind フィールド無し（v0.6.0 期投入を再現）
-        JSON.stringify([
-          { title: '新旧対応表', url: 'https://x/c.pdf', sizeKb: 399 },
-          { title: '別紙1', url: 'https://x/a.pdf', sizeKb: 67 },
-        ]),
-        'h2'
-      );
-    seedDb.close();
+    const tmpFile = seedPdfDoc('legacy-001', [
+      // kind フィールド無し（v0.6.0 期投入を再現）
+      { title: '新旧対応表', url: 'https://x/c.pdf', sizeKb: 399 },
+      { title: '別紙1', url: 'https://x/a.pdf', sizeKb: 67 },
+    ]);
 
     const r = (await handleNtaInspectPdfMeta(
       { docType: 'kaisei', docId: 'legacy-001' },
       { dbPath: tmpFile }
-    )) as {
-      attachedPdfs: Array<{ kind?: string; title: string }>;
-      reader_hints: { examples: Array<{ kind: string; tool: string }> };
-    };
+    )) as InspectResult;
 
     // タイトルから推定された kind が attachedPdfs に入る
     expect(r.attachedPdfs.find((p) => p.title === '新旧対応表')?.kind).toBe('comparison');
     expect(r.attachedPdfs.find((p) => p.title === '別紙1')?.kind).toBe('attachment');
-    // examples も kind 別に出る
-    expect(r.reader_hints.examples.map((e) => e.kind)).toEqual(['comparison', 'attachment']);
+    // next_actions も kind 別に出る（+ 汎用 1 件）
+    expect(r.next_actions?.map((a) => a.action)).toEqual([
+      'pdf-reader-mcp:read_url',
+      'pdf-reader-mcp:read_url',
+      'read_pdf',
+    ]);
   });
 });
 

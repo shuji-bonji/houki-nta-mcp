@@ -66,7 +66,7 @@ graph TB
   abbr -->|"source_mcp_hint='egov'"| egov["houki-egov-mcp<br/>法律・政令・省令"]
   abbr -->|"source_mcp_hint='nta'"| nta["houki-nta-mcp<br/>通達・改正・文書回答・QA"]
 
-  nta -->|"attachedPdfs.url<br/>+ reader_hints.examples"| pdf["pdf-reader-mcp<br/>extract_tables / read_text"]
+  nta -->|"attachedPdfs[].url / read_strategy<br/>+ saved[].path + next_actions"| pdf["pdf-reader-mcp<br/>（または任意の PDF 読み取りツール）"]
 
   egov -.法的根拠.-> ans
   nta  -.行政解釈・運用.-> ans
@@ -249,11 +249,11 @@ sequenceDiagram
     Note over C: ③ 改正履歴をリサーチ
     C->>N: nta_search_kaisei_tsutatsu({ keyword: "インボイス", hasPdf: true })
     N-->>C: 改正通達一覧
-    C->>N: nta_inspect_pdf_meta({ docType: "kaisei", docId: "0025004-026" })
-    N-->>C: attachedPdfs + reader_hints (extract_tables 推奨)
+    C->>N: nta_inspect_pdf_meta({ docType: "kaisei", docId: "0025004-026", kind: "comparison", save: true })
+    N-->>C: attachedPdfs（read_strategy: tables）+ saved[].path + next_actions
 
-    Note over C: ④ 新旧対照表 PDF を表として抽出
-    C->>P: extract_tables({ file_path: "新旧対照表.pdf", pages: "1" })
+    Note over C: ④ 新旧対照表 PDF を表として抽出（next_actions[0] の example をそのまま渡す）
+    C->>P: extract_tables({ file_path: saved[0].path })
     P-->>C: | 改正後 | 改正前 |<br/>| 第 16 項 | 第 15 項 |...
 
     Note over C: ⑤ 統合
@@ -263,7 +263,8 @@ sequenceDiagram
 **ポイント**:
 
 - houki-nta-mcp v0.7.2 + pdf-reader-mcp v0.3.0 の組み合わせで、**新旧対照表 PDF の改正前/改正後カラムが自動で分離**される (それ以前は LLM が左右を判別できなかった)
-- `nta_inspect_pdf_meta.reader_hints.examples` が **kind 別に**「`comparison` → `extract_tables` を最優先」と推奨してくれるため、Claude が自然に正しい tool を選ぶ
+- `nta_inspect_pdf_meta` を `save: true` で呼ぶと、`next_actions[0]` に `extract_tables { file_path }` がそのまま渡せる形で入る（v0.19.0）。`extract_tables` は `file_path` しか受け取らないので、URL のままでは表として取れない
+- pdf-reader-mcp が無い環境でも、`attachedPdfs[].read_strategy` / `layout_note` と `saved[].path` があれば、他の PDF 読み取りツールで同じ読み方ができる
 
 ### 4.3 改正リサーチ — 「2025 年の消費税法基本通達の改正点を整理して」
 
@@ -271,8 +272,8 @@ sequenceDiagram
 > 「2025 年に消費税法基本通達でどんな改正があったか、新旧対照表を表として整理してください。」
 
 1. **houki-nta-mcp** `nta_search_kaisei_tsutatsu({ keyword: "消費税", taxonomy: "shohi", hasPdf: true })` で 2025 年の改正通達を一覧
-2. ヒットした各 docId に対して **houki-nta-mcp** `nta_inspect_pdf_meta` で添付 PDF メタを取得 (`reader_hints.examples` に `extract_tables` の URL が並ぶ)
-3. **pdf-reader-mcp** `extract_tables({ file_path: ..., pages: "1-N" })` で新旧対照表を構造化抽出
+2. ヒットした各 docId に対して **houki-nta-mcp** `nta_inspect_pdf_meta({ ..., kind: "comparison", save: true })` で新旧対照表を保存し、`saved[].path` を得る
+3. **pdf-reader-mcp** `extract_tables({ file_path: saved[].path })` で新旧対照表を構造化抽出（`next_actions[0].example` がその引数）
 4. **houki-egov-mcp** で改正対象条文の現行版を引いて、通達と齟齬がないか確認
 5. Claude が「条文ごとの改正前 / 改正後 + 通達該当箇所」のテーブルを統合
 
@@ -341,7 +342,7 @@ LLM が回答する際は **これらのフィールドを引用し、「最終�
 
 **原因**: pdf-reader-mcp v0.2.x で `read_text` を使っている (Y-coordinate ベースで 2 カラムが連結する)
 
-**対処**: pdf-reader-mcp を **v0.3.0 以降** に更新し、`extract_tables` を使う。houki-nta-mcp v0.7.2 以降の `nta_inspect_pdf_meta.reader_hints.examples` は **comparison/attachment 系 PDF に対して自動で extract_tables を推奨**してくれるので、Claude が自然に切り替わります。
+**対処**: pdf-reader-mcp を **v0.3.0 以降** に更新し、`extract_tables` を使う。`extract_tables` はローカルファイルしか読まないので、houki-nta-mcp v0.19.0 以降の `nta_inspect_pdf_meta` を `save: true` で呼び、`saved[].path` を渡す（`next_actions[0].example` がその形）。URL のまま読むしかないときは `read_url` に `split_columns: 2` を付ける。
 
 ### 6.4 「新旧対応表」と書かれた PDF が `comparison` ではなく `related` に分類されている
 

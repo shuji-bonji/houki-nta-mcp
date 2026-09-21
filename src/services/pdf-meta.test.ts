@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ALL_PDF_KINDS,
-  buildReaderHintExamples,
+  buildPdfNextActions,
+  describePdfReading,
   extractPdfKind,
   fillMissingKinds,
   PDF_KIND_EMOJI,
   PDF_KIND_LABEL,
   type PdfKind,
   renderAttachedPdfsMarkdown,
+  withPdfReading,
 } from './pdf-meta.js';
 
 describe('extractPdfKind', () => {
@@ -170,15 +172,15 @@ describe('renderAttachedPdfsMarkdown', () => {
     ]);
     const md = out.join('\n');
     expect(md).toContain('## 添付 PDF (1 件)');
-    expect(md).toContain('`pdf-reader-mcp` の `read_text`');
-    expect(md).toContain('| 種別 | タイトル | サイズ | URL |');
+    expect(md).toContain('houki-nta-mcp は PDF の本文を読みません');
+    expect(md).toContain('| 種別 | タイトル | サイズ | 読み方 | URL |');
     expect(md).toContain('🔄 新旧対照表');
     expect(md).toContain('470KB');
+    expect(md).toContain('| 表として取る |');
     expect(md).toContain('[link](https://x/a.pdf)');
-    expect(md).toContain('### pdf-reader-mcp 呼び出し例');
-    expect(md).toContain('```json');
-    expect(md).toContain('// 新旧対照表を読む');
-    expect(md).toContain('"url": "https://x/a.pdf"');
+    expect(md).toContain('### 読み方');
+    expect(md).toContain('- 新旧対照表: 改正後と改正前を左右 2 列に並べた表');
+    expect(md).not.toContain('```json');
   });
 
   it('kind 優先度でソートされる: comparison → attachment → unknown', () => {
@@ -195,15 +197,13 @@ describe('renderAttachedPdfsMarkdown', () => {
     expect(compIdx).toBeGreaterThan(0);
     expect(compIdx).toBeLessThan(attIdx);
     expect(attIdx).toBeLessThan(unkIdx);
-    // 呼び出し例は先頭（comparison）の URL
-    expect(md).toContain('"url": "https://x/a.pdf"');
   });
 
   it('kind 未指定（v0.6.0 以前のレコード）は unknown として描画される', () => {
     const out = renderAttachedPdfsMarkdown([{ title: '何か', url: 'https://x/q.pdf' }]);
     const md = out.join('\n');
     expect(md).toContain('📄 その他');
-    expect(md).toContain('// この PDF を読む');
+    expect(md).toContain('| 先頭を見て決める |');
   });
 
   it('sizeKb が無い場合はダッシュ表記', () => {
@@ -229,95 +229,145 @@ describe('renderAttachedPdfsMarkdown', () => {
     expect(renderAttachedPdfsMarkdown(pdfs)[0]).toBe('## 添付 PDF (5 件)');
   });
 
-  it('comparison PDF は extract_tables 呼び出し例を出力する (v0.7.2)', () => {
+  it('読み方の節は kind ごとに 1 行、kind 優先度順 (v0.19.0)', () => {
     const out = renderAttachedPdfsMarkdown([
-      { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
-    ]);
-    const md = out.join('\n');
-    expect(md).toContain('"tool": "extract_tables"');
-    expect(md).toContain('"url": "https://x/c.pdf"');
-  });
-
-  it('attachment PDF も extract_tables を推奨する (v0.7.2)', () => {
-    const out = renderAttachedPdfsMarkdown([
-      { title: '別紙1', url: 'https://x/a.pdf', kind: 'attachment' },
-    ]);
-    expect(out.join('\n')).toContain('"tool": "extract_tables"');
-  });
-
-  it('qa-pdf / related / notice / unknown は read_text を出す (v0.7.2)', () => {
-    for (const kind of ['qa-pdf', 'related', 'notice', 'unknown'] as const) {
-      const out = renderAttachedPdfsMarkdown([{ title: kind, url: `https://x/${kind}.pdf`, kind }]);
-      const md = out.join('\n');
-      expect(md).toContain('"tool": "read_text"');
-      expect(md).not.toContain('"tool": "extract_tables"');
-    }
-  });
-
-  it('複数 kind が混在すると kind 別に複数の呼び出し例を出す (v0.7.2)', () => {
-    const out = renderAttachedPdfsMarkdown([
-      { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
-      { title: '別紙', url: 'https://x/a.pdf', kind: 'attachment' },
       { title: '参考', url: 'https://x/r.pdf', kind: 'related' },
-    ]);
-    const md = out.join('\n');
-    // comparison / attachment は extract_tables、related は read_text
-    expect(md.match(/"tool": "extract_tables"/g) ?? []).toHaveLength(2);
-    expect(md.match(/"tool": "read_text"/g) ?? []).toHaveLength(1);
-    // comparison が先頭
-    expect(md.indexOf('https://x/c.pdf')).toBeLessThan(md.indexOf('https://x/a.pdf'));
-    expect(md.indexOf('https://x/a.pdf')).toBeLessThan(md.indexOf('https://x/r.pdf'));
-  });
-});
-
-describe('buildReaderHintExamples (v0.7.2)', () => {
-  it('空配列なら空配列を返す', () => {
-    expect(buildReaderHintExamples([])).toEqual([]);
-  });
-
-  it('comparison / attachment は extract_tables、それ以外は read_text', () => {
-    const examples = buildReaderHintExamples([
       { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
-      { title: '別紙', url: 'https://x/a.pdf', kind: 'attachment' },
-      { title: 'Q&A', url: 'https://x/q.pdf', kind: 'qa-pdf' },
-      { title: '参考', url: 'https://x/r.pdf', kind: 'related' },
-      { title: '通知', url: 'https://x/n.pdf', kind: 'notice' },
-    ]);
-    expect(examples.map((e) => e.tool)).toEqual([
-      'extract_tables', // comparison
-      'extract_tables', // attachment
-      'read_text', // qa-pdf
-      'read_text', // related
-      'read_text', // notice
-    ]);
-  });
-
-  it('kind 未指定の PDF はタイトルから動的に推定される', () => {
-    // kind フィールドなしの input
-    const examples = buildReaderHintExamples([
-      { title: '新旧対応表（PDF/399KB）', url: 'https://x/c.pdf' },
-    ]);
-    expect(examples).toHaveLength(1);
-    expect(examples[0].kind).toBe('comparison');
-    expect(examples[0].tool).toBe('extract_tables');
-  });
-
-  it('同 kind 内では最初に出現した PDF が代表例になる', () => {
-    const examples = buildReaderHintExamples([
       { title: '別紙1', url: 'https://x/a1.pdf', kind: 'attachment' },
       { title: '別紙2', url: 'https://x/a2.pdf', kind: 'attachment' },
     ]);
-    expect(examples).toHaveLength(1);
-    expect(examples[0].args.url).toBe('https://x/a1.pdf');
+    const md = out.join('\n');
+    const section = md.slice(md.indexOf('### 読み方'));
+    const bullets = section.split('\n').filter((l) => l.startsWith('- '));
+    expect(bullets.map((l) => l.slice(2, l.indexOf(':')))).toEqual([
+      '新旧対照表',
+      '別紙・別表',
+      '参考資料',
+    ]);
+  });
+});
+
+describe('describePdfReading / withPdfReading (v0.19.0)', () => {
+  it('comparison / attachment は tables、qa-pdf / related / notice は text、unknown は sample', () => {
+    expect(ALL_PDF_KINDS.map((k) => describePdfReading(k).read_strategy)).toEqual([
+      'tables',
+      'tables',
+      'text',
+      'text',
+      'text',
+      'sample',
+    ]);
   });
 
-  it('出力は kind 優先度順 (comparison が先頭)', () => {
-    const examples = buildReaderHintExamples([
-      { title: '通知', url: 'https://x/n.pdf', kind: 'notice' },
+  it('layout_note は道具の名前を含まない', () => {
+    for (const kind of ALL_PDF_KINDS) {
+      const note = describePdfReading(kind).layout_note;
+      expect(note).not.toMatch(/pdf-reader|extract_tables|read_text|read_url/);
+      expect(note.length).toBeGreaterThan(10);
+    }
+  });
+
+  it('withPdfReading は kind を補い read_strategy / layout_note を付ける（入力は変えない）', () => {
+    const input = [{ title: '新旧対応表', url: 'https://x/c.pdf' }];
+    const out = withPdfReading(input);
+    expect(out[0]).toMatchObject({ kind: 'comparison', read_strategy: 'tables' });
+    expect(out[0].layout_note).toContain('改正後');
+    expect(input[0]).toEqual({ title: '新旧対応表', url: 'https://x/c.pdf' });
+  });
+});
+
+describe('buildPdfNextActions (v0.19.0)', () => {
+  it('空配列なら空配列を返す', () => {
+    expect(buildPdfNextActions([])).toEqual([]);
+  });
+
+  it('未保存: kind ごとに read_url 1 件 + 汎用 read_pdf。comparison だけ split_columns: 2', () => {
+    const actions = buildPdfNextActions([
       { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
       { title: '別紙', url: 'https://x/a.pdf', kind: 'attachment' },
+      { title: 'Q&A', url: 'https://x/q.pdf', kind: 'qa-pdf' },
+      { title: '資料', url: 'https://x/u.pdf', kind: 'unknown' },
     ]);
-    expect(examples.map((e) => e.kind)).toEqual(['comparison', 'attachment', 'notice']);
+    expect(actions.map((a) => a.action)).toEqual([
+      'pdf-reader-mcp:read_url',
+      'pdf-reader-mcp:read_url',
+      'pdf-reader-mcp:read_url',
+      'pdf-reader-mcp:read_url',
+      'read_pdf',
+    ]);
+    expect(actions[0].example).toEqual({ url: 'https://x/c.pdf', split_columns: 2 });
+    expect(actions[0].reason).toContain('save: true');
+    expect(actions[1].example).toEqual({ url: 'https://x/a.pdf' });
+    expect(actions[2].example).toEqual({ url: 'https://x/q.pdf' });
+    expect(actions[3].example).toEqual({ url: 'https://x/u.pdf', pages: '1' });
+    expect(actions[4].example).toEqual({ url: 'https://x/c.pdf' });
+  });
+
+  it('保存済み: tables → extract_tables、text → read_text、sample → summarize（file_path）', () => {
+    const saved = new Map([
+      ['https://x/c.pdf', '/files/c.pdf'],
+      ['https://x/q.pdf', '/files/q.pdf'],
+      ['https://x/u.pdf', '/files/u.pdf'],
+    ]);
+    const actions = buildPdfNextActions(
+      [
+        { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
+        { title: 'Q&A', url: 'https://x/q.pdf', kind: 'qa-pdf' },
+        { title: '資料', url: 'https://x/u.pdf', kind: 'unknown' },
+      ],
+      saved
+    );
+    expect(actions.map((a) => [a.action, a.example])).toEqual([
+      ['pdf-reader-mcp:extract_tables', { file_path: '/files/c.pdf' }],
+      ['pdf-reader-mcp:read_text', { file_path: '/files/q.pdf' }],
+      ['pdf-reader-mcp:summarize', { file_path: '/files/u.pdf' }],
+      ['read_pdf', { url: 'https://x/c.pdf', path: '/files/c.pdf' }],
+    ]);
+  });
+
+  it('保存に失敗した PDF は URL の経路のまま（保存済みと混在できる）', () => {
+    const actions = buildPdfNextActions(
+      [
+        { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
+        { title: '別紙', url: 'https://x/a.pdf', kind: 'attachment' },
+      ],
+      new Map([['https://x/c.pdf', '/files/c.pdf']])
+    );
+    expect(actions[0].action).toBe('pdf-reader-mcp:extract_tables');
+    expect(actions[1].action).toBe('pdf-reader-mcp:read_url');
+  });
+
+  it('kind 未指定の PDF はタイトルから推定される', () => {
+    const actions = buildPdfNextActions([
+      { title: '新旧対応表（PDF/399KB）', url: 'https://x/c.pdf' },
+    ]);
+    expect(actions[0].example).toEqual({ url: 'https://x/c.pdf', split_columns: 2 });
+  });
+
+  it('同 kind 内では最初に出現した PDF が代表になり、出力は kind 優先度順', () => {
+    const actions = buildPdfNextActions([
+      { title: '通知', url: 'https://x/n.pdf', kind: 'notice' },
+      { title: '別紙1', url: 'https://x/a1.pdf', kind: 'attachment' },
+      { title: '別紙2', url: 'https://x/a2.pdf', kind: 'attachment' },
+      { title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' },
+    ]);
+    expect(actions.map((a) => a.example?.url)).toEqual([
+      'https://x/c.pdf',
+      'https://x/a1.pdf',
+      'https://x/n.pdf',
+      'https://x/c.pdf',
+    ]);
+  });
+
+  it('example に mcp / tool を入れない', () => {
+    const actions = buildPdfNextActions(
+      [{ title: '新旧対照表', url: 'https://x/c.pdf', kind: 'comparison' }],
+      new Map([['https://x/c.pdf', '/files/c.pdf']])
+    );
+    for (const a of actions) {
+      expect(a.example).not.toHaveProperty('mcp');
+      expect(a.example).not.toHaveProperty('tool');
+    }
   });
 });
 
