@@ -279,7 +279,7 @@ describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入�
 
   it('schema_version が最新になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(7);
+    expect(SCHEMA_VERSION).toBe(8);
   });
 
   it('clause の条番号・題名・本文・段落 JSON が半角になる', () => {
@@ -462,5 +462,135 @@ describe('initSchema — v6 → v7 (Issue #30): document に orphaned_at を足�
     expect(row.title).toBe('申告所得税の事務運営指針');
     expect(row.content_hash).toBe('hash-170331');
     expect(row.orphaned_at).toBeNull();
+  });
+});
+
+describe('initSchema — v7 → v8 (Issue #45): 文書回答事例の本文から案内文の行を除く', () => {
+  let db: DatabaseT.Database;
+
+  const hojoText = '回答内容: 貴見のとおり\n【別紙】\n照会の趣旨\n以上';
+  const hojoTextWithNav = `${hojoText}\n←上記照会の内容に対する回答はこちら`;
+  const kyokuText = '回答内容: 貴見のとおり\n【別紙】\n事前照会の趣旨\n以上';
+
+  /** v8 のスキーマに 0.20.0 までの parser が入れた本文を置き、schema_version だけ v7 に戻した DB を作る */
+  function seedV7Database(): void {
+    initSchema(db);
+    const insert = db.prepare(
+      `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    // 本庁系: 別紙の末尾に戻るリンクの文言が入っている
+    insert.run(
+      'bunshokaitou',
+      'shotoku/250416',
+      'shotoku',
+      '産科医療補償制度の給付金',
+      'https://www.nta.go.jp/law/bunshokaito/shotoku/250416/index.htm',
+      '2026-09-08T07:27:21.701Z',
+      hojoTextWithNav,
+      '[]',
+      'hash-250416-old'
+    );
+    // 国税局系: もともと入っていない
+    insert.run(
+      'bunshokaitou',
+      'tokyo/shohi/251017',
+      'shohi',
+      '人工衛星打上げ輸送サービス',
+      'https://www.nta.go.jp/about/organization/tokyo/bunshokaito/shohi/251017/index.htm',
+      '2026-09-08T07:27:21.701Z',
+      kyokuText,
+      '[]',
+      'hash-251017'
+    );
+    // hash を持たない行（未計算）
+    insert.run(
+      'bunshokaitou',
+      'hojin/240101',
+      'hojin',
+      '法人税の照会',
+      'https://www.nta.go.jp/law/bunshokaito/hojin/240101/index.htm',
+      '2026-09-08T07:27:21.701Z',
+      hojoTextWithNav,
+      '[]',
+      null
+    );
+    // 他の種別は触らない（同じ文言があっても）
+    insert.run(
+      'jimu-unei',
+      '170331',
+      'shotoku',
+      '申告所得税の事務運営指針',
+      'https://example.com/170331/01.htm',
+      '2026-09-07T00:00:00Z',
+      hojoTextWithNav,
+      '[]',
+      'hash-170331'
+    );
+    db.prepare(`UPDATE schema_meta SET value = '7' WHERE key = 'schema_version'`).run();
+  }
+
+  function selectDoc(docId: string): { full_text: string; content_hash: string | null } {
+    return db
+      .prepare('SELECT full_text, content_hash FROM document WHERE doc_id = ?')
+      .get(docId) as { full_text: string; content_hash: string | null };
+  }
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    seedV7Database();
+    initSchema(db); // v7 と判定され migrateV7ToV8 が走る
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('schema_version が最新になる', () => {
+    expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
+    expect(SCHEMA_VERSION).toBe(8);
+  });
+
+  it('本庁系の本文は「以上」で終わり、content_hash は計算し直される', () => {
+    const row = selectDoc('shotoku/250416');
+    expect(row.full_text).toBe(hojoText);
+    const expected = createHash('sha1')
+      .update('bunshokaitou\nshotoku/250416\n産科医療補償制度の給付金\n')
+      .update(hojoText)
+      .digest('hex');
+    expect(row.content_hash).toBe(expected);
+  });
+
+  it('国税局系の本文と content_hash は変わらない', () => {
+    const row = selectDoc('tokyo/shohi/251017');
+    expect(row.full_text).toBe(kyokuText);
+    expect(row.content_hash).toBe('hash-251017');
+  });
+
+  it('hash を持っていなかった行は本文だけ直り、hash は NULL のまま', () => {
+    const row = selectDoc('hojin/240101');
+    expect(row.full_text).toBe(hojoText);
+    expect(row.content_hash).toBeNull();
+  });
+
+  it('他の種別（jimu-unei）は触らない', () => {
+    const row = selectDoc('170331');
+    expect(row.full_text).toBe(hojoTextWithNav);
+    expect(row.content_hash).toBe('hash-170331');
+  });
+
+  it('FTS5 の索引からも案内文が消える', () => {
+    const hits = db
+      .prepare(
+        `SELECT d.doc_id FROM document_fts f JOIN document d ON d.id = f.rowid WHERE document_fts MATCH ? ORDER BY d.doc_id`
+      )
+      .all('"回答はこちら"') as Array<{ doc_id: string }>;
+    expect(hits.map((h) => h.doc_id)).toEqual(['170331']);
+  });
+
+  it('もう一度開いても何も変わらない（冪等）', () => {
+    const before = selectDoc('shotoku/250416');
+    initSchema(db);
+    expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
+    expect(selectDoc('shotoku/250416')).toEqual(before);
   });
 });

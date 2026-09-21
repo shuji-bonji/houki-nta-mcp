@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.20.1] - 2026-09-21
+
+**patch リリース** — 文書回答事例（本庁系）の `fullText` の末尾に、国税庁サイトの案内文「←上記照会の内容に対する回答はこちら」が混ざっていたのを直した（#45、houki-hub#32 の「契約の確認 — houki-nta-mcp」）。DB に入っている本文は起動時に直り、再ダウンロードは要らない。
+
+### Fixed
+
+- **`nta_get_bunshokaitou` の `fullText`**: 本庁系の別紙（`another.htm`）の末尾にある、`index.htm` へ戻るリンクの文言「←上記照会の内容に対する回答はこちら」を本文の段落として拾っていた。`shotoku/250416` の `fullText` は「以上」で終わるようになる。国税局系（`tokyo/shohi/251017`）にも同じ文言はあるが `#bodyArea` の外に置かれていて、もともと本文に入っておらず、今回も変わらない。同じ仕組みで、サイト共通の「※PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。」（2008 年の `shotoku/081102` の別紙のように `#bodyArea` の中の `#cntPDFarea` に置かれているもの）も文書回答事例の本文に入れない（`isNtaNavigationText`: 「←」「→」で始まる行と「…はこちら」「…こちらをご覧ください」で終わる行）
+- **DB（schema v7 → v8）**: `doc_type = 'bunshokaitou'` の `full_text` から上の案内文の行を除き、`content_hash` を計算し直す（`stripNtaNavigationLines`）。案内文の行を落とすだけなので、直した parser を原文に通した結果と同じになり、国税庁サイトへのアクセスは発生しない。FTS5 の索引は trigger で追随するので、`nta_search_bunshokaitou` で「回答はこちら」を検索しても本庁系の全件が当たることはなくなる。`content_hash` を計算し直すのは、次の bulk download で本庁系の全件が「更新された」と数えられないようにするため（v4 → v5 と同じ）。hash を持っていなかった行は NULL のまま。他の種別（kaisei / jimu-unei）は触らない
+- テスト: parser に 3 件（本庁系の末尾が「以上」で終わる、国税局系が変わらない、`isNtaNavigationText` / `stripNtaNavigationLines`）、schema に v7 → v8 の 7 件（本文・hash・NULL の hash・他の種別・FTS5・冪等）を足した。fixture は既存の `www.nta.go.jp_law_bunshokaito_shotoku_250416_another.htm` に戻るリンクが入っているので、そのまま使った
+
+### 見つかったこと（この版では直していない）
+
+- 改正通達（`nta_get_kaisei_tsutatsu`）と事務運営指針（`nta_get_jimu_unei`）の `fullText` にも「※PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。」が入っている（fixture の `kaisei/0026003-067` と `jimu-unei/shotoku/shinkoku/170331` で確認）。parser が別なので、#45 の範囲では触っていない
+
 ## [0.20.0] - 2026-09-21
 
 **minor リリース** — 改正通達（kaisei）で「別紙 N」とだけ題した PDF を、新旧対照表本体として `comparison` で返すようにした（#44、houki-hub#32 の「見つかったこと」2・3）。DB の再投入は不要。

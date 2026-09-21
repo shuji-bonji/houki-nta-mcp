@@ -15,6 +15,7 @@
 import { createHash } from 'node:crypto';
 import type DatabaseT from 'better-sqlite3';
 
+import { stripNtaNavigationLines } from '../services/bunshokaitou-parser.js';
 import { normalizeClauseNumber, normalizeJpText } from '../services/text-normalize.js';
 
 /**
@@ -27,8 +28,9 @@ import { normalizeClauseNumber, normalizeJpText } from '../services/text-normali
  * - v5: 投入済みテキストを共通実装の正規化で入れ直す（Issue #27: 全角英字が半角にならない）
  * - v6: document に structured_json を追加（Issue #29: 取得ツールが DB から live と同じ構造を返せるようにする）
  * - v7: document に orphaned_at を追加（Issue #30: 国税庁の索引から消えた文書に印を付ける）
+ * - v8: 文書回答事例の full_text から国税庁サイトの案内文の行を除く（Issue #45: 「←上記照会の内容に対する回答はこちら」）
  */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -217,6 +219,10 @@ export function initSchema(db: DatabaseT.Database): void {
     migrateV6ToV7(db);
     version = 7;
   }
+  if (version === 7) {
+    migrateV7ToV8(db);
+    version = 8;
+  }
   if (version === SCHEMA_VERSION) {
     setSchemaVersion(db, SCHEMA_VERSION);
     return;
@@ -311,6 +317,63 @@ function migrateV6ToV7(db: DatabaseT.Database): void {
   const docCols = listColumns(db, 'document');
   if (!docCols.has('orphaned_at')) {
     db.exec(`ALTER TABLE document ADD COLUMN orphaned_at TEXT`);
+  }
+}
+
+/**
+ * v7 → v8 マイグレーション（Issue #45: 文書回答事例の本文から案内文を除く）
+ *
+ * 0.20.0 までの `parseBunshoPage` は、本庁系の別紙 (another.htm) の末尾にある
+ * 「←上記照会の内容に対する回答はこちら」（index.htm へ戻るリンクの文言）と、
+ * サイト共通の「※PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。」を
+ * 本文の段落として拾っていた。parser は直したが、DB に入っている `full_text` には残っているので、
+ * `doc_type = 'bunshokaitou'` の行から該当する行を除く。
+ *
+ * ## 再ダウンロードは要らない
+ *
+ * 除くのは案内文の行だけで、他の行には触れない。直した parser を原文に通した結果と同じになる。
+ * 国税庁サイトへのアクセスは発生しない。FTS5 は trigger で追随するので、索引からも消える。
+ *
+ * ## content_hash の扱い
+ *
+ * v4 → v5 と同じく、除いたあとの本文で計算し直す。こうしないと次の bulk DL で
+ * 本庁系の全件が「更新された」と判定される。hash を持っていなかった行は NULL のまま
+ */
+function migrateV7ToV8(db: DatabaseT.Database): void {
+  const tx = db.transaction(() => {
+    stripBunshoNavigationLines(db);
+  });
+  tx();
+}
+
+/** 文書回答事例の full_text から案内文の行を除き、content_hash を計算し直す */
+function stripBunshoNavigationLines(db: DatabaseT.Database): void {
+  const rows = db
+    .prepare(
+      "SELECT id, doc_type, doc_id, title, full_text, content_hash FROM document WHERE doc_type = 'bunshokaitou'"
+    )
+    .all() as Array<{
+    id: number;
+    doc_type: string;
+    doc_id: string;
+    title: string;
+    full_text: string;
+    content_hash: string | null;
+  }>;
+  const update = db.prepare('UPDATE document SET full_text = ?, content_hash = ? WHERE id = ?');
+  for (const row of rows) {
+    const fullText = stripNtaNavigationLines(row.full_text);
+    if (fullText === row.full_text) continue;
+    const contentHash =
+      row.content_hash === null
+        ? null
+        : computeDocumentContentHash(
+            row.doc_type,
+            row.doc_id,
+            normalizeJpText(row.title),
+            fullText
+          );
+    update.run(fullText, contentHash, row.id);
   }
 }
 

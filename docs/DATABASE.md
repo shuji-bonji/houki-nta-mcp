@@ -279,8 +279,13 @@ bulk DL 時に `content_hash` の変化を集計（Phase 5 で `updatedDocs` カ
 | **v1**  | Phase 2a-c | 初版: tsutatsu / chapter / section / clause + clause_fts                               |
 | **v2**  | Phase 2e   | `section.content_hash` 追加（改正検知用 SHA-1）                                        |
 | **v3**  | Phase 3b   | `document` / `document_fts` 追加（改正通達・事務運営指針・文書回答事例の統一テーブル） |
+| **v4**  | Phase 6-2  | `section` / `document` に `last_modified` / `etag` 追加（差分 bulk DL）                |
+| **v5**  | Issue #27  | 投入済みの `title` / `full_text` / `paragraphs_json` を共通実装の正規化で入れ直す（全角英字 → 半角）。`document.content_hash` は計算し直し、`section.content_hash` は NULL に戻す |
+| **v6**  | Issue #29  | `document.structured_json` 追加（質疑応答事例・タックスアンサーの構造）                |
+| **v7**  | Issue #30  | `document.orphaned_at` 追加（国税庁の索引から消えた文書の印）                          |
+| **v8**  | Issue #45  | 文書回答事例の `full_text` から国税庁サイトの案内文の行（「←上記照会の内容に対する回答はこちら」「※PDFファイルが開けない…こちらをご覧ください。」）を除き、`content_hash` を計算し直す |
 
-**マイグレーション戦略（v0.6.0 時点）**: `SCHEMA_VERSION` 不一致なら **DROP & CREATE** で再構築。bulk DL のキャッシュなのでデータロスは許容（次回 bulk DL で復元できる）。
+**マイグレーション戦略**: v3 以降は 1 段ずつ順に適用し、bulk DL したデータを保つ（`migrate()` の if の数珠つなぎ。v3 の DB からでも最新まで辿り着く）。列を足すだけの版（v4 / v6 / v7）と、入っている文字列を直す版（v5 / v8）があり、どちらも国税庁サイトへのアクセスは発生しない。想定外の遷移（v1 / v2 からなど）だけ **DROP & CREATE** で再構築する（bulk DL のキャッシュなので、次回の bulk DL で復元できる）。
 
 ## Normalize-everywhere 原則
 
