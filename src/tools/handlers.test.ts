@@ -214,14 +214,14 @@ function sjisHtmlResponse(fixtureName: string): Response {
 }
 
 describe('getTsutatsu — 引数バリデーション', () => {
-  it('辞書に無い名前はエラー', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-001 辞書に無い名前はエラー', async () => {
     const r = (await getTsutatsu({ name: '存在しない通達' }, { dbPath: ':memory:' })) as {
       error?: string;
     };
     expect(r.error).toContain('辞書に該当なし');
   });
 
-  it('管轄外（消法 = houki-egov）は誘導 hint を返す', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-002 管轄外（消法 = houki-egov）は誘導 hint を返す', async () => {
     const r = (await getTsutatsu({ name: '消法' }, { dbPath: ':memory:' })) as {
       error?: string;
       hint?: string;
@@ -230,7 +230,7 @@ describe('getTsutatsu — 引数バリデーション', () => {
     expect(r.hint).toContain('houki-egov-mcp');
   });
 
-  it('clause 未指定はエラー', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-003 clause 未指定はエラー', async () => {
     const r = (await getTsutatsu({ name: '消基通' }, { dbPath: ':memory:' })) as {
       error?: string;
       hint?: string;
@@ -239,14 +239,14 @@ describe('getTsutatsu — 引数バリデーション', () => {
     expect(r.hint).toContain('5-1-9');
   });
 
-  it('不正な clause 形式（DB miss + ライブ取得経路でも不正）はエラー', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-008 不正な clause 形式（DB miss + ライブ取得経路でも不正）はエラー', async () => {
     const r = (await getTsutatsu({ name: '消基通', clause: '5-1' }, { dbPath: ':memory:' })) as {
       error?: string;
     };
     expect(r.error).toContain('不正');
   });
 
-  it('houki-nta 管轄だが DB 未投入 + ライブ未対応の通達（電帳法取通）はエラー + hint', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-007 houki-nta 管轄だが DB 未投入 + ライブ未対応の通達（電帳法取通）はエラー + hint', async () => {
     const r = (await getTsutatsu(
       { name: '電帳法取通', clause: '1-1-1' },
       { dbPath: ':memory:' }
@@ -262,7 +262,7 @@ describe('getTsutatsu — 引数バリデーション', () => {
 });
 
 describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', () => {
-  it('Markdown（既定）で本文・出典・legal_status を含む', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-011 Markdown（既定）で本文・出典・legal_status を含む', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
     ) as unknown as typeof fetch;
@@ -280,7 +280,7 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
     expect(r).toContain('通達は行政内部文書');
   });
 
-  it('format=json で構造化レスポンス + legal_status を返す', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-012 format=json で構造化レスポンス + legal_status を返す', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
     ) as unknown as typeof fetch;
@@ -304,7 +304,7 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
     expect(r.legal_status.binds_tax_office).toBe(true);
   });
 
-  it('正式名称（消費税法基本通達）でも引ける', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-001 正式名称（消費税法基本通達）でも引ける', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_05_01.htm')
     ) as unknown as typeof fetch;
@@ -320,7 +320,7 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
     expect(calls[0][0]).toBe('https://www.nta.go.jp/law/tsutatsu/kihon/shohi/05/01.htm');
   });
 
-  it('ページに存在しない clause は available_clauses を返す', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-010 ページに存在しない clause は available_clauses を返す', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
     ) as unknown as typeof fetch;
@@ -338,7 +338,7 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
     expect(r.available_clauses).toContain('1-4-17');
   });
 
-  it('国税庁取得失敗（404）はエラー情報を返す', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-009 国税庁取得失敗（404）はエラー情報を返す', async () => {
     const fetchImpl = vi.fn(
       async () => new Response('not found', { status: 404, statusText: 'Not Found' })
     ) as unknown as typeof fetch;
@@ -368,7 +368,7 @@ describe('getTsutatsu — DB lookup 経路（Phase 2d）', () => {
   // テスト用に in-memory DB に通達と clause を seed するヘルパ
   // openDb で別 DB を毎回 open するので、PATH を共有する形で seed → 検証する
   // ※ better-sqlite3 の :memory: は接続ごとに別 DB になるため、tmpfile を使う
-  it('seed した通達 + clause を DB lookup で返す（fetch しない）', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-004 seed した通達 + clause を DB lookup で返す（fetch しない）', async () => {
     const tmpFile = `/tmp/houki-nta-mcp-test-${Date.now()}.db`;
 
     // seed: 同じパスで openDb → INSERT → 閉じる
@@ -434,7 +434,7 @@ describe('getTsutatsu — DB lookup 経路（Phase 2d）', () => {
     fs.rmSync(`${tmpFile}-shm`, { force: true });
   });
 
-  it('DB に通達はあるが該当 clause が無い場合、available_clauses を返す', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-005 DB に通達はあるが該当 clause が無い場合、available_clauses を返す', async () => {
     const tmpFile = `/tmp/houki-nta-mcp-test-${Date.now()}-${Math.random()}.db`;
 
     const Database = (await import('better-sqlite3')).default;
@@ -470,7 +470,7 @@ describe('getTsutatsu — DB lookup 経路（Phase 2d）', () => {
     fs.rmSync(`${tmpFile}-shm`, { force: true });
   });
 
-  it('DB が空 + ライブ取得対応通達なら、ライブ取得にフォールバック', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-006 DB が空 + ライブ取得対応通達なら、ライブ取得にフォールバック', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
     ) as unknown as typeof fetch;
@@ -1116,7 +1116,7 @@ describe('Issue #20: 通達の応答に base_laws と houki-egov-mcp への next
     expect(r.next_actions).toBeUndefined();
   });
 
-  it('nta_get_tsutatsu（DB 経路, json）: base_laws と get_law への next_actions', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-013 nta_get_tsutatsu（DB 経路, json）: base_laws と get_law への next_actions', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('fetch should NOT be called');
     }) as unknown as typeof fetch;
@@ -1135,14 +1135,14 @@ describe('Issue #20: 通達の応答に base_laws と houki-egov-mcp への next
     ]);
   });
 
-  it('nta_get_tsutatsu（DB 経路, markdown）: 解釈の対象になる法律の行を含む', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-013 nta_get_tsutatsu（DB 経路, markdown）: 解釈の対象になる法律の行を含む', async () => {
     const r = (await getTsutatsu({ name: '法基通', clause: '9-2-1' }, { dbPath })) as string;
     expect(r).toContain(
       '解釈の対象になる法律: 法人税法 / 法人税法施行令 / 法人税法施行規則（houki-egov-mcp の get_law で本文を確認できます）'
     );
   });
 
-  it('nta_get_tsutatsu（ライブ経路）: json / markdown とも base_laws を返す', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-013 nta_get_tsutatsu（ライブ経路）: json / markdown とも base_laws を返す', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
     ) as unknown as typeof fetch;
