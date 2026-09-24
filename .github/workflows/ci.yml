@@ -26,7 +26,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node scripts/check-spec-ids.mjs
+          cache: 'npm'
+      - run: npm ci
+      - run: npx spec-ids check
 
   test:
     runs-on: ubuntu-latest

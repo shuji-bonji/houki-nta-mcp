@@ -1,0 +1,5 @@
+{
+  "domain": "NTA",
+  "dirPrefix": "nta_",
+  "tests": ["src/**/*.test.ts", "tests/**/*.test.ts"]
+}
