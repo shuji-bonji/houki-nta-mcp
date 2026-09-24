@@ -6,12 +6,12 @@
     "url": "https://github.com/shuji-bonji/houki-nta-mcp",
     "source": "github"
   },
-  "version": "0.20.2",
+  "version": "0.20.3",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@shuji-bonji/houki-nta-mcp",
-      "version": "0.20.2",
+      "version": "0.20.3",
       "transport": {
         "type": "stdio"
       }
