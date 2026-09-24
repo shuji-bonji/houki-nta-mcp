@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **`nta_get_tsutatsu` の `clause` の説明文**（`tools/list` の `inputSchema.properties.clause.description`）: 「例: "5-1-9", "11-2-10"（章-項-号 形式）」を、通達ごとの番号の形と例に書き替えた。消費税法基本通達・法人税基本通達は章-節-条、所得税基本通達・相続税法基本通達は条-項（複数の条に共通する通達は `23~35共-6` / `1の3・1の4共-1`）。所得税基本通達・相続税法基本通達の番号を、LLM が消費税法基本通達の形に作り替えて渡すのを防ぐため。受け付ける形・振る舞いは変わらない（仕様の差分 `specs/changes/20260924-tsutatsu-clause-forms/`）
+- **`nta_get_tsutatsu` の `clause` の説明文**（`tools/list` の `inputSchema.properties.clause.description`）: 「例: "5-1-9", "11-2-10"（章-項-号 形式）」を、通達ごとの番号の形と例に書き替えた。消費税法基本通達・法人税基本通達は章-節-条、所得税基本通達・相続税法基本通達は条-項（複数の条に共通する通達は `23~35共-6` / `1の3・1の4共-1`）。所得税基本通達・相続税法基本通達の番号を、LLM が消費税法基本通達の形に作り替えて渡すのを防ぐため。受け付ける形・振る舞いは変わらない（仕様の差分 `specs/releases/v0.20.3/20260924-tsutatsu-clause-forms/`。当時は `specs/changes/` に置いていた）
 
 ## [0.20.2] - 2026-09-21
 

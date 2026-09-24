@@ -1,7 +1,7 @@
 # 変更: nta_get_tsutatsu の clause の形を通達ごとに書き分ける
 
 - 対象: `specs/current/nta_get_tsutatsu/spec.md`（入力の表の `clause` の行）
-- 状態: 草案（未承認）。承認されるまで Coder は起動しない
+- 状態: 取り込み済み。実装は v0.20.3（2026-09-24 JST）、`specs/current/` への取り込みも同日
 - 起こした日: 2026-09-24（JST）
 - 起こした役: Spec Steward
 
@@ -36,9 +36,9 @@ DB から返す経路（SPEC-NTA-GET-TSUTATSU-004）で、次の番号はどれ�
 
 承認後に別の会話で行う。
 
-- [ ] `src/tools/definitions.ts` の `nta_get_tsutatsu` の `clause.description` を、差分の入力の表と同じ内容にする（例の番号は差分の表から取る。「章-項-号」の語は使わない）
-- [ ] `docs/DESIGN.md` のツール一覧の「章-項-号 単位指定可」を、番号の形に合わせて直す（公開文書ではないので任意）
-- [ ] houki-hub のツールリファレンス（`site/docs/reference/mcp/houki-nta.md`）は `tools/list` から生成しているので、publish 後に再生成する
+- [x] `src/tools/definitions.ts` の `nta_get_tsutatsu` の `clause.description` を、差分の入力の表と同じ内容にする（例の番号は差分の表から取る。「章-項-号」の語は使わない）
+- [x] `docs/DESIGN.md` のツール一覧の「章-項-号 単位指定可」を、番号の形に合わせて直す（公開文書ではないので任意）
+- [x] houki-hub のツールリファレンス（`site/docs/reference/mcp/houki-nta.md`）は `tools/list` から生成しているので、publish 後に再生成する
 
 ## 影響
 
