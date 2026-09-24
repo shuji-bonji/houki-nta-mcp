@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 describe('nta_get_qa — DB を先に引く', () => {
-  it('DB が空なら国税庁サイトから取得し source=live を返す', async () => {
+  it('SPEC-NTA-GET-QA-005 DB が空なら国税庁サイトから取得し source=live を返す', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
     ) as unknown as typeof fetch;
@@ -60,7 +60,7 @@ describe('nta_get_qa — DB を先に引く', () => {
     expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(1);
   });
 
-  it('1 回取得すると DB に入り、2 回目は取得しない（source=db）', async () => {
+  it('SPEC-NTA-GET-QA-006 1 回取得すると DB に入り、2 回目は取得しない（source=db）', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
     ) as unknown as typeof fetch;
@@ -86,7 +86,7 @@ describe('nta_get_qa — DB を先に引く', () => {
     expect(r.related_laws?.length).toBeGreaterThan(0);
   });
 
-  it('DB から返すと fetchedAt は取得した日時のまま（実行時刻にならない）', async () => {
+  it('SPEC-NTA-GET-QA-004 DB から返すと fetchedAt は取得した日時のまま（実行時刻にならない）', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
     ) as unknown as typeof fetch;
@@ -103,7 +103,7 @@ describe('nta_get_qa — DB を先に引く', () => {
     expect(second.qa?.fetchedAt).toBe(first.qa?.fetchedAt);
   });
 
-  it('format=markdown でも DB から返し、取得元を書く', async () => {
+  it('SPEC-NTA-GET-QA-007 format=markdown でも DB から返し、取得元を書く', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
     ) as unknown as typeof fetch;
