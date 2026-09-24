@@ -19,6 +19,20 @@
 - 新しい ID は `npx spec-ids next specs/current/<dir>/spec.md`（またはディレクトリ名 `npx spec-ids next nta_get_qa`）で取ります。その機能の見出しの最大番号 +1 です。複数なら `--count 3`。番号の予約はしないので、万一同じ番号が 2 つの見出しに現れたら、マージ時に `spec-ids check` の重複検知で止まります。
 - ID の形式（正規表現・機能の導き方・組み立て）は `@shuji-bonji/spec-ids` が決めています。このリポジトリで決めるのは `specs/spec-ids.json` の領域 `NTA`、接頭辞 `nta_`、テストの glob だけです。
 
+## PR の種類
+
+仕様とコードを、同じリポジトリの別の資産として扱います。人が振る舞いを承認するのは仕様 PR だけです。実装 PR で問うのは「承認済みの文と、テストと、コードが同じか」で、振る舞いに何を許すかの判断は実装レビューへ戻しません。CI の `pr-scope`（`.github/scripts/check-pr-scope.mjs`）が、ブランチ名の接頭辞ごとに変えてよいパスを検査します。
+
+| ブランチ | 種類 | 変えてよいもの | 変えないもの |
+|---|---|---|---|
+| `spec/<yyyymmdd>-<slug>` | 仕様 PR | `specs/changes/<id>/`（proposal.md と差分の spec.md） | `src/`、テスト、`specs/current/`（proposal.md が「- 実装の変更: 不要」のときだけ `specs/current/` も書いてよい） |
+| `spec-init/<tool>` | 初版起こし | `specs/current/<dir>/spec.md`、テスト名に仕様 ID を足すこと | テストの期待値と本文、実装 |
+| それ以外（`fix/` `feat/` `docs/` など） | 実装 PR など | テスト、`src/`、版と CHANGELOG、`specs/current/` への取り込み（最終コミット）、`specs/changes/` から `specs/releases/<tag>/` への移動 | `specs/changes/` の書き換え（未承認の意図の追加、承認済み差分の変更） |
+
+- 承認日は、人がマージの前にそのブランチで書きます。仕様 PR は proposal.md に「- 承認日: YYYY-MM-DD（PR #N）」、初版起こしと取り込みは `specs/current/<dir>/spec.md` に「- 承認日: YYYY-MM-DD」。空欄なら `pr-scope` が止めます。
+- 仕様 PR をマージした後、新しい ID が `specs/changes/` にだけある間は `spec-ids check` を通します（0.2.0 以降。テストを求めるのは `specs/current/` の ID だけ）。
+- `REMOVED` の差分では、テストを消すのは `specs/current/` から見出しを外す取り込みと同じコミットにします。
+
 ## 役割
 
 | 役割 | 書いてよいもの | 書いてはいけないもの |
