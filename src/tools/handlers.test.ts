@@ -566,19 +566,19 @@ describe('getTaxAnswer — 6101 (消費税) を取得', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('getQa — 引数バリデーション', () => {
-  it('未対応 topic はエラー', async () => {
+  it('SPEC-NTA-GET-QA-001 未対応 topic はエラー', async () => {
     const r = (await getQa({ topic: 'unknown', category: '02', id: '19' })) as { error?: string };
     expect(r.error).toContain('未対応');
   });
 
-  it('category 不足はエラー', async () => {
+  it('SPEC-NTA-GET-QA-002 category 不足はエラー', async () => {
     const r = (await getQa({ topic: 'shohi', category: '', id: '19' })) as { error?: string };
     expect(r.error).toContain('category');
   });
 });
 
 describe('getQa — 消費税 02/19 を取得', () => {
-  it('Markdown で【照会要旨】【回答要旨】【関係法令通達】を含む', async () => {
+  it('SPEC-NTA-GET-QA-007 Markdown で【照会要旨】【回答要旨】【関係法令通達】を含む', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
     ) as unknown as typeof fetch;
@@ -600,7 +600,7 @@ describe('getQa — 消費税 02/19 を取得', () => {
     expect(related).not.toContain('注記');
   });
 
-  it('Issue #22: format=json で related_laws / related_tsutatsu / next_actions を返す', async () => {
+  it('SPEC-NTA-GET-QA-009 Issue #22: format=json で related_laws / related_tsutatsu / next_actions を返す', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
     ) as unknown as typeof fetch;
@@ -642,7 +642,7 @@ describe('getQa — 消費税 02/19 を取得', () => {
     ]);
   });
 
-  it('format=json で構造化レスポンス', async () => {
+  it('SPEC-NTA-GET-QA-008 format=json で構造化レスポンス', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
     ) as unknown as typeof fetch;
@@ -665,7 +665,7 @@ describe('getQa — 消費税 02/19 を取得', () => {
     expect(calls[0][0]).toBe('https://www.nta.go.jp/law/shitsugi/shohi/02/19.htm');
   });
 
-  it('1 桁 category/id を 2 桁にゼロパディングする', async () => {
+  it('SPEC-NTA-GET-QA-003 1 桁 category/id を 2 桁にゼロパディングする', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_law_shitsugi_shohi_02_19.htm')
     ) as unknown as typeof fetch;
