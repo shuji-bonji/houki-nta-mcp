@@ -7,6 +7,7 @@
 - 意図の正本は `specs/current/` です。Wiki・Discussions・README は正本にしません。
 - 変更は `specs/changes/<yyyymmdd>-<slug>/` に出し、人が承認するまで Coder を起動しません。
 - 承認された差分は Spec Publisher が `specs/current/` に取り込み、差分のフォルダーを `specs/releases/<実装を出したタグ>/<yyyymmdd>-<slug>/` へ移します（`git mv`）。移すときに proposal.md の「状態」を取り込み済みにします。
+- `spec.md` の「承認日」は、承認にあたる PR（初版の `spec.md` を足す PR、差分を取り込む PR）をマージする前に、そのブランチで書きます（JST の日付と PR 番号）。マージの後に書くと、承認日を書くためだけの PR が要るためです。
 - Coder は `specs/current/` の本文を書き換えません。実装から仕様へ戻したい発見は、新しい `specs/changes/` に書きます。
 - 受入テストの `describe` には仕様 ID（例: `SPEC-NTA-GET-TSUTATSU-001`）を含めます。`npx spec-ids check`（[@shuji-bonji/spec-ids](https://github.com/shuji-bonji/spec-ids)）が仕様とテストの ID を突き合わせ、CI（spec-gate）で走ります。
 
