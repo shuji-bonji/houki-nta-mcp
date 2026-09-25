@@ -140,7 +140,7 @@ describe('searchTsutatsu — Issue #18: 2 文字語の応答に search_notes を
 });
 
 describe('handleResolveAbbreviation — houki-abbreviations 連携', () => {
-  it('houki-egov 管轄エントリ（消法）には in_scope=false と誘導 hint を返す', async () => {
+  it('SPEC-NTA-RESOLVE-ABBREVIATION-003 houki-egov 管轄エントリ（消法）には in_scope=false と誘導 hint を返す', async () => {
     const r = (await handleResolveAbbreviation({ abbr: '消法' })) as {
       resolved: { source_mcp_hint: string } | null;
       in_scope: boolean;
@@ -152,7 +152,7 @@ describe('handleResolveAbbreviation — houki-abbreviations 連携', () => {
     expect(r.hint).toContain('houki-egov');
   });
 
-  it('houki-nta 管轄エントリ（消基通）には in_scope=true を返す', async () => {
+  it('SPEC-NTA-RESOLVE-ABBREVIATION-001 SPEC-NTA-RESOLVE-ABBREVIATION-002 houki-nta 管轄エントリ（消基通）には in_scope=true を返す', async () => {
     // houki-abbreviations v0.2.0 で追加された通達系エントリ
     const r = (await handleResolveAbbreviation({ abbr: '消基通' })) as {
       resolved: { formal: string; category: string; source_mcp_hint: string } | null;
@@ -167,7 +167,7 @@ describe('handleResolveAbbreviation — houki-abbreviations 連携', () => {
     expect(r.hint).toBeUndefined();
   });
 
-  it('houki-nta 管轄エントリ（電帳法取通）も in_scope=true', async () => {
+  it('SPEC-NTA-RESOLVE-ABBREVIATION-002 houki-nta 管轄エントリ（電帳法取通）も in_scope=true', async () => {
     const r = (await handleResolveAbbreviation({ abbr: '電帳法取通' })) as {
       resolved: { category: string; source_mcp_hint: string } | null;
       in_scope: boolean;
@@ -177,7 +177,7 @@ describe('handleResolveAbbreviation — houki-abbreviations 連携', () => {
     expect(r.in_scope).toBe(true);
   });
 
-  it('正式名称（消費税法基本通達）でも引ける', async () => {
+  it('SPEC-NTA-RESOLVE-ABBREVIATION-001 正式名称（消費税法基本通達）でも引ける', async () => {
     const r = (await handleResolveAbbreviation({ abbr: '消費税法基本通達' })) as {
       resolved: { abbr: string } | null;
       in_scope: boolean;
@@ -186,7 +186,7 @@ describe('handleResolveAbbreviation — houki-abbreviations 連携', () => {
     expect(r.in_scope).toBe(true);
   });
 
-  it('辞書に無いエントリは resolved: null を返す', async () => {
+  it('SPEC-NTA-RESOLVE-ABBREVIATION-004 辞書に無いエントリは resolved: null を返す', async () => {
     const r = (await handleResolveAbbreviation({ abbr: '存在しない通達' })) as {
       resolved: unknown;
       note?: string;

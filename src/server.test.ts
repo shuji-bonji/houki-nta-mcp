@@ -87,7 +87,7 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(body.next_actions[0].action).toBe('list_tools');
   });
 
-  it('SPEC-NTA-SEARCH-TSUTATSU-001 inputSchema に合わない引数は INVALID_ARGUMENT + isError: true (handler は呼ばれない)', async () => {
+  it('SPEC-NTA-RESOLVE-ABBREVIATION-005 SPEC-NTA-SEARCH-TSUTATSU-001 inputSchema に合わない引数は INVALID_ARGUMENT + isError: true (handler は呼ばれない)', async () => {
     // 型違反
     const res = await client.callTool({
       name: 'resolve_abbreviation',
@@ -132,7 +132,7 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(body.tool).toBe('nta_search_tsutatsu');
   });
 
-  it('resolve_abbreviation が isError なしで JSON を返す', async () => {
+  it('SPEC-NTA-RESOLVE-ABBREVIATION-001 resolve_abbreviation が isError なしで JSON を返す', async () => {
     const res = await client.callTool({
       name: 'resolve_abbreviation',
       arguments: { abbr: '消基通' },
