@@ -391,9 +391,10 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
   });
 
   it('SPEC-NTA-GET-TSUTATSU-010 ページに存在しない clause は available_clauses を返す', async () => {
-    const fetchImpl = vi.fn(async () =>
+    // 目次（shohi/01.htm）には目次のフィクスチャーを、それ以外の URL には 1-4 節のページを返す
+    const fetchImpl = ntaFetch({ ...TOC_PAGES }, () =>
       sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
-    ) as unknown as typeof fetch;
+    );
 
     const r = (await getTsutatsu(
       { name: '消基通', clause: '1-4-99' },
