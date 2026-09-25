@@ -2,7 +2,7 @@
 
 - 対象: `specs/current/nta_get_tsutatsu/spec.md`
 - Issue: houki-nta-mcp#54
-- 承認日: （人がマージの前に「YYYY-MM-DD（PR #N）」を書く）
+- 承認日: 2026-09-25（PR #59）
 - 実装の変更: 要
 - 起こした日: 2026-09-25（JST）
 - 起こした役: Spec Steward
