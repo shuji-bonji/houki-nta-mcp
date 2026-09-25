@@ -69,7 +69,7 @@ describe('nta_search_jimu_unei — 索引から消えた文書の扱い', () => 
   });
 });
 
-describe('nta_get_jimu_unei — 索引から消えた文書の扱い', () => {
+describe('SPEC-NTA-GET-JIMU-UNEI-004 nta_get_jimu_unei — 索引から消えた文書の扱い', () => {
   it('format=json に index_status / orphaned_at / notice が付く', async () => {
     const r = (await handleNtaGetJimuUnei({ docId: 'B', format: 'json' }, { dbPath })) as {
       document: { docId: string; orphanedAt?: string };

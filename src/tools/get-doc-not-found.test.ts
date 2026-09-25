@@ -94,7 +94,7 @@ const cases: ReadonlyArray<
 
 describe('取得系: その種別の文書が DB に 1 件も無いときは投入を案内する', () => {
   for (const [tool, , code, flag, , label, call] of cases) {
-    it(`SPEC-NTA-GET-BUNSHOKAITOU-002 ${tool}: code=${code}、next_actions に ${flag}、hint に DB のパス`, async () => {
+    it(`SPEC-NTA-GET-JIMU-UNEI-001 SPEC-NTA-GET-BUNSHOKAITOU-002 ${tool}: code=${code}、next_actions に ${flag}、hint に DB のパス`, async () => {
       const r = (await call('0025004-999', ':memory:')) as NotFoundResponse;
       expect(r.code).toBe(code);
       expect(r.tool).toBe(tool);
@@ -133,7 +133,7 @@ describe('取得系: 文書がある DB で docId が無いときは「見つか
   });
 
   for (const [tool, docType, code, flag, searchTool, label, call] of cases) {
-    it(`SPEC-NTA-GET-BUNSHOKAITOU-003 ${tool}: 「見つかりません」、available_doc_ids、next_actions に ${searchTool}`, async () => {
+    it(`SPEC-NTA-GET-JIMU-UNEI-002 SPEC-NTA-GET-BUNSHOKAITOU-003 ${tool}: 「見つかりません」、available_doc_ids、next_actions に ${searchTool}`, async () => {
       const r = (await call('no-such-doc', dbPath)) as NotFoundResponse;
       expect(r.code).toBe(code);
       expect(r.tool).toBe(tool);
@@ -151,14 +151,14 @@ describe('取得系: 文書がある DB で docId が無いときは「見つか
       expect(docType).toBeTruthy();
     });
 
-    it(`SPEC-NTA-GET-BUNSHOKAITOU-002 ${tool}: 別の種別の文書しか無い DB では投入を案内する`, async () => {
+    it(`SPEC-NTA-GET-JIMU-UNEI-001 SPEC-NTA-GET-BUNSHOKAITOU-002 ${tool}: 別の種別の文書しか無い DB では投入を案内する`, async () => {
       const r = (await call('no-such-doc', otherTypeOnlyPath)) as NotFoundResponse;
       expect(r.code).toBe(code);
       expect(r.next_actions?.[0]?.action).toBe('cli_bulk_download');
       expect(r.next_actions?.[0]?.example?.command).toBe(`houki-nta-mcp ${flag}`);
     });
 
-    it(`SPEC-NTA-GET-BUNSHOKAITOU-001 ${tool}: DB にある docId はこれまでどおり取得できる`, async () => {
+    it(`SPEC-NTA-GET-JIMU-UNEI-003 SPEC-NTA-GET-BUNSHOKAITOU-001 ${tool}: DB にある docId はこれまでどおり取得できる`, async () => {
       const docId =
         docType === 'kaisei'
           ? '0025004-026'
