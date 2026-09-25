@@ -92,7 +92,7 @@ describe('文書系の検索: その種別の文書が DB に 1 件も無いと�
   ] as const;
 
   for (const [tool, flag, call] of cases) {
-    it(`SPEC-NTA-SEARCH-TAX-ANSWER-001 SPEC-NTA-SEARCH-BUNSHOKAITOU-001 SPEC-NTA-SEARCH-JIMU-UNEI-001 SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 ${tool}: code=DOC_NOT_FOUND、next_actions に ${flag}、hint に DB のパス`, async () => {
+    it(`SPEC-NTA-SEARCH-QA-001 SPEC-NTA-SEARCH-TAX-ANSWER-001 SPEC-NTA-SEARCH-BUNSHOKAITOU-001 SPEC-NTA-SEARCH-JIMU-UNEI-001 SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 ${tool}: code=DOC_NOT_FOUND、next_actions に ${flag}、hint に DB のパス`, async () => {
       const r = (await call()) as ZeroHitResponse;
       expect(r.code).toBe('DOC_NOT_FOUND');
       expect(r.tool).toBe(tool);
@@ -164,7 +164,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     }
   });
 
-  it('nta_search_qa: キーワードに合わないときは成功で「該当なし」と件数・freshness', async () => {
+  it('SPEC-NTA-SEARCH-QA-007 nta_search_qa: キーワードに合わないときは成功で「該当なし」と件数・freshness', async () => {
     const r = (await handleNtaSearchQa(
       { keyword: '異なる課税関係が生ずる' },
       { dbPath }
@@ -186,7 +186,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.hint).toContain(qaOnlyPath);
   });
 
-  it('nta_search_qa: topic で絞った範囲に文書が無いときは available_taxonomies と --qa-topic を案内', async () => {
+  it('SPEC-NTA-SEARCH-QA-005 nta_search_qa: topic で絞った範囲に文書が無いときは available_taxonomies と --qa-topic を案内', async () => {
     const r = (await handleNtaSearchQa(
       { keyword: '軽減税率', topic: 'hojin' },
       { dbPath }
@@ -198,7 +198,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.available_taxonomies).toEqual(['shohi', 'shotoku']);
   });
 
-  it('nta_search_qa: topic で絞り込める（v0.12.0 までは税目で絞る引数が無かった）', async () => {
+  it('SPEC-NTA-SEARCH-QA-004 SPEC-NTA-SEARCH-QA-007 nta_search_qa: topic で絞り込める（v0.12.0 までは税目で絞る引数が無かった）', async () => {
     const hit = (await handleNtaSearchQa(
       { keyword: '軽減税率', topic: 'shohi' },
       { dbPath }
@@ -213,7 +213,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(miss.hint).toContain('該当なし');
   });
 
-  it('nta_search_qa: domain="tax" は絞り込まない（v0.12.0 までは必ず 0 件だった）', async () => {
+  it('SPEC-NTA-SEARCH-QA-003 nta_search_qa: domain="tax" は絞り込まない（v0.12.0 までは必ず 0 件だった）', async () => {
     const r = (await handleNtaSearchQa(
       { keyword: '軽減税率', domain: 'tax' },
       { dbPath }
@@ -221,7 +221,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.results).toHaveLength(1);
   });
 
-  it('nta_search_qa: domain が tax 以外なら 0 件で、topic を案内する', async () => {
+  it('SPEC-NTA-SEARCH-QA-002 nta_search_qa: domain が tax 以外なら 0 件で、topic を案内する', async () => {
     const r = (await handleNtaSearchQa(
       { keyword: '軽減税率', domain: 'labor' },
       { dbPath }
@@ -232,7 +232,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.hint).toContain('topic');
   });
 
-  it('nta_search_qa: hasPdf=true は PDF 付きの文書が無いことを伝える（エラーにしない）', async () => {
+  it('SPEC-NTA-SEARCH-QA-006 nta_search_qa: hasPdf=true は PDF 付きの文書が無いことを伝える（エラーにしない）', async () => {
     const r = (await handleNtaSearchQa(
       { keyword: '軽減税率', hasPdf: true },
       { dbPath }

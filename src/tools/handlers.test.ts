@@ -22,7 +22,7 @@ import {
 describe('search 系 (Phase 3c で本実装)', () => {
   // Issue #23 (v0.13.0): 空 DB は results=[] ではなく DOC_NOT_FOUND を返す。
   // 5 ツールの 0 件の扱いは doc-search-zero-hit.test.ts で確認する
-  it('nta_search_qa: 空 DB は DOC_NOT_FOUND + --bulk-download-qa', async () => {
+  it('SPEC-NTA-SEARCH-QA-001 nta_search_qa: 空 DB は DOC_NOT_FOUND + --bulk-download-qa', async () => {
     const r = (await handleNtaSearchQa({ keyword: '社内会議' }, { dbPath: ':memory:' })) as {
       code?: string;
       hint?: string;
