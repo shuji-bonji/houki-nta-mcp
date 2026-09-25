@@ -377,6 +377,16 @@ export async function bulkDownloadTsutatsu(
   const finishedAt = new Date().toISOString();
   const durationMs = Date.now() - startMs;
 
+  // Issue #54: 全章を取り終えたことを記録する。nta_get_tsutatsu はこの印がある通達だけ、
+  // DB に無い条項を ARTICLE_NOT_FOUND で返し、国税庁サイトに取りに行かない。
+  // 章を絞った実行（onlyChapter）では書かない（書き戻し writeBackLiveSection でも書かない）
+  if (onlyChapter === undefined) {
+    db.prepare(`UPDATE tsutatsu SET bulk_completed_at = ? WHERE id = ?`).run(
+      finishedAt,
+      tsutatsuId
+    );
+  }
+
   // Phase 5 Resilience: full run + 既知 abbr 時のみ集計 + baseline 永続化
   let aggregation: BulkRunRecord | undefined;
   let health: HealthEvaluation | undefined;

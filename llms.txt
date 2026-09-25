@@ -68,7 +68,7 @@ houki-nta-mcp --bulk-download-qa           # 質疑応答事例
 
 ### 取得系（6 つともローカル DB を先に引く。DB に無いときの動きは 2 通り。v0.16.0 / Issue #29）
 DB に無ければ国税庁サイトから取得して書き戻す（応答に `source`: `"db"` / `"live"`）:
-- `nta_get_tsutatsu`: 通達本文を略称＋条項で取得（Normalize-everywhere で全角・半角ゆらぎを吸収）
+- `nta_get_tsutatsu`: 通達本文を略称＋条項で取得（Normalize-everywhere で全角・半角ゆらぎを吸収）。**v0.21.0 / Issue #54**: 基本通達 4 種とも国税庁サイトから取れる。消基通以外は目次から候補ページを選び、1 回の呼び出しで 10 ページまで取る。目次は DB に保存して使い回す。bulk download 済みの通達は DB に無い条項を `ARTICLE_NOT_FOUND`（`available_clauses` 付き）で返し、国税庁サイトへは取りに行かない
 - `nta_get_tax_answer`: タックスアンサー番号（先頭桁で税目自動判定）
 - `nta_get_qa`: 質疑応答事例を topic/category/id で取得
 

@@ -8,7 +8,7 @@
 
 import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
 import type DatabaseT from 'better-sqlite3';
-import type { QaTopic } from '../constants.js';
+import type { QaTopic, TsutatsuTocStyle } from '../constants.js';
 import {
   BUNSHOKAITOU_LEGAL_STATUS,
   bunshoMainTaxonomy,
@@ -22,6 +22,8 @@ import {
   TAX_ANSWER_FOLDER_MAP,
   TSUTATSU_BASE_LAWS,
   TSUTATSU_LEGAL_STATUS,
+  TSUTATSU_LIVE_FETCH,
+  TSUTATSU_TOC_STYLES,
   TSUTATSU_URL_ROOTS,
 } from '../constants.js';
 import { closeDb, defaultDbPath, openDb } from '../db/index.js';
@@ -33,7 +35,6 @@ import {
   NEXT_ACTIONS,
   type NextAction,
 } from '../errors.js';
-import { writeBackLiveSection } from '../services/bulk-downloader.js';
 import type { ClauseRow } from '../services/db-search.js';
 import {
   countDocuments,
@@ -41,6 +42,7 @@ import {
   describeSearchNotes,
   getClauseFromDb,
   hasAnyClause,
+  isBulkCompleted,
   listAvailableClauses,
   listDocumentTaxonomies,
   searchClauseFtsWithExpansion,
@@ -75,8 +77,15 @@ import {
   renderQaMarkdown,
   renderTaxAnswerMarkdown,
 } from '../services/tax-answer-render.js';
-import { normalizeJpText } from '../services/text-normalize.js';
-import { parseTsutatsuSection, TsutatsuParseError } from '../services/tsutatsu-parser.js';
+import { normalizeClauseNumber, normalizeJpText } from '../services/text-normalize.js';
+import {
+  describeClauseForm,
+  fetchTsutatsuClauseLive,
+  type LiveFetchOptions,
+  type LiveFetchResult,
+  parseLiveClause,
+} from '../services/tsutatsu-live.js';
+import { TsutatsuParseError } from '../services/tsutatsu-parser.js';
 import { describeImageNotes, renderClauseMarkdown } from '../services/tsutatsu-render.js';
 import type { DocType, StoredQaStructure, StoredTaxAnswerStructure } from '../types/document.js';
 import type {
@@ -91,7 +100,6 @@ import type {
 } from '../types/index.js';
 import type { QaJirei } from '../types/qa.js';
 import type { TaxAnswer } from '../types/tax-answer.js';
-import { buildSectionUrl, parseClauseNumber } from '../utils/clause.js';
 import {
   ntaGetBunshokaitouTool,
   ntaGetJimuUneiTool,
@@ -191,11 +199,11 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
  *
  * フロー:
  *   1. `name` を houki-abbreviations で resolve（管轄外なら誘導 hint）
- *   2. formal 名から通達ルート URL を引く（未対応なら supported list を返す）
- *   3. `clause` をパース → `${root}{章}/{節}.htm` の URL を組み立て
- *   4. fetchNtaPage → parseTsutatsuSection
- *   5. 該当 clauseNumber を抽出（無ければページ内の利用可能 clause を返す）
- *   6. format=markdown / json に応じてレンダリング、`legal_status` を付与
+ *   2. `clause` の全角の数字・ハイフンを半角に揃え、DB にあれば DB から返す
+ *   3. DB に無ければ、bulk download 済みの通達は available_clauses を返す
+ *   4. それ以外の基本通達 4 種は国税庁サイトから候補ページを選んで取る（Issue #54、
+ *      `services/tsutatsu-live.ts`）
+ *   5. format=markdown / json に応じてレンダリング、`legal_status` を付与
  */
 export async function handleNtaGetTsutatsu(args: GetTsutatsuArgs) {
   return getTsutatsu(args);
@@ -204,17 +212,19 @@ export async function handleNtaGetTsutatsu(args: GetTsutatsuArgs) {
 /**
  * `handleNtaGetTsutatsu` のテスト容易な内部関数。
  *
- * フロー（Phase 2d 以降）:
+ * フロー（Issue #54 以降）:
  *   1. 略称解決 + 管轄判定
- *   2. **DB lookup**: bulk DL 済みなら DB から即時応答（fetch なし）
- *   3. DB miss なら **ライブ取得**: TSUTATSU_URL_ROOTS にあれば fetch + parse
- *   4. どちらも無ければ、bulk DL を促す hint を返す
+ *   2. **DB lookup**: 条項が DB にあれば即時応答（fetch なし）
+ *   3. 条項が DB に無く、通達が bulk download 済み（`tsutatsu.bulk_completed_at`）なら ARTICLE_NOT_FOUND
+ *   4. それ以外は **国税庁サイトから取る**: 目次から候補ページを選び、順に取得して DB に書き戻す
+ *   5. 基本通達 4 種以外で DB にも無ければ、bulk DL を促す hint を返す
  *
  * `fetchImpl` を差し替えてユニットテストできる。`dbPath` で in-memory DB 注入も可。
+ * 国税庁サイトから取るときの上限・間隔・再試行は `LiveFetchOptions` で短くできる（テスト用）。
  */
 export async function getTsutatsu(
   args: GetTsutatsuArgs,
-  options: { fetchImpl?: typeof fetch; dbPath?: string } = {}
+  options: LiveFetchOptions & { dbPath?: string } = {}
 ) {
   // 1. 略称解決
   const resolved = resolveAbbreviation(args.name);
@@ -246,16 +256,21 @@ export async function getTsutatsu(
     });
   }
 
-  // 3. DB lookup を試みる（bulk DL 済みなら即時応答）
+  // 3. DB lookup を試みる。clause の全角の数字・ハイフンは、DB の経路でも
+  //    国税庁サイトの経路でも半角に揃えてから読む（Issue #54）
+  const clauseInput = normalizeClauseNumber(args.clause);
+  const rootUrl = TSUTATSU_URL_ROOTS[resolved.formal];
   const db = openDb(options.dbPath);
   try {
-    const dbHit = getClauseFromDb(db, resolved.formal, args.clause);
+    const dbHit = getClauseFromDb(db, resolved.formal, clauseInput);
     if (dbHit) {
       return renderDbHit(dbHit, args.format, resolved.formal);
     }
 
-    // 4. DB に formal_name エントリ自体があるが該当 clause が無い場合は available_clauses を返す
-    if (hasAnyClause(db, resolved.formal)) {
+    // 4. 条項が DB に無く、その通達を bulk download で全節取り込んである（Issue #54）なら、
+    //    国税庁サイトには取りに行かず available_clauses を返す。国税庁サイトから取れない通達も同じ。
+    //    書き戻した節しか無い通達は、国税庁サイトへ進む
+    if (hasAnyClause(db, resolved.formal) && (!rootUrl || isBulkCompleted(db, resolved.formal))) {
       return makeError(
         'ARTICLE_NOT_FOUND',
         `clause "${args.clause}" は DB 内の "${resolved.formal}" に見つかりません`,
@@ -265,123 +280,136 @@ export async function getTsutatsu(
         }
       );
     }
-  } finally {
-    closeDb(db);
-  }
 
-  // 5. DB miss → ライブ取得経路へフォールバック
-  const rootUrl = TSUTATSU_URL_ROOTS[resolved.formal];
-  if (!rootUrl) {
-    return makeError(
-      'TSUTATSU_NOT_FOUND',
-      `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`,
-      {
-        hint: `先に \`houki-nta-mcp --bulk-download --tsutatsu="${resolved.formal}"\` を実行して DB に投入してください（Phase 2d 以降は他通達も bulk DL 経由で対応）。`,
-        next_actions: [NEXT_ACTIONS.bulkDownload(resolved.formal)],
-        supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
+    // 5. DB miss → 国税庁サイトから取る経路（基本通達 4 種）
+    if (!rootUrl) {
+      return makeError(
+        'TSUTATSU_NOT_FOUND',
+        `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`,
+        {
+          hint: `先に \`houki-nta-mcp --bulk-download --tsutatsu="${resolved.formal}"\` を実行して DB に投入してください（Phase 2d 以降は他通達も bulk DL 経由で対応）。`,
+          next_actions: [NEXT_ACTIONS.bulkDownload(resolved.formal)],
+          supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
+          resolved,
+          tool: 'nta_get_tsutatsu',
+        }
+      );
+    }
+
+    const style = TSUTATSU_TOC_STYLES[resolved.formal] ?? 'shohi';
+    const key = parseLiveClause(style, clauseInput);
+    if (!key) {
+      return makeError('INVALID_ARGUMENT', `clause の形式が不正: "${args.clause}"`, {
+        hint: `${resolved.formal}の${describeClauseForm(style)}。全角の数字・ハイフンは半角に揃えて読みます`,
         resolved,
-        tool: 'nta_get_tsutatsu',
-      }
-    );
-  }
-
-  const parsed = parseClauseNumber(args.clause);
-  if (!parsed) {
-    return makeError('INVALID_ARGUMENT', `clause の形式が不正: "${args.clause}"`, {
-      hint: 'ライブ取得には「章-節-条」形式（例: "5-1-9" / "1-4-13の2"）が必要です。他通達体系（条-項）の場合は `--bulk-download` で DB 投入してください',
-    });
-  }
-
-  const url = buildSectionUrl(rootUrl, parsed.chapter, parsed.section);
-  let html: string;
-  let sourceUrl: string;
-  let fetchedAt: string;
-  try {
-    const fetched = await fetchNtaPage(url, { fetchImpl: options.fetchImpl });
-    html = fetched.html;
-    sourceUrl = fetched.sourceUrl;
-    fetchedAt = fetched.fetchedAt;
-  } catch (err) {
-    if (err instanceof NtaFetchError) {
-      return makeError('SOURCE_API_ERROR', `国税庁サイトからの取得に失敗: ${err.message}`, {
-        url,
-        retryable: true,
-        next_actions: [NEXT_ACTIONS.retryLater()],
-        detail: err.status !== undefined ? { status: err.status, url } : { url },
       });
     }
-    throw err;
-  }
 
-  let section: ReturnType<typeof parseTsutatsuSection>;
-  try {
-    section = parseTsutatsuSection(html, sourceUrl, fetchedAt);
-  } catch (err) {
-    if (err instanceof TsutatsuParseError) {
-      return makeError('INTERNAL_ERROR', `通達ページのパースに失敗: ${err.message}`, {
-        url,
-        hint: 'パーサのバグまたは国税庁ページの構造変更の可能性。報告してください',
-        detail: { url, cause: err.message },
-      });
-    }
-    throw err;
-  }
-
-  const clause = section.clauses.find((c) => c.clauseNumber === args.clause);
-  if (!clause) {
-    return makeError('ARTICLE_NOT_FOUND', `clause "${args.clause}" がページ内に見つかりません`, {
-      url,
-      available_clauses: section.clauses.map((c) => c.clauseNumber),
-    });
-  }
-
-  // Write-through cache: ライブ取得した section の clauses 一式を DB に書き戻す。
-  // 次回以降の同 section に対する get/search が DB lookup でヒットする。
-  // best effort で動作するため、失敗してもこの応答経路には影響しない。
-  try {
-    const writeBackDb = openDb(options.dbPath);
-    try {
-      writeBackLiveSection(writeBackDb, {
+    const live = await fetchTsutatsuClauseLive(
+      db,
+      {
         formalName: resolved.formal,
         abbr: resolved.abbr,
         rootUrl,
-        chapterNumber: parsed.chapter,
-        sectionNumber: parsed.section,
-        sectionUrl: section.sourceUrl,
-        fetchedAt: section.fetchedAt,
-        sectionTitle: section.sectionTitle,
-        chapterTitle: section.chapterTitle,
-        clauses: section.clauses,
-      });
-    } finally {
-      closeDb(writeBackDb);
-    }
-  } catch {
-    // best effort: write-through cache 失敗は無視（応答に影響なし）
-  }
-
-  if (args.format === 'json') {
-    return {
-      tsutatsu: resolved.formal,
-      clause: {
-        clauseNumber: clause.clauseNumber,
-        title: clause.title,
-        paragraphs: clause.paragraphs,
-        fullText: clause.fullText,
+        style,
+        clause: clauseInput,
+        key,
       },
-      sourceUrl: section.sourceUrl,
-      fetchedAt: section.fetchedAt,
-      source: 'live' as const,
-      ...contentNotesFor(clause.paragraphs),
-      legal_status: TSUTATSU_LEGAL_STATUS,
-      ...baseLawFields(resolved.formal),
-    };
+      options
+    );
+    return renderLiveResult(live, args, resolved.formal, style);
+  } finally {
+    closeDb(db);
   }
-  return renderClauseMarkdown(clause, {
-    sourceUrl: section.sourceUrl,
-    fetchedAt: section.fetchedAt,
-    baseLaws: TSUTATSU_BASE_LAWS[resolved.formal],
-  });
+}
+
+/**
+ * Issue #54: 国税庁サイトから取った結果を応答にする。
+ * 見つかれば DB の経路と同じ形（`source: 'live'`）、見つからなければ通達の番号の形と
+ * 見たページの番号・URL を付けたエラーにする
+ */
+function renderLiveResult(
+  live: LiveFetchResult,
+  args: GetTsutatsuArgs,
+  formal: string,
+  style: TsutatsuTocStyle
+) {
+  switch (live.kind) {
+    case 'fetch_error':
+      return makeError('SOURCE_API_ERROR', `国税庁サイトからの取得に失敗: ${live.error.message}`, {
+        url: live.url,
+        retryable: true,
+        next_actions: [NEXT_ACTIONS.retryLater()],
+        detail:
+          live.error.status !== undefined
+            ? { status: live.error.status, url: live.url }
+            : { url: live.url },
+      });
+    case 'parse_error':
+      return makeError('INTERNAL_ERROR', `通達ページのパースに失敗: ${live.error.message}`, {
+        url: live.url,
+        hint: 'パーサのバグまたは国税庁ページの構造変更の可能性。報告してください',
+        detail: { url: live.url, cause: live.error.message },
+      });
+    case 'no_candidates':
+      return makeError(
+        'INVALID_ARGUMENT',
+        `clause "${args.clause}" に当たるページを "${formal}" の目次から決められません`,
+        {
+          hint: `${formal}の${describeClauseForm(style)}。番号の形が合っていれば、\`nta_search_tsutatsu\` で条項を検索してください`,
+          next_actions: [NEXT_ACTIONS.searchTsutatsu(args.clause ?? '')],
+        }
+      );
+    case 'not_found': {
+      const hints = [
+        `${formal}の${describeClauseForm(style)}。番号の形を確かめてください`,
+        `\`nta_search_tsutatsu\` で条項を検索するか、\`houki-nta-mcp --bulk-download --tsutatsu="${formal}"\` で全節を DB に入れると、国税庁サイトに取りに行かずに引けます`,
+      ];
+      if (live.skippedByLimit > 0) {
+        hints.push(
+          `1 回の呼び出しで国税庁サイトから取るページの上限（${TSUTATSU_LIVE_FETCH.maxPages}）に達したため、残りの候補ページ ${live.skippedByLimit} 件は見ていません`
+        );
+      }
+      const message = live.allMissing
+        ? `clause "${args.clause}" の候補ページは国税庁サイトにありませんでした（${live.searchedUrls.length} ページ）`
+        : `clause "${args.clause}" は国税庁サイトの候補ページ（${live.searchedUrls.length} ページ）に見つかりません`;
+      return makeError('ARTICLE_NOT_FOUND', message, {
+        url: live.searchedUrls[0],
+        hint: hints.join('。'),
+        available_clauses: live.availableClauses,
+        searched_urls: live.searchedUrls,
+        next_actions: [
+          NEXT_ACTIONS.searchTsutatsu(args.clause ?? ''),
+          NEXT_ACTIONS.bulkDownload(formal),
+        ],
+      });
+    }
+    case 'found': {
+      const { clause, section } = live;
+      if (args.format === 'json') {
+        return {
+          tsutatsu: formal,
+          clause: {
+            clauseNumber: clause.clauseNumber,
+            title: clause.title,
+            paragraphs: clause.paragraphs,
+            fullText: clause.fullText,
+          },
+          sourceUrl: section.sourceUrl,
+          fetchedAt: section.fetchedAt,
+          source: 'live' as const,
+          ...contentNotesFor(clause.paragraphs),
+          legal_status: TSUTATSU_LEGAL_STATUS,
+          ...baseLawFields(formal),
+        };
+      }
+      return renderClauseMarkdown(clause, {
+        sourceUrl: section.sourceUrl,
+        fetchedAt: section.fetchedAt,
+        baseLaws: TSUTATSU_BASE_LAWS[formal],
+      });
+    }
+  }
 }
 
 /**

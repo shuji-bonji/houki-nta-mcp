@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { encode as iconvEncode } from 'iconv-lite';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -146,4 +147,61 @@ describe('bulkDownloadTsutatsu — 消基通 (fixture モック)', () => {
       closeDb(db);
     }
   }, 15_000);
+});
+
+describe('bulkDownloadTsutatsu — bulk download 済みの印（Issue #54）', () => {
+  const TOC_URL = 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/01.htm';
+
+  /** 目次と 01/04.htm だけを返し、ほかは 404 にする */
+  function fetchImpl(): typeof fetch {
+    return vi.fn(async (url: string) => {
+      if (url === TOC_URL) return sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01.htm');
+      if (url.endsWith('/shohi/01/04.htm')) {
+        return sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm');
+      }
+      return new Response('not found', { status: 404, statusText: 'Not Found' });
+    }) as unknown as typeof fetch;
+  }
+
+  function bulkCompletedAt(db: ReturnType<typeof openDb>): string | null {
+    const row = db
+      .prepare('SELECT bulk_completed_at AS at FROM tsutatsu WHERE formal_name = ?')
+      .get('消費税法基本通達') as { at: string | null };
+    return row.at;
+  }
+
+  it('章を絞った実行（onlyChapter）では bulk_completed_at を書かない', async () => {
+    const db = openDb(':memory:');
+    try {
+      await bulkDownloadTsutatsu(db, {
+        formalName: '消費税法基本通達',
+        abbr: '消基通',
+        onlyChapter: 1,
+        fetchImpl: fetchImpl(),
+        requestIntervalMs: 1,
+      });
+      expect(bulkCompletedAt(db)).toBeNull();
+    } finally {
+      closeDb(db);
+    }
+  }, 15_000);
+
+  it('全章を取り終えたら bulk_completed_at に終了時刻を書く', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'houki-nta-bulk-completed-'));
+    const db = openDb(':memory:');
+    try {
+      const r = await bulkDownloadTsutatsu(db, {
+        formalName: '消費税法基本通達',
+        abbr: '消基通',
+        fetchImpl: fetchImpl(),
+        requestIntervalMs: 1,
+        // 全章の実行は baseline を書くので、一時ディレクトリに向ける
+        baselinePath: join(dir, 'baseline.json'),
+      });
+      expect(bulkCompletedAt(db)).toBe(r.finishedAt);
+    } finally {
+      closeDb(db);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

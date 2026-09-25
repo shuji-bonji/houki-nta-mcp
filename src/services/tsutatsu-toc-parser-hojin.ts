@@ -139,10 +139,12 @@ function extractHojinChapters(
 
             sectionCounter += 1;
             const linkText = cleanText($(a).text());
+            const parentTitle = parentItemTitle($, a);
             chapter.sections.push({
               number: sectionCounter,
               title: linkText || `第${sectionCounter}節`,
               url: normalized,
+              ...(parentTitle ? { parentTitle } : {}),
             });
           });
       }
@@ -158,6 +160,18 @@ function extractHojinChapters(
   });
 
   return chapters;
+}
+
+/**
+ * houki-nta-mcp#54: 款のリンクが属する節の題を返す。
+ * `<li>第1節 収益等の計上に関する通則<ul><li><a>第1款 …</a></li></ul></li>` の
+ * 外側の `<li>` の、入れ子の `<ul>` を除いた文字列。入れ子でなければ undefined
+ */
+function parentItemTitle($: CheerioAPI, a: Element): string | undefined {
+  const $parentLi = $(a).closest('li').parent('ul').closest('li');
+  if ($parentLi.length === 0) return undefined;
+  const title = cleanText($parentLi.clone().children('ul').remove().end().text());
+  return title || undefined;
 }
 
 function cleanText(s: string): string {

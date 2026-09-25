@@ -34,7 +34,7 @@ import type { CheerioAPI } from 'cheerio';
 import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 
-import type { TsutatsuToc, TsutatsuTocChapter } from '../types/tsutatsu-toc.js';
+import type { TsutatsuToc, TsutatsuTocChapter, TsutatsuTocSection } from '../types/tsutatsu-toc.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 
 /**
@@ -96,7 +96,7 @@ function extractSozokuChapters(
   let currentSectionLabel: string | null = null;
   let currentJoGroupLabel: string | null = null;
   let sectionCounter = 0;
-  const seenUrls = new Set<string>();
+  const sectionsByUrl = new Map<string, TsutatsuTocSection>();
 
   $body.find('p').each((_, p) => {
     const $p = $(p);
@@ -164,8 +164,13 @@ function extractSozokuChapters(
         const normalized = abs.replace(/#.*$/, '');
         if (!normalized.endsWith('.htm') && !normalized.endsWith('.html')) return;
         if (!normalized.includes('/law/tsutatsu/kihon/')) return;
-        if (seenUrls.has(normalized)) return;
-        seenUrls.add(normalized);
+        const seen = sectionsByUrl.get(normalized);
+        if (seen) {
+          // houki-nta-mcp#54: 同じページを別の条の見出しの下からも指している
+          // （01/01.htm は第1条の3・第1条の4共通関係と第2条・第2条の2共通関係の両方を持つ）
+          addArticleTitle(seen, currentJoGroupLabel);
+          return;
+        }
 
         if (!currentChapter) {
           // 章が未確定（章ヘッダ前の clause）。仮 chapter を作る
@@ -185,11 +190,14 @@ function extractSozokuChapters(
           currentJoGroupLabel,
           linkText || `第${sectionCounter}節`,
         ].filter((s): s is string => Boolean(s));
-        ch.sections.push({
+        const section: TsutatsuTocSection = {
           number: sectionCounter,
           title: titleParts.join(' / '),
           url: normalized,
-        });
+        };
+        addArticleTitle(section, currentJoGroupLabel);
+        sectionsByUrl.set(normalized, section);
+        ch.sections.push(section);
       });
     }
   });
@@ -203,6 +211,13 @@ function extractSozokuChapters(
   }
 
   return chapters;
+}
+
+/** houki-nta-mcp#54: 条を示す見出しの題を重複なしで足す */
+function addArticleTitle(section: TsutatsuTocSection, title: string | null): void {
+  if (!title) return;
+  if (!section.articleTitles) section.articleTitles = [];
+  if (!section.articleTitles.includes(title)) section.articleTitles.push(title);
 }
 
 function cleanText(s: string): string {
