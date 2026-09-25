@@ -911,12 +911,12 @@ function utf8HtmlResponse(fixtureName: string): Response {
 }
 
 describe('getTaxAnswer — 引数バリデーション', () => {
-  it('数字以外の番号はエラー', async () => {
+  it('SPEC-NTA-GET-TAX-ANSWER-001 数字以外の番号はエラー', async () => {
     const r = (await getTaxAnswer({ no: 'abc' })) as { error?: string };
     expect(r.error).toContain('数字');
   });
 
-  it('8xxx 番台（未対応）はエラー + hint', async () => {
+  it('SPEC-NTA-GET-TAX-ANSWER-002 8xxx 番台（未対応）はエラー + hint', async () => {
     const r = (await getTaxAnswer({ no: '8001' })) as { error?: string; hint?: string };
     expect(r.error).toContain('未対応');
     expect(r.hint).toContain('1xxx');
@@ -924,7 +924,7 @@ describe('getTaxAnswer — 引数バリデーション', () => {
 });
 
 describe('getTaxAnswer — 6101 (消費税) を取得', () => {
-  it('Markdown（既定）で本文・出典・legal_status を含む', async () => {
+  it('SPEC-NTA-GET-TAX-ANSWER-007 Markdown（既定）で本文・出典・legal_status を含む', async () => {
     const fetchImpl = vi.fn(async () =>
       utf8HtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')
     ) as unknown as typeof fetch;
@@ -938,7 +938,7 @@ describe('getTaxAnswer — 6101 (消費税) を取得', () => {
     expect(r).toContain('参考解説資料'); // legal_status note
   });
 
-  it('format=json で構造化レスポンス + legal_status', async () => {
+  it('SPEC-NTA-GET-TAX-ANSWER-003 SPEC-NTA-GET-TAX-ANSWER-008 format=json で構造化レスポンス + legal_status', async () => {
     const fetchImpl = vi.fn(async () =>
       utf8HtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_shotoku_1120.htm')
     ) as unknown as typeof fetch;
@@ -959,7 +959,7 @@ describe('getTaxAnswer — 6101 (消費税) を取得', () => {
     expect(calls[0][0]).toBe('https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/1120.htm');
   });
 
-  it('番号→税目の自動振り分け: 6xxx→shohi, 1xxx→shotoku, 5xxx→hojin', async () => {
+  it('SPEC-NTA-GET-TAX-ANSWER-003 番号→税目の自動振り分け: 6xxx→shohi, 1xxx→shotoku, 5xxx→hojin', async () => {
     const fetchImpl = vi.fn(async () =>
       utf8HtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_hojin_5759.htm')
     ) as unknown as typeof fetch;

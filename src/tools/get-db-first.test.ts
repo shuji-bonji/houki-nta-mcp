@@ -121,7 +121,7 @@ describe('nta_get_qa — DB を先に引く', () => {
 });
 
 describe('nta_get_tax_answer — DB を先に引く', () => {
-  it('DB が空なら国税庁サイトから取得し source=live を返す', async () => {
+  it('SPEC-NTA-GET-TAX-ANSWER-005 DB が空なら国税庁サイトから取得し source=live を返す', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')
     ) as unknown as typeof fetch;
@@ -135,7 +135,7 @@ describe('nta_get_tax_answer — DB を先に引く', () => {
     expect(r.taxAnswer?.no).toBe('6101');
   });
 
-  it('1 回取得すると DB に入り、2 回目は取得しない（source=db）', async () => {
+  it('SPEC-NTA-GET-TAX-ANSWER-004 SPEC-NTA-GET-TAX-ANSWER-006 1 回取得すると DB に入り、2 回目は取得しない（source=db）', async () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')
     ) as unknown as typeof fetch;
