@@ -1173,7 +1173,7 @@ describe('toolHandlers map', () => {
 });
 
 describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v0.7.2)', () => {
-  it('DB 未投入の docId はエラー + hint', async () => {
+  it('SPEC-NTA-INSPECT-PDF-META-001 DB 未投入の docId はエラー + hint', async () => {
     const r = (await handleNtaInspectPdfMeta(
       { docType: 'kaisei', docId: 'unknown-doc-id' },
       { dbPath: ':memory:' }
@@ -1232,7 +1232,7 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
     note?: string;
   };
 
-  it('#36: kind 優先度ソート + read_strategy / layout_note + next_actions（未保存は read_url）', async () => {
+  it('SPEC-NTA-INSPECT-PDF-META-002 SPEC-NTA-INSPECT-PDF-META-005 SPEC-NTA-INSPECT-PDF-META-009 #36: kind 優先度ソート + read_strategy / layout_note + next_actions（未保存は read_url）', async () => {
     const tmpFile = seedPdfDoc('sample-001', [
       // #44: 「別紙」だけだと kaisei では comparison に補正されるので、他の語を含む別紙にする
       { title: '別紙1 計算明細書', url: 'https://x/b.pdf', sizeKb: 120, kind: 'attachment' },
@@ -1272,7 +1272,7 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
     expect(r.saved).toBeUndefined();
   });
 
-  it('#36: kind で絞る。該当なしは空 + note にある種別', async () => {
+  it('SPEC-NTA-INSPECT-PDF-META-006 SPEC-NTA-INSPECT-PDF-META-007 #36: kind で絞る。該当なしは空 + note にある種別', async () => {
     const tmpFile = seedPdfDoc('sample-002', [
       { title: '別紙1 計算明細書', url: 'https://x/b.pdf', kind: 'attachment' },
       { title: '新旧対照表', url: 'https://x/a.pdf', kind: 'comparison' },
@@ -1297,7 +1297,7 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
     expect(none.note).toContain('comparison, attachment');
   });
 
-  it('#36: save: true で PDF を保存し、saved[].path を extract_tables / read_text の file_path に使う', async () => {
+  it('SPEC-NTA-INSPECT-PDF-META-010 SPEC-NTA-INSPECT-PDF-META-011 SPEC-NTA-INSPECT-PDF-META-012 SPEC-NTA-INSPECT-PDF-META-013 #36: save: true で PDF を保存し、saved[].path を extract_tables / read_text の file_path に使う', async () => {
     const tmpFile = seedPdfDoc('sample-003', [
       { title: '新旧対照表', url: 'https://x/a.pdf', kind: 'comparison' },
       { title: '参考資料', url: 'https://x/r.pdf', kind: 'related' },
@@ -1351,7 +1351,7 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
     rmSync(filesDir, { recursive: true, force: true });
   });
 
-  it('v0.6.0 期の DB レコード (kind なし) はタイトルから動的補完される (v0.7.2)', async () => {
+  it('SPEC-NTA-INSPECT-PDF-META-003 SPEC-NTA-INSPECT-PDF-META-004 SPEC-NTA-INSPECT-PDF-META-009 v0.6.0 期の DB レコード (kind なし) はタイトルから動的補完される (v0.7.2)', async () => {
     const tmpFile = seedPdfDoc('legacy-001', [
       // kind フィールド無し（v0.6.0 期投入を再現）
       { title: '新旧対応表', url: 'https://x/c.pdf', sizeKb: 399 },
@@ -1371,7 +1371,7 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
     expect(r.next_actions?.map((a) => a.action)).toEqual(['pdf-reader-mcp:read_url', 'read_pdf']);
   });
 
-  it('#44: 改正通達の「別紙 N」だけの PDF は comparison として返り、kind: "comparison" で絞れる', async () => {
+  it('SPEC-NTA-INSPECT-PDF-META-004 SPEC-NTA-INSPECT-PDF-META-005 SPEC-NTA-INSPECT-PDF-META-006 #44: 改正通達の「別紙 N」だけの PDF は comparison として返り、kind: "comparison" で絞れる', async () => {
     const tmpFile = seedPdfDoc('0025004-026', [
       {
         title:
@@ -1415,7 +1415,7 @@ describe('nta_inspect_pdf_meta — Phase 4-2 (v0.7.1) / Phase 4 self-feedback (v
     );
   });
 
-  it('#44: 改正通達で comparison が 0 件・attachment があるときは note に別紙を読むよう書く', async () => {
+  it('SPEC-NTA-INSPECT-PDF-META-007 SPEC-NTA-INSPECT-PDF-META-008 #44: 改正通達で comparison が 0 件・attachment があるときは note に別紙を読むよう書く', async () => {
     const tmpFile = seedPdfDoc('kaisei-att-only', [
       { title: '別紙1 計算明細書', url: 'https://x/01.pdf', kind: 'attachment' },
     ]);
