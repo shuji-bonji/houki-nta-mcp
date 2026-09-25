@@ -30,6 +30,23 @@ jobs:
       - run: npm ci
       - run: npx spec-ids check
 
+  pr-scope:
+    # PR の種類（ブランチ名の接頭辞）ごとに、変えてよいパスと承認日を検査する（AGENTS.md「PR の種類」）
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test .github/scripts/check-pr-scope.test.mjs
+      - run: node .github/scripts/check-pr-scope.mjs
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+
   test:
     runs-on: ubuntu-latest
     strategy:
