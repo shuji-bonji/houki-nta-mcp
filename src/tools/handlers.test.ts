@@ -46,7 +46,7 @@ describe('search 系 (Phase 3c で本実装)', () => {
 
 describe('searchTsutatsu — Phase 2c 本実装', () => {
   // 空 DB（in-memory）で「bulk-download を促すエラー」が返ること
-  it('DB が空のときは bulk-download を促すエラー + hint を返す', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-003 DB が空のときは bulk-download を促すエラー + hint を返す', async () => {
     const r = (await searchTsutatsu({ keyword: '納税義務' }, { dbPath: ':memory:' })) as {
       error?: string;
       hint?: string;
@@ -55,7 +55,7 @@ describe('searchTsutatsu — Phase 2c 本実装', () => {
     expect(r.hint).toContain('--bulk-download');
   });
 
-  it('keyword 未指定はエラー', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-002 keyword 未指定はエラー', async () => {
     const r = (await searchTsutatsu({ keyword: '' }, { dbPath: ':memory:' })) as {
       error?: string;
     };
@@ -106,7 +106,7 @@ describe('searchTsutatsu — Issue #18: 2 文字語の応答に search_notes を
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('2 文字語でヒットしたときは hits と search_notes の両方を返す', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-004 SPEC-NTA-SEARCH-TSUTATSU-006 2 文字語でヒットしたときは hits と search_notes の両方を返す', async () => {
     const r = (await searchTsutatsu({ keyword: '役員' }, { dbPath })) as {
       count?: number;
       hits: Array<{ clauseNumber: string; snippet: string }>;
@@ -118,7 +118,7 @@ describe('searchTsutatsu — Issue #18: 2 文字語の応答に search_notes を
     expect(r.search_notes?.[0]).toContain('LIKE');
   });
 
-  it('2 文字語で 0 件のときも search_notes で仕様起因と分かる', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-005 SPEC-NTA-SEARCH-TSUTATSU-006 2 文字語で 0 件のときも search_notes で仕様起因と分かる', async () => {
     const r = (await searchTsutatsu({ keyword: '社宅' }, { dbPath })) as {
       hits: unknown[];
       message?: string;
@@ -129,7 +129,7 @@ describe('searchTsutatsu — Issue #18: 2 文字語の応答に search_notes を
     expect(r.search_notes?.[0]).toContain('3 文字未満');
   });
 
-  it('3 文字以上の語だけなら search_notes は付かない', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-007 3 文字以上の語だけなら search_notes は付かない', async () => {
     const r = (await searchTsutatsu({ keyword: '経営に従事' }, { dbPath })) as {
       count?: number;
       search_notes?: string[];
@@ -1489,7 +1489,7 @@ describe('Issue #20: 通達の応答に base_laws と houki-egov-mcp への next
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('nta_search_tsutatsu: 対応表 base_laws_by_tsutatsu を 1 回だけ、通達ごとに 1 件の next_actions（重複なし）', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-009 nta_search_tsutatsu: 対応表 base_laws_by_tsutatsu を 1 回だけ、通達ごとに 1 件の next_actions（重複なし）', async () => {
     const r = (await searchTsutatsu({ keyword: '使用人兼務役員' }, { dbPath })) as {
       hits: Array<{ tsutatsu: string; base_laws?: unknown }>;
       base_laws_by_tsutatsu?: Record<string, string[]>;
@@ -1514,7 +1514,7 @@ describe('Issue #20: 通達の応答に base_laws と houki-egov-mcp への next
     }
   });
 
-  it('nta_search_tsutatsu: 0 件のときは base_laws_by_tsutatsu も next_actions も付けない', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-005 SPEC-NTA-SEARCH-TSUTATSU-009 nta_search_tsutatsu: 0 件のときは base_laws_by_tsutatsu も next_actions も付けない', async () => {
     const r = (await searchTsutatsu({ keyword: '存在しない語句です' }, { dbPath })) as {
       hits: unknown[];
       base_laws_by_tsutatsu?: unknown;
@@ -1619,7 +1619,7 @@ describe('Issue #21: 通称を 0 件のため展開したときだけ search_not
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('元の語で当たるとき: 展開せず、注記も付けない', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-008 元の語で当たるとき: 展開せず、注記も付けない', async () => {
     const r = (await searchTsutatsu({ keyword: '適格請求書発行事業者' }, { dbPath })) as {
       hits: Array<{ clauseNumber: string }>;
       search_notes?: string[];
@@ -1628,7 +1628,7 @@ describe('Issue #21: 通称を 0 件のため展開したときだけ search_not
     expect(r.search_notes).toBeUndefined();
   });
 
-  it('元の語で 0 件のとき: 法令名に広げ、search_notes で知らせる', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-008 元の語で 0 件のとき: 法令名に広げ、search_notes で知らせる', async () => {
     const r = (await searchTsutatsu({ keyword: 'インボイス' }, { dbPath })) as {
       hits: Array<{ clauseNumber: string }>;
       search_notes?: string[];

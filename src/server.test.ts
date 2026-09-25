@@ -87,7 +87,7 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(body.next_actions[0].action).toBe('list_tools');
   });
 
-  it('inputSchema に合わない引数は INVALID_ARGUMENT + isError: true (handler は呼ばれない)', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-001 inputSchema に合わない引数は INVALID_ARGUMENT + isError: true (handler は呼ばれない)', async () => {
     // 型違反
     const res = await client.callTool({
       name: 'resolve_abbreviation',
@@ -119,7 +119,7 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     }
   });
 
-  it('inputSchema に無い引数は INVALID_ARGUMENT で、detail.issues の path に引数名が入る (v0.14.0)', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-001 inputSchema に無い引数は INVALID_ARGUMENT で、detail.issues の path に引数名が入る (v0.14.0)', async () => {
     // v0.13.0 までは nta_search_tsutatsu の inputSchema に type / domain があったが、絞り込みに使っていなかった
     const res = await client.callTool({
       name: 'nta_search_tsutatsu',
