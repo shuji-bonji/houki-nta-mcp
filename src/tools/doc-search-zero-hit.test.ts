@@ -92,7 +92,7 @@ describe('文書系の検索: その種別の文書が DB に 1 件も無いと�
   ] as const;
 
   for (const [tool, flag, call] of cases) {
-    it(`${tool}: code=DOC_NOT_FOUND、next_actions に ${flag}、hint に DB のパス`, async () => {
+    it(`SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 ${tool}: code=DOC_NOT_FOUND、next_actions に ${flag}、hint に DB のパス`, async () => {
       const r = (await call()) as ZeroHitResponse;
       expect(r.code).toBe('DOC_NOT_FOUND');
       expect(r.tool).toBe(tool);
@@ -254,7 +254,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.freshness).toBeDefined();
   });
 
-  it('nta_search_kaisei_tsutatsu: taxonomy の範囲に文書が無いときは税目の一覧を返す（投入フラグは無いので案内しない）', async () => {
+  it('SPEC-NTA-SEARCH-KAISEI-TSUTATSU-002 nta_search_kaisei_tsutatsu: taxonomy の範囲に文書が無いときは税目の一覧を返す（投入フラグは無いので案内しない）', async () => {
     const r = (await handleNtaSearchKaiseiTsutatsu(
       { keyword: '改正', taxonomy: 'sisan/sozoku' },
       { dbPath }
@@ -265,7 +265,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.available_taxonomies).toEqual(['hojin', 'shohi']);
   });
 
-  it('nta_search_kaisei_tsutatsu: taxonomy と hasPdf=false の組み合わせで文書が無いとき', async () => {
+  it('SPEC-NTA-SEARCH-KAISEI-TSUTATSU-003 nta_search_kaisei_tsutatsu: taxonomy と hasPdf=false の組み合わせで文書が無いとき', async () => {
     const r = (await handleNtaSearchKaiseiTsutatsu(
       { keyword: 'インボイス', taxonomy: 'shohi', hasPdf: false },
       { dbPath }
@@ -275,7 +275,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.hint).toContain('taxonomy="shohi"');
   });
 
-  it('nta_search_kaisei_tsutatsu: 条件付きでキーワードに合わないときは条件を hint に書く', async () => {
+  it('SPEC-NTA-SEARCH-KAISEI-TSUTATSU-004 nta_search_kaisei_tsutatsu: 条件付きでキーワードに合わないときは条件を hint に書く', async () => {
     const r = (await handleNtaSearchKaiseiTsutatsu(
       { keyword: '電子帳簿保存', hasPdf: true },
       { dbPath }
