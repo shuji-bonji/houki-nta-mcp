@@ -92,7 +92,7 @@ describe('文書系の検索: その種別の文書が DB に 1 件も無いと�
   ] as const;
 
   for (const [tool, flag, call] of cases) {
-    it(`SPEC-NTA-SEARCH-JIMU-UNEI-001 SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 ${tool}: code=DOC_NOT_FOUND、next_actions に ${flag}、hint に DB のパス`, async () => {
+    it(`SPEC-NTA-SEARCH-BUNSHOKAITOU-001 SPEC-NTA-SEARCH-JIMU-UNEI-001 SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 ${tool}: code=DOC_NOT_FOUND、next_actions に ${flag}、hint に DB のパス`, async () => {
       const r = (await call()) as ZeroHitResponse;
       expect(r.code).toBe('DOC_NOT_FOUND');
       expect(r.tool).toBe(tool);
@@ -293,7 +293,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.hint).toContain('事務運営指針 1 件');
   });
 
-  it('nta_search_bunshokaitou: taxonomy の範囲に文書が無いときは --bunsho-taxonomy を案内', async () => {
+  it('SPEC-NTA-SEARCH-BUNSHOKAITOU-002 nta_search_bunshokaitou: taxonomy の範囲に文書が無いときは --bunsho-taxonomy を案内', async () => {
     const r = (await handleNtaSearchBunshokaitou(
       { keyword: '配当', taxonomy: 'hojin' },
       { dbPath }
@@ -333,7 +333,7 @@ describe('文書回答事例の税目の別表記（v0.14.0）', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('taxonomy="sozoku" は "souzoku" の文書もまとめて探し、search_notes にその旨を書く', async () => {
+  it('SPEC-NTA-SEARCH-BUNSHOKAITOU-003 taxonomy="sozoku" は "souzoku" の文書もまとめて探し、search_notes にその旨を書く', async () => {
     const r = (await handleNtaSearchBunshokaitou(
       { keyword: '小規模宅地等', taxonomy: 'sozoku' },
       { dbPath }
@@ -342,7 +342,7 @@ describe('文書回答事例の税目の別表記（v0.14.0）', () => {
     expect(r.search_notes?.join('\n')).toContain('"souzoku"');
   });
 
-  it('国税局の表記（souzoku）で指定しても本庁の表記（sozoku）の文書が出る', async () => {
+  it('SPEC-NTA-SEARCH-BUNSHOKAITOU-003 国税局の表記（souzoku）で指定しても本庁の表記（sozoku）の文書が出る', async () => {
     const r = (await handleNtaSearchBunshokaitou(
       { keyword: '小規模宅地等', taxonomy: 'souzoku' },
       { dbPath }
@@ -350,7 +350,7 @@ describe('文書回答事例の税目の別表記（v0.14.0）', () => {
     expect(r.results).toHaveLength(2);
   });
 
-  it('別表記の無い税目（zoyo）は search_notes を付けない', async () => {
+  it('SPEC-NTA-SEARCH-BUNSHOKAITOU-003 別表記の無い税目（zoyo）は search_notes を付けない', async () => {
     const r = (await handleNtaSearchBunshokaitou(
       { keyword: '種類株式', taxonomy: 'zoyo' },
       { dbPath }
@@ -359,7 +359,7 @@ describe('文書回答事例の税目の別表記（v0.14.0）', () => {
     expect(r.search_notes).toBeUndefined();
   });
 
-  it('0 件のときの件数は別表記も含めて数える', async () => {
+  it('SPEC-NTA-SEARCH-BUNSHOKAITOU-003 SPEC-NTA-SEARCH-BUNSHOKAITOU-004 0 件のときの件数は別表記も含めて数える', async () => {
     const r = (await handleNtaSearchBunshokaitou(
       { keyword: '量子暗号通信', taxonomy: 'sozoku' },
       { dbPath }
@@ -367,7 +367,7 @@ describe('文書回答事例の税目の別表記（v0.14.0）', () => {
     expect(r.hint).toContain('（taxonomy="sozoku"）2 件');
   });
 
-  it('範囲に文書が無いとき、国税局の表記は本庁の表記で投入コマンドを案内し、索引に無い値は案内しない', async () => {
+  it('SPEC-NTA-SEARCH-BUNSHOKAITOU-002 範囲に文書が無いとき、国税局の表記は本庁の表記で投入コマンドを案内し、索引に無い値は案内しない', async () => {
     const gensen = (await handleNtaSearchBunshokaitou(
       { keyword: '源泉徴収', taxonomy: 'gensenshotoku' },
       { dbPath }
