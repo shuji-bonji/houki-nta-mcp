@@ -1,6 +1,7 @@
 # 変更: nta_get_tsutatsu の国税庁サイトからの取得を基本通達 4 種で成立させる
 
 - 対象: `specs/current/nta_get_tsutatsu/spec.md`
+- 状態: 取り込み済み。実装は v0.21.0、`specs/current/` への取り込みは 2026-09-26（JST、実装 PR の最終コミット）
 - Issue: houki-nta-mcp#54
 - 承認日: 2026-09-25（PR #59）
 - 実装の変更: 要

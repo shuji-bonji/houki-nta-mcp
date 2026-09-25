@@ -76,6 +76,8 @@ export interface LawServiceError {
   resolved?: unknown;
   /** houki-nta-mcp 固有: DB 内に存在する clause 番号一覧 */
   available_clauses?: unknown;
+  /** houki-nta-mcp 固有: 国税庁サイトから条項を探して取得した（取得を試みた）ページの URL（Issue #54） */
+  searched_urls?: string[];
   /** houki-nta-mcp 固有: DB 内に存在する docId 一覧 */
   available_doc_ids?: unknown;
   /** houki-nta-mcp 固有: ライブ取得 URL が登録されている通達名一覧 */
@@ -99,6 +101,7 @@ export function makeError(
     detail?: LawServiceError['detail'];
     resolved?: unknown;
     available_clauses?: unknown;
+    searched_urls?: string[];
     available_doc_ids?: unknown;
     supported_for_live?: unknown;
     tool?: string;
@@ -116,6 +119,7 @@ export function makeError(
   if (options.available_clauses !== undefined) {
     err.available_clauses = options.available_clauses;
   }
+  if (options.searched_urls !== undefined) err.searched_urls = options.searched_urls;
   if (options.available_doc_ids !== undefined) {
     err.available_doc_ids = options.available_doc_ids;
   }

@@ -213,6 +213,76 @@ function sjisHtmlResponse(fixtureName: string): Response {
   });
 }
 
+/*
+ * 国税庁サイトの応答のモック（houki-nta-mcp#54）。
+ * 存在しないページは 302 で /error/404.htm に転送され、転送先は 200 を返す（2026-09-25 JST に確認）。
+ * fetch を redirect: 'manual' で呼ぶ実装には 302 を、既定（follow）で呼ぶ実装には転送後の応答を返す。
+ */
+const NTA_ORIGIN = 'https://www.nta.go.jp';
+
+function ntaRedirectTo404Response(init?: RequestInit): Response {
+  const errorPageUrl = `${NTA_ORIGIN}/error/404.htm`;
+  if (init?.redirect === 'manual') {
+    return new Response(null, { status: 302, headers: { Location: errorPageUrl } });
+  }
+  const res = new Response(
+    '<html><head><title>ページが見つかりません</title></head><body><p>お探しのページは見つかりませんでした。</p></body></html>',
+    { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } }
+  );
+  Object.defineProperty(res, 'url', { value: errorPageUrl });
+  Object.defineProperty(res, 'redirected', { value: true });
+  return res;
+}
+
+function requestUrl(input: string | URL | Request): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+/**
+ * パス（`/law/tsutatsu/kihon/shohi/01/04.htm` など）ごとにフィクスチャーを返し、
+ * それ以外は otherwise の応答を返す fetch のモック
+ */
+function ntaFetch(
+  pages: Record<string, string>,
+  otherwise: (url: string, init?: RequestInit) => Response
+): typeof fetch {
+  return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const fixture = pages[new URL(url).pathname];
+    return fixture ? sjisHtmlResponse(fixture) : otherwise(url, init);
+  }) as unknown as typeof fetch;
+}
+
+/** fetch のモックが呼ばれた URL のパスの一覧 */
+function fetchedPaths(fetchImpl: typeof fetch): string[] {
+  const calls = (fetchImpl as unknown as { mock: { calls: [string | URL | Request][] } }).mock
+    .calls;
+  return calls.map(([input]) => new URL(requestUrl(input)).pathname);
+}
+
+/** 基本通達 4 種の目次ページのパスとフィクスチャー */
+const TOC_PAGES: Record<string, string> = {
+  '/law/tsutatsu/kihon/shohi/01.htm': 'www.nta.go.jp_law_tsutatsu_kihon_shohi_01.htm',
+  '/law/tsutatsu/kihon/hojin/01.htm': 'www.nta.go.jp_law_tsutatsu_kihon_hojin_01.htm',
+  '/law/tsutatsu/kihon/shotoku/01.htm': 'www.nta.go.jp_law_tsutatsu_kihon_shotoku_01.htm',
+  '/law/tsutatsu/kihon/sisan/sozoku2/01.htm':
+    'www.nta.go.jp_law_tsutatsu_kihon_sisan_sozoku2_01.htm',
+};
+
+/**
+ * 通達に「bulk download で全節取り込んだ」印を付ける（SPEC-NTA-GET-TSUTATSU-005）。
+ * 印の置き場所は houki-hub docs/notes/2026-09-25-design-nta-54-tsutatsu-live-toc.md の 4.5
+ * （tsutatsu 表の bulk_completed_at）に従う。
+ */
+function markBulkCompleted(db: Database.Database, tsutatsuId: number): void {
+  db.prepare('UPDATE tsutatsu SET bulk_completed_at = ? WHERE id = ?').run(
+    '2026-09-01T00:00:00.000Z',
+    tsutatsuId
+  );
+}
+
 describe('getTsutatsu — 引数バリデーション', () => {
   it('SPEC-NTA-GET-TSUTATSU-001 辞書に無い名前はエラー', async () => {
     const r = (await getTsutatsu({ name: '存在しない通達' }, { dbPath: ':memory:' })) as {
@@ -321,9 +391,10 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
   });
 
   it('SPEC-NTA-GET-TSUTATSU-010 ページに存在しない clause は available_clauses を返す', async () => {
-    const fetchImpl = vi.fn(async () =>
+    // 目次（shohi/01.htm）には目次のフィクスチャーを、それ以外の URL には 1-4 節のページを返す
+    const fetchImpl = ntaFetch({ ...TOC_PAGES }, () =>
       sjisHtmlResponse('www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm')
-    ) as unknown as typeof fetch;
+    );
 
     const r = (await getTsutatsu(
       { name: '消基通', clause: '1-4-99' },
@@ -338,9 +409,10 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
     expect(r.available_clauses).toContain('1-4-17');
   });
 
-  it('SPEC-NTA-GET-TSUTATSU-009 国税庁取得失敗（404）はエラー情報を返す', async () => {
+  // 通信の失敗とサイトのエラーは取得の側で再試行してから返すため、既定の 5 秒では足りない
+  it('SPEC-NTA-GET-TSUTATSU-009 国税庁サイトのエラー（500）は再試行できるエラーにする', async () => {
     const fetchImpl = vi.fn(
-      async () => new Response('not found', { status: 404, statusText: 'Not Found' })
+      async () => new Response('server error', { status: 500, statusText: 'Internal Server Error' })
     ) as unknown as typeof fetch;
 
     const r = (await getTsutatsu(
@@ -356,8 +428,8 @@ describe('getTsutatsu — 消基通 1-4-1 を取得（fetchImpl モック）', (
     expect(r.error).toContain('取得に失敗');
     expect(r.code).toBe('SOURCE_API_ERROR');
     expect(r.retryable).toBe(true);
-    expect(r.detail?.status).toBe(404);
-  });
+    expect(r.detail?.status).toBe(500);
+  }, 30_000);
 });
 
 /* -------------------------------------------------------------------------- */
@@ -434,7 +506,7 @@ describe('getTsutatsu — DB lookup 経路（Phase 2d）', () => {
     fs.rmSync(`${tmpFile}-shm`, { force: true });
   });
 
-  it('SPEC-NTA-GET-TSUTATSU-005 DB に通達はあるが該当 clause が無い場合、available_clauses を返す', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-005 bulk download 済みの通達に該当 clause が無い場合、available_clauses を返す', async () => {
     const tmpFile = `/tmp/houki-nta-mcp-test-${Date.now()}-${Math.random()}.db`;
 
     const Database = (await import('better-sqlite3')).default;
@@ -454,15 +526,26 @@ describe('getTsutatsu — DB lookup 経路（Phase 2d）', () => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(tsutatsuId, '1-1-1', 'u', 1, 1, 't', 'f', '[]');
+    markBulkCompleted(seedDb, tsutatsuId);
     seedDb.close();
 
-    const r = (await getTsutatsu({ name: '消基通', clause: '99-99-99' }, { dbPath: tmpFile })) as {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('fetch should NOT be called when the tsutatsu is bulk-downloaded');
+    }) as unknown as typeof fetch;
+
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '99-99-99' },
+      { fetchImpl, dbPath: tmpFile }
+    )) as {
       error?: string;
+      code?: string;
       available_clauses?: string[];
     };
 
     expect(r.error).toContain('99-99-99');
+    expect(r.code).toBe('ARTICLE_NOT_FOUND');
     expect(r.available_clauses).toContain('1-1-1');
+    expect(fetchImpl).not.toHaveBeenCalled();
 
     const fs = await import('node:fs');
     fs.rmSync(tmpFile, { force: true });
@@ -486,6 +569,332 @@ describe('getTsutatsu — DB lookup 経路（Phase 2d）', () => {
     expect(r.clause.clauseNumber).toBe('1-4-1');
     expect(r.source).toBe('live');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* getTsutatsu — 国税庁サイトからの取得の段階 1（houki-nta-mcp#54）             */
+/* 差分: specs/changes/20260925-tsutatsu-live-toc/（005・008・009・入力の全角）   */
+/* -------------------------------------------------------------------------- */
+
+describe('getTsutatsu — SPEC-NTA-GET-TSUTATSU-005 bulk download 済みかどうかで DB の経路を分ける', () => {
+  let dir: string;
+  const SHOHI_01_04 = '/law/tsutatsu/kihon/shohi/01/04.htm';
+  const SHOHI_05_01 = '/law/tsutatsu/kihon/shohi/05/01.htm';
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'houki-nta-issue54-005-'));
+  });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** 消費税法基本通達の条項を DB に直接入れる。bulkCompleted のときだけ bulk download 済みの印を付ける */
+  function seedShohi(dbPath: string, clauses: string[], bulkCompleted: boolean): void {
+    const db = new Database(dbPath);
+    initSchema(db);
+    const tsutatsuId = (
+      db
+        .prepare(
+          `INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?) RETURNING id`
+        )
+        .get('消費税法基本通達', '消基通', `${NTA_ORIGIN}/law/tsutatsu/kihon/shohi/`) as {
+        id: number;
+      }
+    ).id;
+    const insert = db.prepare(
+      `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (const clauseNumber of clauses) {
+      const [chapter, section] = clauseNumber.split('-').map(Number);
+      const pagePath = `${String(chapter).padStart(2, '0')}/${String(section).padStart(2, '0')}.htm`;
+      insert.run(
+        tsutatsuId,
+        clauseNumber,
+        `${NTA_ORIGIN}/law/tsutatsu/kihon/shohi/${pagePath}`,
+        chapter,
+        section,
+        `表題 ${clauseNumber}`,
+        `本文 ${clauseNumber}`,
+        '[]'
+      );
+    }
+    if (bulkCompleted) markBulkCompleted(db, tsutatsuId);
+    db.close();
+  }
+
+  it('SPEC-NTA-GET-TSUTATSU-005 bulk download 済みなら、DB に無い条項は国税庁サイトに取りに行かず ARTICLE_NOT_FOUND', async () => {
+    const dbPath = join(dir, 'bulk-completed.db');
+    seedShohi(dbPath, ['1-1-1', '1-1-2', '5-1-1'], true);
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('fetch should NOT be called when the tsutatsu is bulk-downloaded');
+    }) as unknown as typeof fetch;
+
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1', format: 'json' },
+      { fetchImpl, dbPath }
+    )) as { code?: string; available_clauses?: string[] };
+
+    expect(r.code).toBe('ARTICLE_NOT_FOUND');
+    expect(r.available_clauses).toEqual(expect.arrayContaining(['1-1-1', '1-1-2', '5-1-1']));
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('SPEC-NTA-GET-TSUTATSU-005 bulk download 済みの available_clauses は最大 50 件', async () => {
+    const dbPath = join(dir, 'bulk-completed-60.db');
+    const clauses = Array.from({ length: 60 }, (_, i) => `1-1-${i + 1}`);
+    seedShohi(dbPath, clauses, true);
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('fetch should NOT be called when the tsutatsu is bulk-downloaded');
+    }) as unknown as typeof fetch;
+
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1', format: 'json' },
+      { fetchImpl, dbPath }
+    )) as { code?: string; available_clauses?: string[] };
+
+    expect(r.code).toBe('ARTICLE_NOT_FOUND');
+    expect(r.available_clauses?.length ?? 0).toBeGreaterThan(0);
+    expect(r.available_clauses?.length ?? 0).toBeLessThanOrEqual(50);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('SPEC-NTA-GET-TSUTATSU-005 bulk download 済みでない通達は、DB に条項があっても無い条項を国税庁サイトから取る', async () => {
+    const dbPath = join(dir, 'not-bulk.db');
+    seedShohi(dbPath, ['1-1-1', '5-1-1'], false);
+    const fetchImpl = ntaFetch(
+      { [SHOHI_01_04]: 'www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm', ...TOC_PAGES },
+      (_url, init) => ntaRedirectTo404Response(init)
+    );
+
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1', format: 'json' },
+      { fetchImpl, dbPath }
+    )) as { code?: string; clause?: { clauseNumber: string }; source?: string };
+
+    expect(r.code).toBeUndefined();
+    expect(r.clause?.clauseNumber).toBe('1-4-1');
+    expect(r.source).toBe('live');
+    expect(fetchedPaths(fetchImpl)).toContain(SHOHI_01_04);
+  });
+
+  it('SPEC-NTA-GET-TSUTATSU-005 国税庁サイトから 1 節取って書き戻した後も、同じ通達の別の節を国税庁サイトから取れる', async () => {
+    // #54 の 2 章の再現: 消基通 5-1-9 を取った後の 1-4-1 が ARTICLE_NOT_FOUND になっていた
+    const dbPath = join(dir, 'writeback-then-other-section.db');
+
+    const first = ntaFetch(
+      { [SHOHI_05_01]: 'www.nta.go.jp_law_tsutatsu_kihon_shohi_05_01.htm', ...TOC_PAGES },
+      (_url, init) => ntaRedirectTo404Response(init)
+    );
+    const r1 = (await getTsutatsu(
+      { name: '消基通', clause: '5-1-9', format: 'json' },
+      { fetchImpl: first, dbPath }
+    )) as { clause?: { clauseNumber: string }; source?: string };
+    expect(r1.clause?.clauseNumber).toBe('5-1-9');
+    expect(r1.source).toBe('live');
+
+    const second = ntaFetch(
+      { [SHOHI_01_04]: 'www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm', ...TOC_PAGES },
+      (_url, init) => ntaRedirectTo404Response(init)
+    );
+    const r2 = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1', format: 'json' },
+      { fetchImpl: second, dbPath }
+    )) as { code?: string; clause?: { clauseNumber: string }; source?: string };
+
+    expect(r2.code).toBeUndefined();
+    expect(r2.clause?.clauseNumber).toBe('1-4-1');
+    expect(r2.source).toBe('live');
+    expect(fetchedPaths(second)).toContain(SHOHI_01_04);
+  });
+});
+
+describe('getTsutatsu — SPEC-NTA-GET-TSUTATSU-008 clause を通達ごとの番号の形で読む', () => {
+  /** 番号の形に当たらない clause。国税庁サイトに取りに行った場合もエラーにならないよう、全ページを 404 への転送にする */
+  const notFoundEverywhere = () =>
+    ntaFetch({ ...TOC_PAGES }, (_url, init) => ntaRedirectTo404Response(init));
+
+  const invalidCases: Array<{
+    name: string;
+    clause: string;
+    form: string;
+    examples: string[];
+    mustNotMention?: string;
+  }> = [
+    { name: '消基通', clause: '5-1', form: '章-節-条', examples: ['5-1-9', '1-4-13の2'] },
+    { name: '法基通', clause: 'abc', form: '章-節-条', examples: ['1-1-1', '1-3の2-1'] },
+    {
+      name: '所基通',
+      clause: '5-1-9',
+      form: '条-項',
+      examples: ['34-1', '2-4の2', '23~35共-6'],
+      mustNotMention: '章-節-条',
+    },
+    {
+      name: '相基通',
+      clause: '5-1-9',
+      form: '条-項',
+      examples: ['3-1', '1の3・1の4共-1'],
+      mustNotMention: '章-節-条',
+    },
+  ];
+
+  for (const c of invalidCases) {
+    it(`SPEC-NTA-GET-TSUTATSU-008 ${c.name} の形に当たらない clause（${c.clause}）は INVALID_ARGUMENT で、hint にその通達の番号の形と例を書く`, async () => {
+      const r = (await getTsutatsu(
+        { name: c.name, clause: c.clause, format: 'json' },
+        { fetchImpl: notFoundEverywhere(), dbPath: ':memory:' }
+      )) as { code?: string; hint?: string };
+
+      expect(r.code).toBe('INVALID_ARGUMENT');
+      expect(r.hint).toContain(c.form);
+      expect(c.examples.some((e) => r.hint?.includes(e))).toBe(true);
+      if (c.mustNotMention) expect(r.hint).not.toContain(c.mustNotMention);
+    });
+  }
+
+  // 入力の表の例は、どれも番号の形の検査で拒否しない（取れるかどうかは 006 / 010 の範囲）
+  const validCases: Array<{ name: string; clause: string }> = [
+    { name: '消基通', clause: '5-1-9' },
+    { name: '消基通', clause: '1-4-13の2' },
+    { name: '法基通', clause: '1-1-1' },
+    { name: '法基通', clause: '1-3の2-1' },
+    { name: '法基通', clause: '12の2-1-1' },
+    { name: '所基通', clause: '34-1' },
+    { name: '所基通', clause: '2-4の2' },
+    { name: '所基通', clause: '23~35共-6' },
+    { name: '相基通', clause: '3-1' },
+    { name: '相基通', clause: '1の3・1の4共-1' },
+  ];
+
+  for (const c of validCases) {
+    it(`SPEC-NTA-GET-TSUTATSU-008 ${c.name} の形に当たる clause（${c.clause}）は INVALID_ARGUMENT にしない`, async () => {
+      const r = (await getTsutatsu(
+        { name: c.name, clause: c.clause, format: 'json' },
+        { fetchImpl: notFoundEverywhere(), dbPath: ':memory:' }
+      )) as { code?: string };
+
+      expect(r.code).not.toBe('INVALID_ARGUMENT');
+    });
+  }
+});
+
+describe('getTsutatsu — SPEC-NTA-GET-TSUTATSU-008 入力の表: clause の全角の数字・ハイフンは国税庁サイトから取るときも半角に揃える', () => {
+  const SHOHI_01_04 = '/law/tsutatsu/kihon/shohi/01/04.htm';
+
+  it('SPEC-NTA-GET-TSUTATSU-008 全角の「１－４－１」を DB が空のときも 1-4-1 として国税庁サイトから取る', async () => {
+    const fetchImpl = ntaFetch(
+      { [SHOHI_01_04]: 'www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm', ...TOC_PAGES },
+      (_url, init) => ntaRedirectTo404Response(init)
+    );
+
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '１－４－１', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as { code?: string; clause?: { clauseNumber: string }; source?: string };
+
+    expect(r.code).toBeUndefined();
+    expect(r.clause?.clauseNumber).toBe('1-4-1');
+    expect(r.source).toBe('live');
+    expect(fetchedPaths(fetchImpl)[0]).toBe(SHOHI_01_04);
+  });
+
+  it('SPEC-NTA-GET-TSUTATSU-008 全角の「１－４－１３の２」を 1-4-13の2 として国税庁サイトから取る', async () => {
+    const fetchImpl = ntaFetch(
+      { [SHOHI_01_04]: 'www.nta.go.jp_law_tsutatsu_kihon_shohi_01_04.htm', ...TOC_PAGES },
+      (_url, init) => ntaRedirectTo404Response(init)
+    );
+
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '１－４－１３の２', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as { code?: string; clause?: { clauseNumber: string }; source?: string };
+
+    expect(r.code).toBeUndefined();
+    expect(r.clause?.clauseNumber).toBe('1-4-13の2');
+    expect(r.source).toBe('live');
+  });
+
+  it('SPEC-NTA-GET-TSUTATSU-008 全角の「３４－１」（所基通）は番号の形の検査で拒否しない', async () => {
+    const fetchImpl = ntaFetch({ ...TOC_PAGES }, (_url, init) => ntaRedirectTo404Response(init));
+
+    const r = (await getTsutatsu(
+      { name: '所基通', clause: '３４－１', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as { code?: string };
+
+    expect(r.code).not.toBe('INVALID_ARGUMENT');
+  });
+});
+
+describe('getTsutatsu — SPEC-NTA-GET-TSUTATSU-009 SOURCE_API_ERROR は取得の失敗だけに出す', () => {
+  type SourceError = {
+    code?: string;
+    retryable?: boolean;
+    detail?: { status?: number };
+    next_actions?: unknown[];
+  };
+
+  // 通信の失敗とサイトのエラーは取得の側で再試行してから返すため、既定の 5 秒では足りない
+  it('SPEC-NTA-GET-TSUTATSU-009 国税庁サイトのエラー（503）は retryable な SOURCE_API_ERROR（法基通）', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response('unavailable', { status: 503, statusText: 'Service Unavailable' })
+    ) as unknown as typeof fetch;
+
+    const r = (await getTsutatsu(
+      { name: '法基通', clause: '1-1-1', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as SourceError;
+
+    expect(r.code).toBe('SOURCE_API_ERROR');
+    expect(r.retryable).toBe(true);
+    expect(r.detail?.status).toBe(503);
+    expect(r.next_actions?.length ?? 0).toBeGreaterThan(0);
+  }, 30_000);
+
+  // 通信の失敗とサイトのエラーは取得の側で再試行してから返すため、既定の 5 秒では足りない
+  it('SPEC-NTA-GET-TSUTATSU-009 通信の失敗（fetch が reject）は retryable な SOURCE_API_ERROR', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as SourceError;
+
+    expect(r.code).toBe('SOURCE_API_ERROR');
+    expect(r.retryable).toBe(true);
+    expect(r.next_actions?.length ?? 0).toBeGreaterThan(0);
+  }, 30_000);
+
+  it('SPEC-NTA-GET-TSUTATSU-009 候補ページが 404 のときは SOURCE_API_ERROR にせず ARTICLE_NOT_FOUND（消基通）', async () => {
+    const fetchImpl = ntaFetch(
+      { ...TOC_PAGES },
+      () => new Response('not found', { status: 404, statusText: 'Not Found' })
+    );
+
+    const r = (await getTsutatsu(
+      { name: '消基通', clause: '1-4-1', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as SourceError;
+
+    expect(r.code).toBe('ARTICLE_NOT_FOUND');
+    expect(r.retryable).not.toBe(true);
+  });
+
+  it('SPEC-NTA-GET-TSUTATSU-009 候補ページが国税庁サイトの 404 ページへ転送されるときは SOURCE_API_ERROR にせず ARTICLE_NOT_FOUND（法基通）', async () => {
+    // #54 の再現: 法基通 1-1-1 は存在しない 01/01.htm を取りに行き、retryable な SOURCE_API_ERROR になっていた
+    const fetchImpl = ntaFetch({ ...TOC_PAGES }, (_url, init) => ntaRedirectTo404Response(init));
+
+    const r = (await getTsutatsu(
+      { name: '法基通', clause: '1-1-1', format: 'json' },
+      { fetchImpl, dbPath: ':memory:' }
+    )) as SourceError;
+
+    expect(r.code).toBe('ARTICLE_NOT_FOUND');
+    expect(r.retryable).not.toBe(true);
   });
 });
 

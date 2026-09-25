@@ -30,8 +30,9 @@ import { normalizeClauseNumber, normalizeJpText } from '../services/text-normali
  * - v7: document に orphaned_at を追加（Issue #30: 国税庁の索引から消えた文書に印を付ける）
  * - v8: 文書回答事例の full_text から国税庁サイトの案内文の行を除く（Issue #45: 「←上記照会の内容に対する回答はこちら」）
  * - v9: 改正通達・事務運営指針の full_text からも案内文の行を除く（Issue #45 の続き: 「※PDFファイルが開けない…こちらをご覧ください。」）
+ * - v10: tsutatsu に bulk_completed_at、目次を保存する tsutatsu_toc を追加（Issue #54: 国税庁サイトからの取得を基本通達 4 種で成立させる）
  */
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -47,7 +48,24 @@ CREATE TABLE IF NOT EXISTS tsutatsu (
   id INTEGER PRIMARY KEY,
   formal_name TEXT NOT NULL UNIQUE,         -- 例: '消費税法基本通達'
   abbr TEXT NOT NULL,                       -- 例: '消基通'
-  source_root_url TEXT NOT NULL             -- 例: 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/'
+  source_root_url TEXT NOT NULL,            -- 例: 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/'
+  -- v10 (Issue #54): bulk download が全章を取り終えた日時。章を絞った実行と、
+  -- nta_get_tsutatsu が国税庁サイトから取った節の書き戻しでは書かない。
+  -- NULL の通達は、DB に無い条項を国税庁サイトから取る
+  bulk_completed_at TEXT
+);
+
+-- v10 (Issue #54): 目次ページの解析結果。nta_get_tsutatsu が候補ページを決めるために使い回す。
+-- 使い回す期間は設けず、条項が見つからないときにだけ条件付き取得（If-Modified-Since /
+-- If-None-Match）で取り直す。目次の URL を鍵にするので、世代の移行でルート URL を変えると
+-- 古い目次は使われなくなる
+CREATE TABLE IF NOT EXISTS tsutatsu_toc (
+  url TEXT PRIMARY KEY,                     -- 例: 'https://www.nta.go.jp/law/tsutatsu/kihon/hojin/01.htm'
+  formal_name TEXT NOT NULL,                -- 例: '法人税基本通達'
+  toc_json TEXT NOT NULL,                   -- JSON: TsutatsuToc
+  fetched_at TEXT NOT NULL,
+  last_modified TEXT,
+  etag TEXT
 );
 
 -- 章
@@ -228,6 +246,10 @@ export function initSchema(db: DatabaseT.Database): void {
     migrateV8ToV9(db);
     version = 9;
   }
+  if (version === 9) {
+    migrateV9ToV10(db);
+    version = 10;
+  }
   if (version === SCHEMA_VERSION) {
     setSchemaVersion(db, SCHEMA_VERSION);
     return;
@@ -362,6 +384,42 @@ function migrateV7ToV8(db: DatabaseT.Database): void {
 function migrateV8ToV9(db: DatabaseT.Database): void {
   const tx = db.transaction(() => {
     stripNavigationLines(db, ['kaisei', 'jimu-unei']);
+  });
+  tx();
+}
+
+/**
+ * v9 → v10 マイグレーション（Issue #54: 国税庁サイトからの取得を基本通達 4 種で成立させる）
+ *
+ * `tsutatsu` に `bulk_completed_at` を足す（`tsutatsu_toc` は SCHEMA_SQL の
+ * `CREATE TABLE IF NOT EXISTS` で作られる）。
+ *
+ * 既存の DB には、bulk download で入れた通達と、`nta_get_tsutatsu` が国税庁サイトから
+ * 取って書き戻した節しか無い通達が混ざっている。bulk download が書いた節には
+ * `last_modified` か `etag` が入り、書き戻しの節には入らないので、どちらかが入った節を
+ * 持つ通達を「bulk download 済み」とみなし、その節の `fetched_at` の最大値で埋める。
+ * 国税庁サイトへのアクセスは発生しない。
+ */
+function migrateV9ToV10(db: DatabaseT.Database): void {
+  const tx = db.transaction(() => {
+    const cols = listColumns(db, 'tsutatsu');
+    if (!cols.has('bulk_completed_at')) {
+      db.exec(`ALTER TABLE tsutatsu ADD COLUMN bulk_completed_at TEXT`);
+    }
+    db.exec(`
+      UPDATE tsutatsu
+      SET bulk_completed_at = (
+        SELECT MAX(s.fetched_at) FROM section s
+        WHERE s.tsutatsu_id = tsutatsu.id
+          AND (s.last_modified IS NOT NULL OR s.etag IS NOT NULL)
+      )
+      WHERE bulk_completed_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM section s
+          WHERE s.tsutatsu_id = tsutatsu.id
+            AND (s.last_modified IS NOT NULL OR s.etag IS NOT NULL)
+        )
+    `);
   });
   tx();
 }
@@ -571,6 +629,7 @@ function dropAndRecreate(db: DatabaseT.Database): void {
     DROP TABLE IF EXISTS clause;
     DROP TABLE IF EXISTS section;
     DROP TABLE IF EXISTS chapter;
+    DROP TABLE IF EXISTS tsutatsu_toc;
     DROP TABLE IF EXISTS tsutatsu;
     DROP TABLE IF EXISTS schema_meta;
   `);
@@ -590,6 +649,7 @@ export function clearAllData(db: DatabaseT.Database): void {
     DELETE FROM clause;
     DELETE FROM section;
     DELETE FROM chapter;
+    DELETE FROM tsutatsu_toc;
     DELETE FROM tsutatsu;
     INSERT INTO clause_fts(clause_fts) VALUES ('rebuild');
     INSERT INTO document_fts(document_fts) VALUES ('rebuild');

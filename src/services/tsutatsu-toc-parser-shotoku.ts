@@ -20,7 +20,7 @@ import type { CheerioAPI } from 'cheerio';
 import * as cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 
-import type { TsutatsuToc, TsutatsuTocChapter } from '../types/tsutatsu-toc.js';
+import type { TsutatsuToc, TsutatsuTocChapter, TsutatsuTocSection } from '../types/tsutatsu-toc.js';
 import { TsutatsuParseError } from './tsutatsu-parser.js';
 
 /**
@@ -115,13 +115,22 @@ function extractShotokuChapters(
     const h3 = el;
 
     // 次の h3 までの a[href] を集める（兄弟ノード走査）
-    const seenUrls = new Set<string>();
+    const sectionsByUrl = new Map<string, TsutatsuTocSection>();
     let sectionCounter = 0;
+    // houki-nta-mcp#54: 直前のリンクの無い見出し（`<p>法第2条《定義》関係</p>`）。
+    // 後に続く「〔…〕」の項目は、この見出しの条に属する
+    let groupTitle: string | null = null;
     let node = h3.nextSibling;
     while (node) {
       if (node.type === 'tag') {
         const el = node as Element;
         if (el.tagName === 'h3') break;
+        if (/^h[1-6]$/.test(el.tagName)) {
+          groupTitle = null;
+        } else if (el.tagName === 'p' && $(el).find('a[href]').length === 0) {
+          const t = cleanText($(el).text());
+          if (/関係$/.test(t)) groupTitle = t;
+        }
         // a[href] を探す（直接の a でも、p > a / ul > li > a でも拾う）
         $(el)
           .find('a[href]')
@@ -137,16 +146,26 @@ function extractShotokuChapters(
             if (!normalized.endsWith('.htm') && !normalized.endsWith('.html')) return;
             // 同じ通達ツリー外の URL（footer・menu 等）は除外
             if (!normalized.includes('/law/tsutatsu/kihon/')) return;
-            if (seenUrls.has(normalized)) return;
-            seenUrls.add(normalized);
+
+            const linkText = cleanText($(a).text());
+            // 「〔…〕」の項目は条を示さないので、属する見出しの題を使う
+            const articleTitle = linkText.startsWith('〔') ? groupTitle : linkText;
+
+            const seen = sectionsByUrl.get(normalized);
+            if (seen) {
+              addArticleTitle(seen, articleTitle);
+              return;
+            }
 
             sectionCounter += 1;
-            const linkText = cleanText($(a).text());
-            chapter.sections.push({
+            const section: TsutatsuTocSection = {
               number: sectionCounter,
               title: linkText || `第${sectionCounter}節`,
               url: normalized,
-            });
+            };
+            addArticleTitle(section, articleTitle);
+            sectionsByUrl.set(normalized, section);
+            chapter.sections.push(section);
           });
       }
       node = node.nextSibling;
@@ -158,6 +177,13 @@ function extractShotokuChapters(
   });
 
   return chapters;
+}
+
+/** houki-nta-mcp#54: 条を示す題を重複なしで足す */
+function addArticleTitle(section: TsutatsuTocSection, title: string | null): void {
+  if (!title) return;
+  if (!section.articleTitles) section.articleTitles = [];
+  if (!section.articleTitles.includes(title)) section.articleTitles.push(title);
 }
 
 /** 全角 → 半角を含む整数化 */

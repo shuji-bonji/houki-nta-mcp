@@ -73,6 +73,18 @@ export const TSUTATSU_TOC_STYLES: Readonly<Record<string, TsutatsuTocStyle>> = {
 } as const;
 
 /**
+ * Issue #54: `nta_get_tsutatsu` が国税庁サイトから条項を取るときの上限と間隔。
+ *
+ * - `maxPages`: 1 回の呼び出しで取得する候補ページの上限（目次ページは数えない）。
+ *   法人税基本通達の第 2 章第 3 節の款が 11 ページあり、全節が要るときは `--bulk-download` を案内する
+ * - `pageIntervalMs`: 候補ページとページのあいだの待ち。bulk download の 1.1 秒は全節を連続で取るとき用
+ */
+export const TSUTATSU_LIVE_FETCH = {
+  maxPages: 10,
+  pageIntervalMs: 300,
+} as const;
+
+/**
  * 通達の法的位置付け。`legal_status` フィールドとしてレスポンスに付与する。
  * 最高裁 昭和43.12.24（墓地埋葬法事件）の論理に基づく定義。
  */

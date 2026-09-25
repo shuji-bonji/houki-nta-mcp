@@ -279,7 +279,7 @@ describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入�
 
   it('schema_version が最新になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(9);
+    expect(SCHEMA_VERSION).toBe(10);
   });
 
   it('clause の条番号・題名・本文・段落 JSON が半角になる', () => {
@@ -547,7 +547,7 @@ describe('initSchema — v7 → v8 (Issue #45): 文書回答事例の本文か�
 
   it('schema_version が最新になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(9);
+    expect(SCHEMA_VERSION).toBe(10);
   });
 
   it('本庁系の本文は「以上」で終わり、content_hash は計算し直される', () => {
@@ -664,7 +664,7 @@ describe('initSchema — v8 → v9 (Issue #45 の続き): 改正通達・事務�
 
   it('schema_version が最新になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(9);
+    expect(SCHEMA_VERSION).toBe(10);
   });
 
   it('改正通達の本文から案内文が消え、content_hash は計算し直される', () => {
@@ -701,5 +701,88 @@ describe('initSchema — v8 → v9 (Issue #45 の続き): 改正通達・事務�
     initSchema(db);
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
     expect(selectDoc('0026003-067')).toEqual(before);
+  });
+});
+
+describe('initSchema — v9 → v10 (Issue #54): bulk download 済みの印と目次の保存', () => {
+  let db: DatabaseT.Database;
+
+  /**
+   * v10 のスキーマに通達を 2 つ置き、v9 の形（bulk_completed_at 列と tsutatsu_toc 表が無い）に戻す。
+   * 消基通は bulk download が書いた節（last_modified / etag あり）、所基通は国税庁サイトから取って
+   * 書き戻した節（どちらも無い）だけを持つ
+   */
+  function seedV9Database(): void {
+    initSchema(db);
+    const insertTsutatsu = db.prepare(
+      `INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?) RETURNING id`
+    );
+    const shohi = (
+      insertTsutatsu.get(
+        '消費税法基本通達',
+        '消基通',
+        'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/'
+      ) as { id: number }
+    ).id;
+    const shotoku = (
+      insertTsutatsu.get(
+        '所得税基本通達',
+        '所基通',
+        'https://www.nta.go.jp/law/tsutatsu/kihon/shotoku/'
+      ) as { id: number }
+    ).id;
+    const insertSection = db.prepare(
+      `INSERT INTO section(tsutatsu_id, chapter_number, section_number, title, url, fetched_at, last_modified, etag)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    insertSection.run(shohi, 1, 1, '第1節', 'u1', '2026-09-01T00:00:00.000Z', 'lm', null);
+    insertSection.run(shohi, 1, 2, '第2節', 'u2', '2026-09-02T00:00:00.000Z', null, '"e"');
+    insertSection.run(shotoku, 4, 5, '法第31条関係', 'u3', '2026-09-03T00:00:00.000Z', null, null);
+    db.exec('DROP TABLE tsutatsu_toc');
+    db.exec('ALTER TABLE tsutatsu DROP COLUMN bulk_completed_at');
+    db.prepare(`UPDATE schema_meta SET value = '9' WHERE key = 'schema_version'`).run();
+  }
+
+  function bulkCompletedAt(formalName: string): string | null {
+    return (
+      db
+        .prepare('SELECT bulk_completed_at AS at FROM tsutatsu WHERE formal_name = ?')
+        .get(formalName) as { at: string | null }
+    ).at;
+  }
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    seedV9Database();
+    initSchema(db); // v9 と判定され migrateV9ToV10 が走る
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  it('schema_version が最新になる', () => {
+    expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
+    expect(SCHEMA_VERSION).toBe(10);
+  });
+
+  it('bulk download が書いた節を持つ通達は、その節の fetched_at の最大値で bulk_completed_at が埋まる', () => {
+    expect(bulkCompletedAt('消費税法基本通達')).toBe('2026-09-02T00:00:00.000Z');
+  });
+
+  it('書き戻した節しか無い通達の bulk_completed_at は NULL のまま', () => {
+    expect(bulkCompletedAt('所得税基本通達')).toBeNull();
+  });
+
+  it('tsutatsu_toc 表ができる', () => {
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tsutatsu_toc'")
+      .all();
+    expect(tables).toHaveLength(1);
+  });
+
+  it('もう一度開いても何も変わらない（冪等）', () => {
+    initSchema(db);
+    expect(bulkCompletedAt('消費税法基本通達')).toBe('2026-09-02T00:00:00.000Z');
+    expect(bulkCompletedAt('所得税基本通達')).toBeNull();
   });
 });

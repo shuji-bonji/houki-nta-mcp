@@ -479,6 +479,17 @@ export function hasAnyClause(db: DatabaseT.Database, formalName?: string): boole
 }
 
 /**
+ * Issue #54: その通達を bulk download で全章取り込んであるか（`tsutatsu.bulk_completed_at`）。
+ * 国税庁サイトから取って書き戻した節しか無い通達は false
+ */
+export function isBulkCompleted(db: DatabaseT.Database, formalName: string): boolean {
+  const row = db
+    .prepare(`SELECT bulk_completed_at AS at FROM tsutatsu WHERE formal_name = ?`)
+    .get(formalName) as { at: string | null } | undefined;
+  return Boolean(row?.at);
+}
+
+/**
  * Issue #23 (v0.13.0): その種別の文書が持つ taxonomy（税目フォルダ）の一覧を返す。
  * 絞り込んだ範囲に文書が無いときに、指定できる値を応答で示すために使う。
  */
