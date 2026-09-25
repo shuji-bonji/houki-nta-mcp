@@ -31,7 +31,7 @@ describe('search 系 (Phase 3c で本実装)', () => {
     expect(r.hint).toContain('--bulk-download-qa');
   });
 
-  it('nta_search_tax_answer: 空 DB は DOC_NOT_FOUND + --bulk-download-tax-answer', async () => {
+  it('SPEC-NTA-SEARCH-TAX-ANSWER-001 nta_search_tax_answer: 空 DB は DOC_NOT_FOUND + --bulk-download-tax-answer', async () => {
     const r = (await handleNtaSearchTaxAnswer(
       { keyword: '医療費控除' },
       { dbPath: ':memory:' }

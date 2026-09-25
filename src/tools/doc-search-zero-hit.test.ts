@@ -92,7 +92,7 @@ describe('文書系の検索: その種別の文書が DB に 1 件も無いと�
   ] as const;
 
   for (const [tool, flag, call] of cases) {
-    it(`SPEC-NTA-SEARCH-BUNSHOKAITOU-001 SPEC-NTA-SEARCH-JIMU-UNEI-001 SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 ${tool}: code=DOC_NOT_FOUND、next_actions に ${flag}、hint に DB のパス`, async () => {
+    it(`SPEC-NTA-SEARCH-TAX-ANSWER-001 SPEC-NTA-SEARCH-BUNSHOKAITOU-001 SPEC-NTA-SEARCH-JIMU-UNEI-001 SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 ${tool}: code=DOC_NOT_FOUND、next_actions に ${flag}、hint に DB のパス`, async () => {
       const r = (await call()) as ZeroHitResponse;
       expect(r.code).toBe('DOC_NOT_FOUND');
       expect(r.tool).toBe(tool);
@@ -177,7 +177,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.freshness?.staleness).toBe('fresh');
   });
 
-  it('nta_search_qa: 他の種別だけが入っている DB（qa のみ）でタックスアンサーを検索すると DOC_NOT_FOUND', async () => {
+  it('SPEC-NTA-SEARCH-TAX-ANSWER-001 nta_search_qa: 他の種別だけが入っている DB（qa のみ）でタックスアンサーを検索すると DOC_NOT_FOUND', async () => {
     const r = (await handleNtaSearchTaxAnswer(
       { keyword: '医療費控除' },
       { dbPath: qaOnlyPath }
@@ -243,7 +243,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.hint).toContain('hasPdf を外して');
   });
 
-  it('nta_search_tax_answer: キーワードに合わないときは成功で「該当なし」', async () => {
+  it('SPEC-NTA-SEARCH-TAX-ANSWER-002 nta_search_tax_answer: キーワードに合わないときは成功で「該当なし」', async () => {
     const r = (await handleNtaSearchTaxAnswer(
       { keyword: '医療費控除' },
       { dbPath }
