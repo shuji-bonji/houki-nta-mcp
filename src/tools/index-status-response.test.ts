@@ -49,7 +49,7 @@ afterEach(() => {
 });
 
 describe('nta_search_jimu_unei — 索引から消えた文書の扱い', () => {
-  it('検索結果から除外せず、印と件数の注記を付ける', async () => {
+  it('SPEC-NTA-SEARCH-JIMU-UNEI-003 SPEC-NTA-SEARCH-JIMU-UNEI-004 検索結果から除外せず、印と件数の注記を付ける', async () => {
     const r = (await handleNtaSearchJimuUnei({ keyword: '源泉徴収' }, { dbPath })) as {
       results: Array<{ docId: string; index_status?: string; orphaned_at?: string }>;
       search_notes?: string[];

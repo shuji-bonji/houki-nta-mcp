@@ -92,7 +92,7 @@ describe('文書系の検索: その種別の文書が DB に 1 件も無いと�
   ] as const;
 
   for (const [tool, flag, call] of cases) {
-    it(`SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 ${tool}: code=DOC_NOT_FOUND、next_actions に ${flag}、hint に DB のパス`, async () => {
+    it(`SPEC-NTA-SEARCH-JIMU-UNEI-001 SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 ${tool}: code=DOC_NOT_FOUND、next_actions に ${flag}、hint に DB のパス`, async () => {
       const r = (await call()) as ZeroHitResponse;
       expect(r.code).toBe('DOC_NOT_FOUND');
       expect(r.tool).toBe(tool);
@@ -284,7 +284,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.hint).toContain('該当なし');
   });
 
-  it('nta_search_jimu_unei: キーワードに合わないときは成功で「該当なし」', async () => {
+  it('SPEC-NTA-SEARCH-JIMU-UNEI-002 nta_search_jimu_unei: キーワードに合わないときは成功で「該当なし」', async () => {
     const r = (await handleNtaSearchJimuUnei(
       { keyword: '滞納処分' },
       { dbPath }
