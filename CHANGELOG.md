@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.21.0] - 2026-09-26
 
-**minor リリース** — `nta_get_tsutatsu` が、DB に無い条項を基本通達 4 種とも国税庁サイトから取れるようにした（#54）。これまで国税庁サイトから取れたのは消費税法基本通達だけで、法人税基本通達は存在しない URL を取りに行って `SOURCE_API_ERROR`、所得税・相続税法基本通達は `INVALID_ARGUMENT` になっていた。また、国税庁サイトから 1 節取って書き戻すと、同じ通達の他の節が `ARTICLE_NOT_FOUND` になって取れなくなっていた。仕様の差分は `specs/changes/20260925-tsutatsu-live-toc/`（承認 2026-09-25、PR #59）、設計は houki-hub `docs/notes/2026-09-25-design-nta-54-tsutatsu-live-toc.md` の 4 章・6 章。DB は起動時に schema v10 へ移行し、再ダウンロードは要らない。
+**minor リリース** — `nta_get_tsutatsu` が、DB に無い条項を基本通達 4 種とも国税庁サイトから取れるようにした（#54）。これまで国税庁サイトから取れたのは消費税法基本通達だけで、法人税基本通達は存在しない URL を取りに行って `SOURCE_API_ERROR`、所得税・相続税法基本通達は `INVALID_ARGUMENT` になっていた。また、国税庁サイトから 1 節取って書き戻すと、同じ通達の他の節が `ARTICLE_NOT_FOUND` になって取れなくなっていた。仕様の差分は `specs/releases/v0.21.0/20260925-tsutatsu-live-toc/`（承認 2026-09-25、PR #59）、設計は houki-hub `docs/notes/2026-09-25-design-nta-54-tsutatsu-live-toc.md` の 4 章・6 章。DB は起動時に schema v10 へ移行し、再ダウンロードは要らない。
 
 ### Changed
 
