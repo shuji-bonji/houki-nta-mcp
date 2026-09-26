@@ -106,7 +106,7 @@ describe('searchTsutatsu — Issue #18: 2 文字語の応答に search_notes を
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('SPEC-NTA-SEARCH-TSUTATSU-004 SPEC-NTA-SEARCH-TSUTATSU-006 2 文字語でヒットしたときは hits と search_notes の両方を返す', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-004 SPEC-NTA-SEARCH-TSUTATSU-006 SPEC-NTA-SEARCH-RULES-003 SPEC-NTA-SEARCH-RULES-006 2 文字語でヒットしたときは hits と search_notes の両方を返す', async () => {
     const r = (await searchTsutatsu({ keyword: '役員' }, { dbPath })) as {
       count?: number;
       hits: Array<{ clauseNumber: string; snippet: string }>;
@@ -118,7 +118,7 @@ describe('searchTsutatsu — Issue #18: 2 文字語の応答に search_notes を
     expect(r.search_notes?.[0]).toContain('LIKE');
   });
 
-  it('SPEC-NTA-SEARCH-TSUTATSU-005 SPEC-NTA-SEARCH-TSUTATSU-006 2 文字語で 0 件のときも search_notes で仕様起因と分かる', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-005 SPEC-NTA-SEARCH-TSUTATSU-006 SPEC-NTA-SEARCH-RULES-006 2 文字語で 0 件のときも search_notes で仕様起因と分かる', async () => {
     const r = (await searchTsutatsu({ keyword: '社宅' }, { dbPath })) as {
       hits: unknown[];
       message?: string;
@@ -129,7 +129,7 @@ describe('searchTsutatsu — Issue #18: 2 文字語の応答に search_notes を
     expect(r.search_notes?.[0]).toContain('3 文字未満');
   });
 
-  it('SPEC-NTA-SEARCH-TSUTATSU-007 3 文字以上の語だけなら search_notes は付かない', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-007 SPEC-NTA-SEARCH-RULES-006 3 文字以上の語だけなら search_notes は付かない', async () => {
     const r = (await searchTsutatsu({ keyword: '経営に従事' }, { dbPath })) as {
       count?: number;
       search_notes?: string[];
@@ -1619,7 +1619,7 @@ describe('Issue #21: 通称を 0 件のため展開したときだけ search_not
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('SPEC-NTA-SEARCH-TSUTATSU-008 元の語で当たるとき: 展開せず、注記も付けない', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-008 SPEC-NTA-SEARCH-RULES-010 元の語で当たるとき: 展開せず、注記も付けない', async () => {
     const r = (await searchTsutatsu({ keyword: '適格請求書発行事業者' }, { dbPath })) as {
       hits: Array<{ clauseNumber: string }>;
       search_notes?: string[];
@@ -1628,7 +1628,7 @@ describe('Issue #21: 通称を 0 件のため展開したときだけ search_not
     expect(r.search_notes).toBeUndefined();
   });
 
-  it('SPEC-NTA-SEARCH-TSUTATSU-008 元の語で 0 件のとき: 法令名に広げ、search_notes で知らせる', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-008 SPEC-NTA-SEARCH-RULES-010 元の語で 0 件のとき: 法令名に広げ、search_notes で知らせる', async () => {
     const r = (await searchTsutatsu({ keyword: 'インボイス' }, { dbPath })) as {
       hits: Array<{ clauseNumber: string }>;
       search_notes?: string[];

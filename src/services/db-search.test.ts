@@ -61,13 +61,13 @@ describe('sanitizeFtsQuery', () => {
     expect(sanitizeFtsQuery('納税義務')).toBe('"納税義務"');
   });
 
-  it('複数語は AND 結合', () => {
+  it('SPEC-NTA-SEARCH-RULES-001 SPEC-NTA-SEARCH-RULES-008 複数語は AND 結合', () => {
     expect(sanitizeFtsQuery('課税仕入 売上高')).toBe('"課税仕入" AND "売上高"');
     expect(sanitizeFtsQuery('課税仕入  売上高')).toBe('"課税仕入" AND "売上高"'); // 連続スペース
     expect(sanitizeFtsQuery('課税仕入　売上高')).toBe('"課税仕入" AND "売上高"'); // 全角スペース
   });
 
-  it('FTS5 メタ文字を除去', () => {
+  it('SPEC-NTA-SEARCH-RULES-001 FTS5 メタ文字を除去', () => {
     expect(sanitizeFtsQuery('"消費税"*:()軽減税率')).toBe('"消費税" AND "軽減税率"');
   });
 
@@ -77,7 +77,7 @@ describe('sanitizeFtsQuery', () => {
     expect(sanitizeFtsQuery('a')).toBe('');
   });
 
-  it('Issue #18: 3 文字未満の語は trigram に乗らないので MATCH 式から外す', () => {
+  it('SPEC-NTA-SEARCH-RULES-002 Issue #18: 3 文字未満の語は trigram に乗らないので MATCH 式から外す', () => {
     expect(sanitizeFtsQuery('役員')).toBe('');
     expect(sanitizeFtsQuery('課税 売上')).toBe('');
     expect(sanitizeFtsQuery('役員 退職給与')).toBe('"退職給与"');
@@ -85,7 +85,7 @@ describe('sanitizeFtsQuery', () => {
 });
 
 describe('analyzeKeyword / describeSearchNotes — Issue #18', () => {
-  it('語の長さで fts / short / dropped に振り分ける', () => {
+  it('SPEC-NTA-SEARCH-RULES-002 SPEC-NTA-SEARCH-RULES-005 語の長さで fts / short / dropped に振り分ける', () => {
     expect(analyzeKeyword('役員 退職給与 a')).toEqual({
       ftsTokens: ['退職給与'],
       shortTokens: ['役員'],
@@ -94,11 +94,11 @@ describe('analyzeKeyword / describeSearchNotes — Issue #18', () => {
     expect(analyzeKeyword('')).toEqual({ ftsTokens: [], shortTokens: [], droppedTokens: [] });
   });
 
-  it('3 文字以上だけなら注記なし', () => {
+  it('SPEC-NTA-SEARCH-RULES-006 3 文字以上だけなら注記なし', () => {
     expect(describeSearchNotes('軽減税率')).toEqual([]);
   });
 
-  it('2 文字語だけなら LIKE で検索した旨と再検索の推奨を返す', () => {
+  it('SPEC-NTA-SEARCH-RULES-006 2 文字語だけなら LIKE で検索した旨と再検索の推奨を返す', () => {
     const notes = describeSearchNotes('役員');
     expect(notes).toHaveLength(1);
     expect(notes[0]).toContain('"役員"');
@@ -106,20 +106,20 @@ describe('analyzeKeyword / describeSearchNotes — Issue #18', () => {
     expect(notes[0]).toContain('3 文字以上');
   });
 
-  it('2 文字語 + 3 文字以上の語なら絞り込みに使った旨を返す', () => {
+  it('SPEC-NTA-SEARCH-RULES-006 2 文字語 + 3 文字以上の語なら絞り込みに使った旨を返す', () => {
     const notes = describeSearchNotes('役員 退職給与');
     expect(notes).toHaveLength(1);
     expect(notes[0]).toContain('絞り込み');
   });
 
-  it('1 文字語は外した旨を返す', () => {
+  it('SPEC-NTA-SEARCH-RULES-005 SPEC-NTA-SEARCH-RULES-006 1 文字語は外した旨を返す', () => {
     const notes = describeSearchNotes('軽減税率 a');
     expect(notes).toHaveLength(1);
     expect(notes[0]).toContain('"a"');
     expect(notes[0]).toContain('1 文字');
   });
 
-  it('makeLikeSnippet は最初の一致語の前後を <b> で囲んで返す', () => {
+  it('SPEC-NTA-SEARCH-RULES-003 makeLikeSnippet は最初の一致語の前後を <b> で囲んで返す', () => {
     const text = `${'あ'.repeat(30)}役員${'い'.repeat(30)}`;
     const snip = makeLikeSnippet(text, ['役員'], 4);
     expect(snip).toBe(' … ああああ<b>役員</b>いいいい … ');
@@ -179,7 +179,7 @@ describe('searchClauseFts / searchDocumentFts — Issue #18: 2 文字語の LIKE
     db.close();
   });
 
-  it('2 文字語だけのクエリは trigram では 0 件になるが、LIKE 補完でヒットする', () => {
+  it('SPEC-NTA-SEARCH-RULES-003 2 文字語だけのクエリは trigram では 0 件になるが、LIKE 補完でヒットする', () => {
     // 前提の確認: FTS5 trigram は 2 文字語を索引しない
     const ftsCount = db
       .prepare(`SELECT COUNT(*) AS n FROM clause_fts WHERE clause_fts MATCH ?`)
@@ -192,7 +192,7 @@ describe('searchClauseFts / searchDocumentFts — Issue #18: 2 文字語の LIKE
     expect(hits[0].scoreReasons?.some((r) => r.includes('short token search'))).toBe(true);
   });
 
-  it('2 文字語 + 3 文字以上の語は FTS ヒットを 2 文字語で絞り込む (AND)', () => {
+  it('SPEC-NTA-SEARCH-RULES-001 SPEC-NTA-SEARCH-RULES-004 2 文字語 + 3 文字以上の語は FTS ヒットを 2 文字語で絞り込む (AND)', () => {
     const hits = searchClauseFts(db, '退職給与 役員');
     expect(hits.map((h) => h.clauseNumber)).toEqual(['9-2-27']);
     expect(hits[0].scoreReasons?.some((r) => r.includes('short token filter'))).toBe(true);
@@ -205,12 +205,12 @@ describe('searchClauseFts / searchDocumentFts — Issue #18: 2 文字語の LIKE
     expect(searchClauseFts(db, '役員', { formalName: '所得税基本通達' })).toEqual([]);
   });
 
-  it('LIKE のメタ文字 (% _) はリテラルとして扱う', () => {
+  it('SPEC-NTA-SEARCH-RULES-003 LIKE のメタ文字 (% _) はリテラルとして扱う', () => {
     expect(searchClauseFts(db, '%%')).toEqual([]);
     expect(searchClauseFts(db, '__')).toEqual([]);
   });
 
-  it('document 側も 2 文字語を LIKE で補完し、docType / taxonomy フィルタが効く', () => {
+  it('SPEC-NTA-SEARCH-RULES-003 document 側も 2 文字語を LIKE で補完し、docType / taxonomy フィルタが効く', () => {
     const hits = searchDocumentFts(db, '役員', { docType: 'qa-jirei' });
     expect(hits.map((h) => h.docId)).toEqual(['qa-1']);
     expect(hits[0].snippet).toContain('<b>役員</b>');
@@ -218,7 +218,7 @@ describe('searchClauseFts / searchDocumentFts — Issue #18: 2 文字語の LIKE
     expect(searchDocumentFts(db, '役員', { taxonomy: 'hojin' })).toEqual([]);
   });
 
-  it('1 文字語だけのクエリは検索せず空配列', () => {
+  it('SPEC-NTA-SEARCH-RULES-005 1 文字語だけのクエリは検索せず空配列', () => {
     expect(searchClauseFts(db, 'a')).toEqual([]);
     expect(searchDocumentFts(db, 'a')).toEqual([]);
   });
@@ -489,7 +489,7 @@ describe('searchClauseFts — Phase 6-1 relevance ranking', () => {
     db.close();
   });
 
-  it('返り値に score と scoreReasons が含まれる', () => {
+  it('SPEC-NTA-SEARCH-RULES-012 返り値に score と scoreReasons が含まれる', () => {
     const hits = searchClauseFts(db, '請求対価');
     expect(hits.length).toBeGreaterThan(0);
     for (const h of hits) {
@@ -499,7 +499,7 @@ describe('searchClauseFts — Phase 6-1 relevance ranking', () => {
     }
   });
 
-  it('clause 番号を含むクエリは該当 clause が 1 位に来る', () => {
+  it('SPEC-NTA-SEARCH-RULES-013 clause 番号を含むクエリは該当 clause が 1 位に来る', () => {
     // BM25 だけでは "5-1-9" 含む clause がトップとは限らないが、boost で 1 位になるべき
     const hits = searchClauseFts(db, '5-1-9 請求対価');
     expect(hits.length).toBeGreaterThan(0);
@@ -507,7 +507,7 @@ describe('searchClauseFts — Phase 6-1 relevance ranking', () => {
     expect(hits[0].scoreReasons).toContain('clause exact match');
   });
 
-  it('score 降順で並ぶ', () => {
+  it('SPEC-NTA-SEARCH-RULES-014 score 降順で並ぶ', () => {
     const hits = searchClauseFts(db, '請求対価');
     for (let i = 1; i < hits.length; i++) {
       expect(hits[i - 1].score!).toBeGreaterThanOrEqual(hits[i].score!);
@@ -535,7 +535,7 @@ describe('searchClauseFts — Phase 6-1 abbreviation expansion', () => {
     db.close();
   });
 
-  it('"消基通" で検索すると formal_name 経由でヒットする (abbreviation expansion)', () => {
+  it('SPEC-NTA-SEARCH-RULES-009 "消基通" で検索すると formal_name 経由でヒットする (abbreviation expansion)', () => {
     // fullText には "消基通" は含まれていないが、"消費税法基本通達" は含まれる
     const hits = searchClauseFts(db, '消基通');
     expect(hits.length).toBeGreaterThan(0);
@@ -573,7 +573,7 @@ describe('searchClauseFts — Issue #14: houki-egov 管轄エントリ経由の�
     db.close();
   });
 
-  it('"インボイス" で検索すると消費税法経由で OR 展開されヒットする', () => {
+  it('SPEC-NTA-SEARCH-RULES-010 "インボイス" で検索すると消費税法経由で OR 展開されヒットする', () => {
     // houki-abbreviations v0.4.0+ では「インボイス」は消費税法エントリの alias
     // 消費税法エントリは source_mcp_hint=houki-egov だが、v0.9.2 で許可リストに含まれる
     const hits = searchClauseFts(db, 'インボイス');
@@ -589,19 +589,19 @@ describe('searchClauseFts — Issue #14: houki-egov 管轄エントリ経由の�
 /* -------------------------------------------------------------------------- */
 
 describe('buildFtsQueryWithAbbreviation — Issue #21: expansionKind', () => {
-  it('略称そのもの ("消基通" / "消法") は abbreviation', () => {
+  it('SPEC-NTA-SEARCH-RULES-009 略称そのもの ("消基通" / "消法") は abbreviation', () => {
     expect(buildFtsQueryWithAbbreviation('消基通').expansionKind).toBe('abbreviation');
     expect(buildFtsQueryWithAbbreviation('消法').expansionKind).toBe('abbreviation');
   });
 
-  it('通称 ("適格請求書発行事業者" / "インボイス") は alias', () => {
+  it('SPEC-NTA-SEARCH-RULES-010 通称 ("適格請求書発行事業者" / "インボイス") は alias', () => {
     const b = buildFtsQueryWithAbbreviation('適格請求書発行事業者');
     expect(b.expansionKind).toBe('alias');
     expect(b.expandedTo).toBe('消費税法');
     expect(buildFtsQueryWithAbbreviation('インボイス').expansionKind).toBe('alias');
   });
 
-  it('辞書に無い語は展開しない', () => {
+  it('SPEC-NTA-SEARCH-RULES-009 辞書に無い語は展開しない', () => {
     expect(buildFtsQueryWithAbbreviation('使用人兼務役員').expansionKind).toBeUndefined();
   });
 });
@@ -642,7 +642,7 @@ describe('searchClauseFts — Issue #21: 通称の展開は 0 件のときだけ
     db.close();
   });
 
-  it('元の語で当たるときは展開しない（「消費税法」だけの条項が混ざらない）', () => {
+  it('SPEC-NTA-SEARCH-RULES-010 元の語で当たるときは展開しない（「消費税法」だけの条項が混ざらない）', () => {
     const { hits, expansion } = searchClauseFtsWithExpansion(db, '適格請求書発行事業者');
     expect(hits.map((h) => h.clauseNumber)).toEqual(['1-7-2']);
     expect(expansion).toBeUndefined();
@@ -650,7 +650,7 @@ describe('searchClauseFts — Issue #21: 通称の展開は 0 件のときだけ
     expect(describeExpansionNotes(expansion)).toEqual([]);
   });
 
-  it('元の語で 0 件のときは展開し、alias として返す（Issue #14 の回帰防止: インボイス）', () => {
+  it('SPEC-NTA-SEARCH-RULES-010 元の語で 0 件のときは展開し、alias として返す（Issue #14 の回帰防止: インボイス）', () => {
     const { hits, expansion } = searchClauseFtsWithExpansion(db, 'インボイス');
     expect(hits.length).toBeGreaterThan(0);
     expect(expansion).toEqual({ from: 'インボイス', to: '消費税法', kind: 'alias' });
@@ -661,7 +661,7 @@ describe('searchClauseFts — Issue #21: 通称の展開は 0 件のときだけ
     expect(notes[0]).toContain('"消費税法" を含む文書に広げて検索しました');
   });
 
-  it('略称そのもの（消基通）は元の語で当たっても従来どおり展開する', () => {
+  it('SPEC-NTA-SEARCH-RULES-009 略称そのもの（消基通）は元の語で当たっても従来どおり展開する', () => {
     const { hits, expansion } = searchClauseFtsWithExpansion(db, '消基通');
     // "消基通" を含むのは 1-1-1 だけだが、"消費税法基本通達" でも当たる（同じ 1-1-1）
     expect(hits.map((h) => h.clauseNumber)).toContain('1-1-1');
@@ -698,7 +698,7 @@ describe('searchDocumentFts — Issue #21: 通称の展開は 0 件のときだ�
     db.close();
   });
 
-  it('元の語で当たるときは「消費税法」だけの事例を返さない', () => {
+  it('SPEC-NTA-SEARCH-RULES-010 元の語で当たるときは「消費税法」だけの事例を返さない', () => {
     const { hits, expansion } = searchDocumentFtsWithExpansion(db, '適格請求書発行事業者', {
       limit: 15,
     });
@@ -706,7 +706,7 @@ describe('searchDocumentFts — Issue #21: 通称の展開は 0 件のときだ�
     expect(expansion).toBeUndefined();
   });
 
-  it('元の語で 0 件のときは展開して「消費税法」を含む事例を返す', () => {
+  it('SPEC-NTA-SEARCH-RULES-010 元の語で 0 件のときは展開して「消費税法」を含む事例を返す', () => {
     const { hits, expansion } = searchDocumentFtsWithExpansion(db, 'インボイス');
     expect(hits.map((h) => h.docId).sort()).toEqual(['shohi/15/01']);
     expect(expansion?.kind).toBe('alias');

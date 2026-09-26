@@ -174,7 +174,7 @@ describe('markOrphanedDocuments', () => {
 });
 
 describe('検索と取得が印を読む', () => {
-  it('検索結果に orphanedAt が乗り、除外はされない', () => {
+  it('SPEC-NTA-SEARCH-RULES-011 検索結果に orphanedAt が乗り、除外はされない', () => {
     seed({ docId: 'A', title: '現行の指針', sourceUrl: 'https://example.com/a.htm' });
     seed({ docId: 'B', title: '消えた指針', sourceUrl: 'https://example.com/b.htm' });
     markOrphanedDocuments(db, 'jimu-unei', {

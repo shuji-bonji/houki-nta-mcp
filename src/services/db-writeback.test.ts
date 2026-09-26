@@ -86,7 +86,7 @@ describe('writeBackLiveSection', () => {
     expect(got!.title).toBe('v2');
   });
 
-  it('全角ハイフン・全角チルダ・全角数字は normalize されて格納される', () => {
+  it('SPEC-NTA-SEARCH-RULES-007 全角ハイフン・全角チルダ・全角数字は normalize されて格納される', () => {
     writeBackLiveSection(db, {
       formalName: '消費税法基本通達',
       abbr: '消基通',

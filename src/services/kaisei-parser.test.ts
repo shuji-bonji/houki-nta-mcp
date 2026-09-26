@@ -46,7 +46,7 @@ describe('parseKaiseiPage — 消基通 令和8年4月1日改正', () => {
     expect(doc.issuer).toContain('国税庁長官');
   });
 
-  it('本文 (fullText) は normalize 済み（全角ハイフンが ASCII 化）', () => {
+  it('SPEC-NTA-SEARCH-RULES-007 本文 (fullText) は normalize 済み（全角ハイフンが ASCII 化）', () => {
     // fixture の課税局番号は全角ハイフン「課消２－11」が含まれる → 「課消2-11」に正規化
     expect(doc.fullText).toContain('課消2-11');
     expect(doc.fullText.length).toBeGreaterThan(100);
