@@ -171,11 +171,13 @@ DB に入っている PDF に `kind` が無い（v0.6.0 期に投入した文書
 
 初版起こしで見つけた、意図か不具合かを人が決める項目です。決まったら「できること」に ID を振るか、`specs/changes/` の差分にします。
 
-1. **索引から消えた文書の印が付かない。** `nta_get_jimu_unei` などの `nta_get_*` は、国税庁の索引から外れた文書に `index_status: "removed_from_index"`・`orphaned_at`・`notice` を付けるが、このツールの応答には付かない。PDF の URL も消えている可能性があるので付けるか、一覧だけの応答なので付けないか。
+意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
+
+1. **索引から消えた文書の印が付かない。** → houki-nta-mcp #71
 2. **`legal_status` の docType 別の出し分け。** `kaisei` / `jimu-unei` は通達の位置付け（`binds_tax_office: true`）、`bunshokaitou` は文書回答事例の位置付け、`tax-answer` は解説資料の位置付けを返す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 3. **`read_strategy` が `sample` の PDF を保存したときの `next_actions`** は `pdf-reader-mcp:summarize`（`example` は `{ file_path }`）になる。テストは `unknown` の PDF の保存に失敗する経路しか無い。ID を振るのは受入テストを書いてから。
 4. **保存に失敗する条件のうち HTTP 404 以外**（応答が PDF でない: `Content-Type` が `application/pdf` でなく先頭が `%PDF-` でもない、50MB を超える、30 秒のタイムアウト、ネットワークの例外）は、`saved[].error` に理由を書いて残す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-5. **`save: true` で絞った結果が 0 件のとき `saved` を付けない。** `saved: []` ではなく、フィールドごと無い。`save: true` を渡した呼び出しの応答としては `saved: []` の方が読みやすいか。テストも無い。
-6. **保存ファイル名は URL の最後のパス要素だけで決める。** 同じ文書の中で最後の要素が同じ別の URL（例: 別のディレクトリの `01.pdf`）があると、2 つ目は取得せずに 1 つ目のファイルを `cached: true` で返す。国税庁の URL でこの衝突が起きるかどうかを含めて、意図か不具合か。
+5. **`save: true` で絞った結果が 0 件のとき `saved` を付けない。** → houki-nta-mcp #71
+6. **保存ファイル名は URL の最後のパス要素だけで決める。** → houki-nta-mcp #73
 7. **DB の添付 PDF の記録が壊れている（JSON として読めない）文書**は、エラーにせず `attachedPdfs: []` で返す。テストが無い。ID を振るのは受入テストを書いてから。
 8. **`docType` が 4 種以外、`kind` が 6 種以外、`save` が真偽値でない、未知の引数があるとき**は、tools/call の入力の検査でエラー `INVALID_ARGUMENT`（`tool: "nta_inspect_pdf_meta"`、`detail.issues` に引数名）になる。このツールとしてのテストが無い。ID を振るのは受入テストを書いてから。

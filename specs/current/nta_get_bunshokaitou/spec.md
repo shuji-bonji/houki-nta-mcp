@@ -77,9 +77,11 @@ flowchart TD
 
 初版起こしで見つけた、意図か不具合かを人が決める項目です。決まったら「できること」に ID を振るか、`specs/changes/` の差分にします。
 
-1. **`docId` の形を確かめない。** 必須で文字列であることは検査するが、空文字列や `税目/番号` の形でない値もそのまま DB に引きに行き、SPEC-NTA-GET-BUNSHOKAITOU-002 または 003 のエラーになる。形の検査を足すか。`INVALID_ARGUMENT` を返す入力の検査そのものも、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
+意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
+
+1. **`docId` の形を確かめない。** → houki-nta-mcp #66
 2. **markdown（既定）の応答の形。** 見出し `# <題名>`、`- **種別**: 文書回答事例`・`- **発出日**`（あるときだけ）・`- **税目**`（あるときだけ）・`- **docId**`・`- **出典**`（国税庁ページの URL）・`- **取得**`（DB に入れた日時）の行、`## 宛先・発出者`（あるときだけ。引用の形）、`## 本文`、`## 添付 PDF (N 件)`（添付があるときだけ。種別・タイトル・サイズ・読み方・URL の表と、pdf-reader-mcp などで読む案内）、末尾の注（文書回答事例は個別事案への回答で一般的な法的拘束力はない旨）。このツールの応答としてのテストが無い（SPEC-NTA-GET-BUNSHOKAITOU-001 のテストは `code` が無いことしか見ない）。ID を振るのは受入テストを書いてから。
 3. **json の応答の形。** `document`（`docType: "bunshokaitou"`・`docId`・`taxonomy`・`title`・`issuedAt`・`issuer`・`sourceUrl`・`fetchedAt`・`fullText`・`attachedPdfs`。`attachedPdfs` の要素は `title`・`url`・`sizeKb`・`kind`）、`legal_status`（`binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と、個別事案への回答で一般的な法的拘束力はない旨の `note`）、`source: "db"`。`legal_status` の値の単体テスト（`src/constants.test.ts`）はあるが、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 4. **国税庁の索引から消えた文書の印。** DB から返した文書が索引から外れているとき、json では `index_status: "removed_from_index"`・`orphaned_at`・`notice`（過去の課税期間では意味を持つ場合があるが現在の取扱いは最新の通達で確かめる旨、出典 URL が 404 になることがある旨）が付き、markdown では `- **索引の状態**: removed_from_index（<確認日時> に確認）` の行と同じ注記の引用が付く。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 5. **`available_doc_ids` の並びと件数。** 発出日の新しい順（発出日の無い文書は後ろ）、同じ日付なら docId の降順、最大 30 件。テストは 1 件の DB でしか確かめていない（件数・順序の確認が無い）。ID を分けるか SPEC-NTA-GET-BUNSHOKAITOU-003 に含めるかを決めてから受入テストを書く。
-6. **エラー `code` が 2 つの状況で同じ `DOC_NOT_FOUND`。** 「DB に 1 件も無い」（002）と「docId が無い」（003）を `code` では区別できず、`error` の文言・`available_doc_ids` の有無・`next_actions` の `action` で見分ける。`nta_search_bunshokaitou` の 0 件応答と同じ `code` でもある。v0.14.0 からの互換で `code` を変えない方針があるが、状況ごとに `code` を分けるかは意図として決める。
+6. **エラー `code` が 2 つの状況で同じ `DOC_NOT_FOUND`。** → houki-nta-mcp #64

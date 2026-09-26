@@ -100,13 +100,15 @@ DB に事例はある（`topic` / `hasPdf` の範囲にも事例がある）が�
 
 初版起こしで見つけた、意図か不具合かを人が決める項目です。決まったら「できること」に ID を振るか、`specs/changes/` の差分にします。
 
+意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
+
 1. **ヒットしたときの応答の形。** `keyword`、`results`（要素は `docType: "qa-jirei"`・`docId`（例: `shohi/02/19`）・`taxonomy`・`title`・`sourceUrl`・`snippet`（合った語を `<b>` で囲んだ抜粋）・`score`・`scoreReasons`）、`freshness`、`legal_status`（`binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と注）を返し、`score` の高い順に並べる。このツールの応答としてのテストは `results` の件数を数えるものしか無く、フィールドは確かめていない。ID を振るのは受入テストを書いてから。
-2. **`limit` の扱い。** 既定は 10、1 未満は 1、50 を超える値は 50 に丸めて検索する。引数の形（数値であること）は確かめない。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
+2. **`limit` の扱い。** → houki-nta-mcp #68
 3. **2 文字の語と 1 文字の語。** 3 文字以上の語で全文検索し、2 文字の語は本文か題名の部分一致で絞り込む（2 文字の語だけのときは部分一致だけで探す）。1 文字の語は検索条件から外す。どちらも、その旨を `search_notes`（文字列の配列）に書く。0 件のときも `search_notes` は付く。検索側のテストは `src/services/db-search.test.ts` にあるが、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 4. **通称の展開。** キーワード全体が略称辞書の通称（例: `インボイス`）で、そのままでは 0 件のとき、正式名に広げて検索し直し、その旨を `search_notes` に書く。略称そのもの（例: `消基通`）は最初から正式名も含めて検索し、注記しない。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 5. **国税庁の索引から消えた事例の印。** 索引から外れた事例は除外せずに返し、その要素に `index_status: "removed_from_index"` と `orphaned_at` を付け、`search_notes` に「検索結果 N 件のうち M 件は国税庁の索引から外れています」と注記を書く。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 6. **`freshness` の `warning`。** 取り込みから 1 か月以上たった事例があるとき、`freshness.warning` に `--bulk-download-qa` で最新化するよう書く。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-7. **`keyword` が空や記号だけのとき。** 空文字・空白だけ・FTS5 の記号（`"` `*` `:` `(` `)`）だけのキーワードでも `INVALID_ARGUMENT` にはせず、検索して 0 件（SPEC-NTA-SEARCH-QA-007 の「該当なし」）を返す。意図か不具合か。
-8. **`domain` が `tax` 以外のとき DB を開かない**（SPEC-NTA-SEARCH-QA-002）ので、DB に事例が 1 件も無くても `DOC_NOT_FOUND` にならず、`freshness` も付かない。意図として認めるか。
-9. **`domain` の値の範囲。** `domain` はスキーマの enum（houki-abbreviations の分野の一覧）で検証されるが、`tax` 以外はすべて 0 件なので、引数として残す意味があるか（`topic` に一本化するか）。
+7. **`keyword` が空や記号だけのとき。** → houki-nta-mcp #69
+8. **`domain` が `tax` 以外のとき DB を開かない** → houki-nta-mcp #72
+9. **`domain` の値の範囲。** → houki-nta-mcp #72
 10. **`src/tools/doc-search-zero-hit.test.ts` の「nta_search_qa: 他の種別だけが入っている DB（qa のみ）でタックスアンサーを検索すると DOC_NOT_FOUND」** は名前に `nta_search_qa` とあるが、呼んでいるのは `nta_search_tax_answer` である。このツールの ID は付けない。名前を直すかは人が決める（初版起こしの PR ではテスト名の先頭に ID を足す以外の変更はしない）。

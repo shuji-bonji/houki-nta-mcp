@@ -106,12 +106,14 @@ DB に改正通達はあるが、`taxonomy` で絞った範囲に文書が 1 件
 
 初版起こしで見つけた、意図か不具合かを人が決める項目です。決まったら「できること」に ID を振るか、`specs/changes/` の差分にします。
 
-1. **`taxonomy` の値を検査しない。** 引数の説明には `shohi` / `shotoku` / `hojin` / `sisan/sozoku` の 4 つを書いているが、どんな文字列でも受け付け、DB に無い値は SPEC-NTA-SEARCH-KAISEI-TSUTATSU-002 の応答になる。`nta_search_qa` の `topic` のように列挙で検査するか（DB に入る税目フォルダは国税庁サイトの構成で増えうるので、列挙にしない選択もある）。
-2. **`keyword` が空文字のとき。** 必須なので省くと `INVALID_ARGUMENT` になるが、`""` や空白だけは通り、検索語が無いまま 0 件となって「「」に合う文書はありません」の `hint` を返す。空のキーワードを `INVALID_ARGUMENT` にするか。テストも無い。
-3. **`limit` の丸め。** 1 未満は 1、50 を超える値は 50 に黙って丸める。inputSchema に上限・下限を書いて検査するか、丸めたことを応答に示すか。テストも無い。
+意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
+
+1. **`taxonomy` の値を検査しない。** → houki-nta-mcp #67
+2. **`keyword` が空文字のとき。** → houki-nta-mcp #69
+3. **`limit` の丸め。** → houki-nta-mcp #68
 4. **キーワードに合う文書があるときの応答。** `results` の各要素は `docType`（`kaisei`）・`docId`・`taxonomy`・`title`・`issuedAt`・`sourceUrl`・`snippet`（合った箇所の抜粋。合った語を `<b>` で囲む）・`score`（0.0〜1.5 の関連度）・`scoreReasons`。並びは `score` の降順。応答には `keyword`・`freshness`・`legal_status` も付く。このツールの応答としてのテストが無い（検索側のテストは `src/services/db-search.test.ts` にある）。ID を振るのは受入テストを書いてから。
 5. **短い語の補完と `search_notes`。** 2 文字の語は本文・題名の部分一致で補い（3 文字以上の語があれば全文検索した結果をその語で絞り込み、無ければ部分一致だけで探す）、1 文字の語は条件から外す。いずれも `search_notes` にその旨の 1 行が入る。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 6. **略称・通称の展開と `search_notes`。** `keyword` 全体が houki-abbreviations の略称（`消基通` など）なら正式名も合わせて探す。通称（`インボイス` → 消費税法 など）は元の語で 0 件のときだけ正式名に広げて探し直し、広げたときは `search_notes` にその旨の 1 行が入る（`scoreReasons` にも展開の記録が入る）。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 7. **国税庁の索引から消えた文書の印。** 索引から外れた文書は検索結果から除かず、その要素に `index_status: "removed_from_index"` と `orphaned_at` が付き、`search_notes` に「検索結果 N 件のうち M 件は国税庁の索引から外れています」の 1 行が入る。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 8. **inputSchema に合わない引数のときの `INVALID_ARGUMENT`**（`keyword` 無し、型違い、未知の引数。`hint` に tools/list の inputSchema を確かめる案内、`next_actions` に `list_tools`、`tool` にこのツール名）は、このツールの引数でのテストが無い。ID を振るのは受入テストを書いてから。
-9. **SPEC-NTA-SEARCH-KAISEI-TSUTATSU-002 の `hint` の末尾。** 税目を絞って投入するフラグが無い種別では、案内文が空のまま連結されるため `hint` が「…指定してください。」と句点で終わる（他の種別は句点の後に案内文が続く）。文としては成り立つので意図として認めるか、整えるか。
+9. **SPEC-NTA-SEARCH-KAISEI-TSUTATSU-002 の `hint` の末尾。** → houki-nta-mcp #70

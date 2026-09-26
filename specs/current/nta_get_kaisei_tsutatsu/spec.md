@@ -70,11 +70,13 @@ flowchart TD
 
 初版起こしで見つけた、意図か不具合かを人が決める項目です。決まったら「できること」に ID を振るか、`specs/changes/` の差分にします。
 
+意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
+
 1. **markdown（既定）の応答の形。** `# <題名>`、`- **発出日**` / `- **税目**` / `- **docId**` / `- **出典**` / `- **取得**` の行、`## 宛先・発出者`（宛先がある文書だけ。各行を `> ` で引用）、`## 本文`、添付 PDF があれば `## 添付 PDF (N 件)` の表（種別 / タイトル / サイズ / 読み方 / URL。新旧対照表を先頭に種別の優先順で並べる）と `### 読み方` の節、末尾に通達の法的位置付けの注（行政内部文書で納税者・裁判所への直接的拘束力は無い旨）。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 2. **json の応答の形。** `document`（`docType: "kaisei"` / `docId` / `taxonomy` / `title` / `issuedAt` / `issuer` / `sourceUrl` / `fetchedAt` / `fullText` / `attachedPdfs[]`（`title` / `url` / `sizeKb` / `kind`））、`legal_status`（`binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と注）、`source: "db"`。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 3. **国税庁の索引から消えた改正通達の印（#30）。** 索引から外れた文書では、json に `index_status: "removed_from_index"` / `orphaned_at` / `notice`（過去の課税期間では意味を持つ場合があるが現在の取扱いは最新の通達で確かめる旨。出典 URL は 404 になることがある旨）が付き、markdown には `- **索引の状態**: removed_from_index（<日時> に確認）` の行と同じ注記の引用が入る。索引にある文書には何も付かない。`nta_get_jimu_unei` にはこの応答のテストがあるが、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 4. **「別紙 N」とだけ題した PDF を新旧対照表として返す（#44）。** 添付 PDF のうち、題名が「別紙」と番号（とサイズの「（PDF/221KB）」）だけのものは、応答の `kind` を `attachment` から `comparison` に付け替える（例: 0025004-026 の別紙 1・別紙 2）。「別紙1 計算明細書」のように他の語を含む別紙は変えない。DB の内容は変えない。付け替えの判定のテストは `src/services/pdf-meta.test.ts` にあるが、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-5. **`kind` の無い古い行の添付 PDF。** v0.6.0 までに投入した行の添付 PDF は `kind` を持たない。`nta_inspect_pdf_meta` は応答時に題名から `kind` を補うが、このツールは補わない（「別紙 N」だけの題名のときに限り `comparison` が付く）。json では `kind` が無いまま、markdown では「その他」として出る。意図か不具合か。
-6. **`docId` の形を確かめない。** 文字列であることだけを確かめ、空文字列や新形式・旧形式のどちらでもない値もそのまま DB を引いて、無ければ SPEC-NTA-GET-KAISEI-TSUTATSU-002 の経路になる。形の検査を足すか。
+5. **`kind` の無い古い行の添付 PDF。** → houki-nta-mcp #73
+6. **`docId` の形を確かめない。** → houki-nta-mcp #66
 7. **`docId` が無いときの `INVALID_ARGUMENT`。** 引数の検証で `docId` が無い、または文字列でないときはエラー `INVALID_ARGUMENT`（`tool` 付き）を返す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-8. **エラー `code` の名前。** docId が無いときの `code` は `TSUTATSU_NOT_FOUND`（`nta_get_jimu_unei` も同じ。`nta_get_bunshokaitou` は `DOC_NOT_FOUND`）。README の取得ツールの表は `DOC_NOT_FOUND` と書いており、実装と合っていない。`code` を種別で分けたままにするか、文書系 3 ツールで揃えるか。
+8. **エラー `code` の名前。** → houki-nta-mcp #64

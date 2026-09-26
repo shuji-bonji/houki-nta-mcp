@@ -94,9 +94,11 @@ flowchart TD
 
 初版起こしで見つけた、意図か不具合かを人が決める項目です。決まったら「できること」に ID を振るか、`specs/changes/` の差分にします。
 
-1. **辞書に無い名前をエラーにしない。** このツールは `resolved: null` と `note` の通常応答（`code` 無し、`isError` 無し）を返すが、`nta_get_tsutatsu` は同じ状況でエラー `ABBREVIATION_NOT_FOUND` を返し、`next_actions` に `nta_search_tsutatsu` の案内を入れる。「辞書を引くだけのツールなので該当なしは正常」とみなして今の形を意図とするか、family の error contract に揃えるか。揃えるなら `specs/changes/` の差分になる。
-2. **全角・半角の表記ゆれを吸収しない。** `ＰＬ法` や `消　法`（全角スペース）は辞書に無い扱いになる。辞書側には表記ゆれを吸収して引く選択肢があるが、このツールは使っていない。他のツールが `clause` の全角を半角に揃えている（`nta_get_tsutatsu`）のと比べて意図か。テストも無い。
-3. **空文字・空白だけの `abbr`。** inputSchema は文字列であることしか確かめないので、`""` や `"  "` は SPEC-NTA-RESOLVE-ABBREVIATION-005 で止まらず、SPEC-NTA-RESOLVE-ABBREVIATION-004 の `resolved: null` になる。`INVALID_ARGUMENT` にするか。テストが無い。
-4. **`hint` が案内する MCP 名。** `hint` は `${source_mcp_hint}-mcp` の形で組み立てるので、`houki-court` / `houki-saiketsu` / `houki-mhlw` / `houki-jaish` のエントリでは、まだ無い MCP 名（`houki-court-mcp` など）を案内する。また `nta_get_tsutatsu` の `OUT_OF_SCOPE` と違って `next_actions` を付けない。houki-egov 以外の管轄のエントリについてはテストも無い。ID を振るのは受入テストを書いてから。
-5. **ツールの説明文の例。** tools/list の `abbr` の説明に例として `電帳法` を挙げているが、`電帳法` は法律（`houki-egov` の管轄）なので、このツールでは `in_scope: false` になる。管轄内の例（`電帳法取通`）に変えるか。
+意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
+
+1. **辞書に無い名前をエラーにしない。** → houki-nta-mcp #64
+2. **全角・半角の表記ゆれを吸収しない。** → houki-nta-mcp #66
+3. **空文字・空白だけの `abbr`。** → houki-nta-mcp #69
+4. **`hint` が案内する MCP 名。** → houki-nta-mcp #70
+5. **ツールの説明文の例。** → houki-nta-mcp #70
 6. **別名（辞書の `aliases`）からの解決。** `電帳法取扱通達` や `消費税`（消費税法の別名）のように、辞書の `aliases` に登録された名前でも同じエントリに解決される。このツールの応答としてのテストが無い（略称と正式名称だけ）。ID を振るのは受入テストを書いてから。

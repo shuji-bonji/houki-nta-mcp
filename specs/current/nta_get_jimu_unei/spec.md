@@ -84,10 +84,12 @@ DB から返す文書が国税庁の索引から外れている（bulk download 
 
 初版起こしで見つけた、意図か不具合かを人が決める項目です。決まったら「できること」に ID を振るか、`specs/changes/` の差分にします。
 
-1. **エラー `code` が `TSUTATSU_NOT_FOUND` である。** 事務運営指針は基本通達ではなく、同じ取得系の `nta_get_bunshokaitou` は `DOC_NOT_FOUND` を返す。README の「DB を先に引く」の表もこのツールを `DOC_NOT_FOUND` と書いており、実装と食い違う。`code` を `DOC_NOT_FOUND` に揃えるか、README を実装に合わせるか。SPEC-NTA-GET-JIMU-UNEI-001 / 002 は今の実装どおり `TSUTATSU_NOT_FOUND` と書いた。
+意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
+
+1. **エラー `code` が `TSUTATSU_NOT_FOUND` である。** → houki-nta-mcp #64
 2. **json の応答の形**（`document`（`docId` / `taxonomy` / `title` / `issuedAt` / `issuer` / `sourceUrl` / `fetchedAt` / `fullText` / `attachedPdfs`）、`legal_status`（`binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と注）、`source: "db"`）は、SPEC-NTA-GET-JIMU-UNEI-004 のテストが `document.docId` を見るほかは、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 3. **markdown の応答の形**（見出し `# <題名>`、`- **種別**: 事務運営指針`、発出日・税目・`docId`・出典・取得の行、`## 宛先・発出者`（`>` の引用）、`## 本文`、末尾の「通達・事務運営指針は行政内部文書であり、納税者・裁判所への直接的拘束力なし（最高裁 昭和43.12.24）」の注）は、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 4. **添付 PDF の一覧。** 添付 PDF がある文書では、markdown に `## 添付 PDF (N 件)` の節（種別 / タイトル / サイズ / 読み方 / URL の表と、`### 読み方` の種別ごとの 1 行。新旧対照表・別紙・Q&A・参考資料・通知・その他の順）が付き、json では `document.attachedPdfs` に `title` / `url` / `sizeKb` / `kind` が入る。この節の描画側のテストは `src/services/` にあるが、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 5. **`docId` を省いたときの `INVALID_ARGUMENT`。** 引数は inputSchema で検証され、`docId` が無いときや `inputSchema` に無い引数があるときはエラー `INVALID_ARGUMENT` になる。このツールでのテストが無い。ID を振るのは受入テストを書いてから。
-6. **`legal_status.note` の文言が「通達は行政内部文書。…」で、事務運営指針を名指ししない。** markdown の末尾の注は「通達・事務運営指針は…」と書いている。json の注も事務運営指針に合わせるか。
-7. **markdown に「取得元」の行が無い。** `nta_get_qa` の markdown は `取得元: ローカル DB（…）` の行を持つが、このツールは json の `source: "db"` だけで、markdown には取得元を書かない。DB だけを引くツールなので不要とみなすか、揃えるか。
+6. **`legal_status.note` の文言が「通達は行政内部文書。…」で、事務運営指針を名指ししない。** → houki-nta-mcp #70
+7. **markdown に「取得元」の行が無い。** → houki-nta-mcp #71

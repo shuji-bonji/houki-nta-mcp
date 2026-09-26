@@ -105,13 +105,15 @@ DB にはあるが国税庁の索引から消えた（bulk download の再実行
 
 初版起こしで見つけた、意図か不具合かを人が決める項目です。決まったら「できること」に ID を振るか、`specs/changes/` の差分にします。
 
+意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
+
 1. **`taxonomy` の範囲に文書が無いときの応答。** `taxonomy` を渡し、その税目の事務運営指針が DB に無いときは、成功で `results: []`、`hint`（`DB の事務運営指針 <件数> 件のうち、taxonomy="<値>" の文書はありません。taxonomy を外すか、available_taxonomies の値を指定してください`）、`available_taxonomies`（DB にある税目の一覧）、`freshness` を返す。事務運営指針には税目を絞って投入するフラグが無いので、`nta_search_qa` の `--qa-topic` のような追加投入の案内は付かない。このツールの応答としてのテストが無い（同じ形のテストは `nta_search_qa` / `nta_search_bunshokaitou` にある）。ID を振るのは受入テストを書いてから。
 2. **`hasPdf` の条件に合う文書が無いときの応答。** 成功で `results: []`、`hint`（`DB の事務運営指針<（taxonomy="…"）> <件数> 件に、PDF 付き|PDF 無しの文書はありません。hasPdf を外して検索してください`）、`freshness` を返す。このツールの応答としてのテストが無い（同じ形のテストは `nta_search_kaisei_tsutatsu` にある）。ID を振るのは受入テストを書いてから。
 3. **2 文字の語と 1 文字の語の扱い。** 3 文字未満の語は全文索引に乗らない。2 文字の語は、3 文字以上の語があればその検索結果を本文・題名の部分一致で絞り込み、無ければ部分一致だけで探す（このとき `score` は順位に基づかず、`snippet` は本文から切り出す）。1 文字の語は検索条件から外す。どちらも `search_notes` にその旨の文を入れ、`scoreReasons` に `short token filter (LIKE): …` / `short token search (LIKE, no FTS rank): …` を足す。このツールの応答としてのテストが無い（部分一致の検索側のテストは `src/services/db-search.test.ts` にある）。ID を振るのは受入テストを書いてから。
 4. **略称・通称の展開。** `keyword` 全体が houki-abbreviations の辞書にある略称（例: `消基通`）のときは正式名も含めて探す。通称（例: `インボイス`）のときは、元の語で 0 件のときだけ正式名（`消費税法`）に広げて探し直し、広げたときは `search_notes` にその旨の文を入れ、`scoreReasons` に `abbreviation expanded: <元> → <先>` を足す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-5. **`limit` の範囲。** inputSchema では上限を検査せず、1 未満は 1 に、50 を超える値は 50 に丸めて検索する。`limit: 0` や `limit: 1000` を渡してもエラーにならない。意図として認めるか、`INVALID_ARGUMENT` にするか。このツールの応答としてのテストも無い。
-6. **`keyword` が空のときの応答。** `keyword: ""` や 1 文字だけの `keyword` は、探す語が無いので 0 件になり、SPEC-NTA-SEARCH-JIMU-UNEI-002 と同じ「該当なし。…「」に合う文書はありません。別のキーワードで試してください」の `hint` になる。語が無いことと、合う文書が無いことを分けるか（`INVALID_ARGUMENT` にするか）。テストが無い。
-7. **`taxonomy` の値の形を検査しない。** inputSchema に enum が無く、どんな文字列も受け付けて DB を引く（該当が無ければ未決 1 の応答になる）。`nta_search_qa` の `topic` は enum で検査している。揃えるか。
+5. **`limit` の範囲。** → houki-nta-mcp #68
+6. **`keyword` が空のときの応答。** → houki-nta-mcp #69
+7. **`taxonomy` の値の形を検査しない。** → houki-nta-mcp #67
 8. **inputSchema に合わない引数のエラー `INVALID_ARGUMENT`。** `keyword` が無い、型が違う、inputSchema に無い引数がある、のいずれでも `code: "INVALID_ARGUMENT"`・`hint`・`next_actions`（`list_tools`）・`detail.issues` を返し、DB は引かない。全ツールに共通の入力の検査で行うが、このツールを呼ぶテストが無い。ID を振るのは受入テストを書いてから。
 9. **`freshness` の `staleness` と `warning`。** DB に入れた最古の日時から 7 日未満は `fresh`、30 日未満は `stale`、それ以上は `outdated` で、`outdated` のときだけ `warning`（`--bulk-download-jimu-unei` で最新化する案内）を付ける。このツールの応答としてのテストが無い（閾値は houki-abbreviations の共通値）。ID を振るのは受入テストを書いてから。
 10. **SPEC-NTA-SEARCH-JIMU-UNEI-003 の `results` の要素のフィールド**（`title` / `snippet` / `score` / `scoreReasons` / `freshness` など）は、現在のテストが `docId` しか確かめていない。項目ごとの受入テストを足すか。
