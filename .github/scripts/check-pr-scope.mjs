@@ -17,6 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
+const ID_RE = /SPEC-[A-Z]+-[A-Z0-9-]+-[0-9]{3}/g;
 const ID_WITH_SPACE_RE = /SPEC-[A-Z]+-[A-Z0-9-]+-[0-9]{3}\s*/g;
 const APPROVAL_RE = /^- 承認日: \d{4}-\d{2}-\d{2}/m;
 const PR_NUMBER_RE = /#\d+/;
@@ -45,7 +46,11 @@ export function parseNameStatus(text) {
 
 /**
  * `git diff -U0` の 1 ファイル分から、変わった行が「テスト名に仕様 ID を足しただけ」かを見る。
- * 消えた行と足された行を順に対にし、足された行から ID を除くと消えた行と同じなら true。
+ * 消えた行と足された行を順に対にし、次の 3 つを満たせば true。
+ * - 両方から ID を除くと同じ行になる（ID 以外の文字は変わっていない）
+ * - 消えた行にあった ID は、足された行にもすべて残っている（ID を消していない）
+ * - 足された行の ID の方が多い（何か足している）
+ * すでに ID の付いたテスト名に、別の ID を足す場合も通す。
  */
 export function onlyIdsAdded(unifiedDiff) {
   const removed = [];
@@ -56,7 +61,13 @@ export function onlyIdsAdded(unifiedDiff) {
     else if (line.startsWith('+')) added.push(line.slice(1));
   }
   if (removed.length !== added.length) return false;
-  return added.every((a, i) => a !== removed[i] && a.replace(ID_WITH_SPACE_RE, '') === removed[i]);
+  return added.every((a, i) => {
+    const r = removed[i];
+    if (a.replace(ID_WITH_SPACE_RE, '') !== r.replace(ID_WITH_SPACE_RE, '')) return false;
+    const before = r.match(ID_RE) ?? [];
+    const after = a.match(ID_RE) ?? [];
+    return before.every((id) => after.includes(id)) && after.length > before.length;
+  });
 }
 
 /**
