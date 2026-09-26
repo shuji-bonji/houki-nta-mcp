@@ -35,32 +35,40 @@
 
 ```mermaid
 flowchart TD
-  A["呼び出し（name・clause・format）"] --> B{"name を略称辞書で解決する（001）"}
+  A["呼び出し（name・clause・format）"] --> B{"name を略称辞書で解決できるか（001）"}
   B -- 辞書に無い --> E1["ABBREVIATION_NOT_FOUND を返す（001）"]
   B -- 管轄が houki-nta でない --> E2["OUT_OF_SCOPE を返す（002）"]
   B -- houki-nta の管轄 --> C{"clause があるか"}
-  C -- いいえ --> E3["INVALID_ARGUMENT を返す（003）"]
-  C -- はい --> D{"全角を半角に揃えた clause の条項が DB にあるか（004）"}
-  D -- ある --> G["DB の内容を使う（004、source: db）"]
-  D -- 無い --> F{"その通達を bulk download で全節取り込んであるか"}
-  F -- はい --> E4["ARTICLE_NOT_FOUND と available_clauses を返す（005）"]
+  C -- 無い --> E3["INVALID_ARGUMENT を返す（003）"]
+  C -- ある --> D{"全角を半角に揃えた clause の条項が DB にあるか（004）"}
+  D -- "ある（source: db）" --> O{"format"}
+  D -- 無い --> F{"その通達の条項が DB に 1 件でもあり、bulk download 済みか、4 通達以外か"}
+  F -- はい --> E4["ARTICLE_NOT_FOUND と available_clauses を返す。国税庁サイトには取りに行かない（005）"]
   F -- いいえ --> H{"基本通達 4 種のどれかか"}
   H -- いいえ --> E5["TSUTATSU_NOT_FOUND を返す（007）"]
-  H -- はい --> J["clause をその通達の番号の形で読み、候補ページを決める（006・008。目次は DB に保存したものを使う、014）"]
-  J -- 決められた --> K["候補ページを順に取り、解析できたページは DB に書き戻す（006。10 ページまで、0.3 秒あける、015）"]
-  J -- 目次の取得に失敗 --> E6["SOURCE_API_ERROR を返す（009）"]
-  K -- 取得に失敗 --> E6
-  K -- 条項が見つかった（source: live） --> O{"format"}
-  G --> O
-  J -- 決められない --> R{"この呼び出しでまだなら、前回の Last-Modified / ETag を付けて目次を取り直す（014）"}
-  K -- どれにも条項が無い・どれも存在しない（009） --> R
-  R -- 目次が変わった --> J
-  R -- 304 または取り直し済み --> T{"候補ページを決められたか"}
-  T -- いいえ --> E7["INVALID_ARGUMENT と番号の形の例を返す（008）"]
-  T -- はい --> E8["ARTICLE_NOT_FOUND と available_clauses・searched_urls を返す（010）"]
-  K -- 10 ページに達しても見つからない --> E8
-  O -- markdown --> P["markdown の応答（011）と解釈の対象になる法律の行（013）"]
-  O -- json --> Q["json の応答（012）に base_laws と next_actions を付ける（013）"]
+  H -- はい --> P{"clause がその通達の番号の形に当たるか（008）"}
+  P -- 当たらない --> E6["INVALID_ARGUMENT と番号の形の例を返す。目次は取らない（008）"]
+  P -- 当たる --> S{"消費税法基本通達か"}
+  S -- はい --> S1["番号の章・節から組み立てたページを先に取る（006）"]
+  S1 -- 見つからない --> T
+  S -- いいえ --> T["目次から候補ページを決める。DB に保存した目次があればそれを使う（006・014）"]
+  T --> K["候補ページを順に取り、解析できたページは DB に書き戻す。存在しないページは次の候補へ（006・009。10 ページまで、0.3 秒あける、015）"]
+  S1 -- "見つかった（source: live）" --> O
+  K -- "見つかった（source: live）" --> O
+  S1 -- 存在しない以外の取得の失敗 --> E7["SOURCE_API_ERROR を返す（009）"]
+  T -- 目次の取得の失敗 --> E7
+  K -- 存在しない以外の取得の失敗 --> E7
+  K -- 10 ページに達した --> E9["ARTICLE_NOT_FOUND と available_clauses・searched_urls を返す（010・015）"]
+  K -- "候補を決められない・どれにも無い・どれも存在しない" --> R{"保存してあった目次を使い、まだ取り直していないか（014）"}
+  R -- はい --> R1{"前回の Last-Modified / ETag を付けて取り直した目次が変わったか（014）"}
+  R1 -- 変わった --> T
+  R1 -- 取得の失敗 --> E7
+  R1 -- 変わっていない（304） --> Z{"候補ページを 1 つでも取ったか"}
+  R -- いいえ --> Z
+  Z -- いいえ --> E8["INVALID_ARGUMENT と nta_search_tsutatsu の案内を返す（008）"]
+  Z -- はい --> E9
+  O -- markdown --> P1["markdown の応答（011）と解釈の対象になる法律の行（013）"]
+  O -- json --> Q1["json の応答（012）に base_laws と next_actions を付ける（013）"]
 ```
 
 ## できること
@@ -81,11 +89,14 @@ flowchart TD
 
 その通達と条項がローカル DB にあるときは、国税庁サイトに取りに行かずに DB の内容を返す。応答の `source` は `db`、`fetchedAt` は DB に入れたときの日時のまま（呼び出した時刻にしない）。`clause` の全角ハイフン・全角数字は半角に揃えてから DB を引く。
 
-### SPEC-NTA-GET-TSUTATSU-005 DB に通達はあるが条項が無いときは、bulk download 済みなら番号の候補を返す
+### SPEC-NTA-GET-TSUTATSU-005 DB に通達はあるが条項が無いときは、国税庁サイトから取らない通達なら番号の候補を返す
 
-その通達の条項が DB に無く、その通達を bulk download で全節取り込んである（章を絞った実行や、国税庁サイトから取った分の書き戻しではない）ときは、エラー `ARTICLE_NOT_FOUND` を返し、`available_clauses` にその通達の条項番号（最大 50 件）を入れる。この場合は国税庁サイトには取りに行かない。
+求められた条項が DB に無く、その通達の条項が DB に 1 件でもあり、次のどちらかに当たるときは、エラー `ARTICLE_NOT_FOUND` を返し、`available_clauses` にその通達の条項番号（最大 50 件）を入れる。この場合は国税庁サイトには取りに行かない。
 
-bulk download 済みでない通達（書き戻した節しか無い通達を含む）は、DB に無い条項を国税庁サイトから取る経路（SPEC-NTA-GET-TSUTATSU-006）へ進む。
+- その通達を bulk download で全節取り込んである（章を絞った実行や、国税庁サイトから取った分の書き戻しではない）
+- 国税庁サイトから取れる通達（SPEC-NTA-GET-TSUTATSU-006 の 4 通達）ではない
+
+4 通達のうち bulk download 済みでない通達（書き戻した節しか無い通達を含む）は、DB に無い条項を国税庁サイトから取る経路（SPEC-NTA-GET-TSUTATSU-006）へ進む。
 
 ### SPEC-NTA-GET-TSUTATSU-006 DB に無い基本通達 4 種の条項は国税庁サイトから取る
 
@@ -102,11 +113,16 @@ bulk download 済みでない通達（書き戻した節しか無い通達を含
 
 ### SPEC-NTA-GET-TSUTATSU-007 DB に無く、ライブ取得にも対応していない通達は投入を案内する
 
-通達が DB に無く、上の 4 通達でもないとき（例: `電帳法取通`）は、エラー `TSUTATSU_NOT_FOUND` を返す。`hint` に `--bulk-download` の実行を案内し、`supported_for_live` にライブ取得できる通達名の一覧、`next_actions` に bulk download の案内を入れる。
+その通達の条項が DB に 1 件も無く、上の 4 通達でもないとき（例: `電帳法取通`）は、エラー `TSUTATSU_NOT_FOUND` を返す。`hint` に `--bulk-download` の実行を案内し、`supported_for_live` にライブ取得できる通達名の一覧、`next_actions` に bulk download の案内を入れる。
 
 ### SPEC-NTA-GET-TSUTATSU-008 国税庁サイトから取るときは、clause をその通達の番号の形で読む
 
-国税庁サイトから取る経路に進んだとき、`clause` を入力の表にあるその通達の番号の形で読む。どの形にも当たらず候補ページを決められないときは、エラー `INVALID_ARGUMENT` を返す。`hint` にその通達の番号の形と例を書く。
+国税庁サイトから取る経路に進んだとき、`clause` を入力の表にあるその通達の番号の形で読む。次の 2 つのときは、エラー `INVALID_ARGUMENT` を返す。
+
+- 番号の形のどれにも当たらない。このときは目次も候補ページも取らない。`hint` にその通達の番号の形と例を書く
+- 番号の形には当たるが、目次から候補ページを 1 つも決められず（SPEC-NTA-GET-TSUTATSU-014 の取り直しの後も同じ）、候補ページを 1 つも取らなかった。`hint` にその通達の番号の形と `nta_search_tsutatsu` での検索を書き、`next_actions` に `nta_search_tsutatsu` を入れる
+
+消費税法基本通達で番号から組み立てたページ（SPEC-NTA-GET-TSUTATSU-006）を取ったあとに目次から候補ページを決められないときは、候補ページを取っているので SPEC-NTA-GET-TSUTATSU-010 の `ARTICLE_NOT_FOUND` を返す。
 
 ### SPEC-NTA-GET-TSUTATSU-009 国税庁サイトから取れなかったときは再試行できるエラーにする
 
@@ -148,7 +164,7 @@ bulk download 済みでない通達（書き戻した節しか無い通達を含
 
 候補ページを決めるために目次ページを取得したときは、その解析結果を DB に保存し、次の呼び出しでは国税庁サイトから取り直さずに使う。使い回す期間は設けない。保存した目次は目次ページの URL ごとに持つ。
 
-次のどれかが起きたときは、1 回の呼び出しにつき 1 回だけ、前回の `Last-Modified` / `ETag` を付けて目次を取り直し、候補ページを作り直す。
+DB に保存してあった目次を使った呼び出しで次のどれかが起きたときは、1 回の呼び出しにつき 1 回だけ、前回の `Last-Modified` / `ETag` を付けて目次を取り直し、候補ページを作り直す。その呼び出しで目次を取得した（保存が無かった）ときと、SPEC-NTA-GET-TSUTATSU-015 の上限に達したときは取り直さない。
 
 - 候補ページを決められない
 - 候補ページのどれにも条項が無い
