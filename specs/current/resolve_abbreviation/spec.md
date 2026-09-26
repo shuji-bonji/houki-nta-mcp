@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（PR #63）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleResolveAbbreviation`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/tools/handlers.test.ts`、`src/server.test.ts`
 
 この文書は「このツールは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。

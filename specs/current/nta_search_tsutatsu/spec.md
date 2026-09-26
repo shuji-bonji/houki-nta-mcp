@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（PR #63）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`searchTsutatsu`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/relevance-scoring.ts`、`src/services/freshness.ts`、`src/constants.ts`、`src/errors.ts`、`src/tools/handlers.test.ts`、`src/server.test.ts`
 - 関連する Issue: houki-nta-mcp #18（2 文字の語の補完）、#20（通達の応答に base_laws）、#21（通称の展開を 0 件のときだけにする）
 
