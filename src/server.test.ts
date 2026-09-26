@@ -78,7 +78,7 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(search?.inputSchema.required).toEqual(['keyword']);
   });
 
-  it('存在しないツール名は UNKNOWN_TOOL + isError: true (family error contract)', async () => {
+  it('SPEC-NTA-COMMON-ERRORS-002 存在しないツール名は UNKNOWN_TOOL + isError: true (family error contract)', async () => {
     const res = await client.callTool({ name: 'no_such_tool', arguments: {} });
     expect(res.isError).toBe(true);
     const body = JSON.parse(firstText(res));
@@ -87,7 +87,7 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(body.next_actions[0].action).toBe('list_tools');
   });
 
-  it('SPEC-NTA-RESOLVE-ABBREVIATION-005 SPEC-NTA-SEARCH-TSUTATSU-001 inputSchema に合わない引数は INVALID_ARGUMENT + isError: true (handler は呼ばれない)', async () => {
+  it('SPEC-NTA-RESOLVE-ABBREVIATION-005 SPEC-NTA-SEARCH-TSUTATSU-001 SPEC-NTA-COMMON-ERRORS-003 inputSchema に合わない引数は INVALID_ARGUMENT + isError: true (handler は呼ばれない)', async () => {
     // 型違反
     const res = await client.callTool({
       name: 'resolve_abbreviation',
@@ -112,14 +112,14 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(JSON.parse(firstText(res3)).code).toBe('INVALID_ARGUMENT');
   });
 
-  it('すべてのツールの inputSchema に additionalProperties: false が付く (v0.14.0)', async () => {
+  it('SPEC-NTA-COMMON-ERRORS-005 すべてのツールの inputSchema に additionalProperties: false が付く (v0.14.0)', async () => {
     const res = await client.listTools();
     for (const t of res.tools) {
       expect(t.inputSchema.additionalProperties).toBe(false);
     }
   });
 
-  it('SPEC-NTA-SEARCH-TSUTATSU-001 inputSchema に無い引数は INVALID_ARGUMENT で、detail.issues の path に引数名が入る (v0.14.0)', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-001 SPEC-NTA-COMMON-ERRORS-004 inputSchema に無い引数は INVALID_ARGUMENT で、detail.issues の path に引数名が入る (v0.14.0)', async () => {
     // v0.13.0 までは nta_search_tsutatsu の inputSchema に type / domain があったが、絞り込みに使っていなかった
     const res = await client.callTool({
       name: 'nta_search_tsutatsu',
@@ -132,7 +132,7 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(body.tool).toBe('nta_search_tsutatsu');
   });
 
-  it('SPEC-NTA-RESOLVE-ABBREVIATION-001 resolve_abbreviation が isError なしで JSON を返す', async () => {
+  it('SPEC-NTA-RESOLVE-ABBREVIATION-001 SPEC-NTA-COMMON-ERRORS-001 resolve_abbreviation が isError なしで JSON を返す', async () => {
     const res = await client.callTool({
       name: 'resolve_abbreviation',
       arguments: { abbr: '消基通' },
@@ -143,7 +143,7 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(body.resolved).not.toBeNull();
   });
 
-  it('LawServiceError を返す handler は isError: true になる', async () => {
+  it('SPEC-NTA-COMMON-ERRORS-001 LawServiceError を返す handler は isError: true になる', async () => {
     const res = await client.callTool({ name: '__test_law_error', arguments: {} });
     expect(res.isError).toBe(true);
     const body = JSON.parse(firstText(res));
@@ -151,7 +151,7 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(body.hint).toBe('テスト用');
   });
 
-  it('handler が throw すると INTERNAL_ERROR + retryable: true (protocol error にしない)', async () => {
+  it('SPEC-NTA-COMMON-ERRORS-006 handler が throw すると INTERNAL_ERROR + retryable: true (protocol error にしない)', async () => {
     const res = await client.callTool({ name: '__test_throw', arguments: {} });
     expect(res.isError).toBe(true);
     const body = JSON.parse(firstText(res));
