@@ -118,6 +118,30 @@ test('初版起こし: spec.md の追加と、テスト名に ID を足すだけ
   assert.deepEqual(errors, []);
 });
 
+test('初版起こし: すでに ID の付いたテスト名に別の ID を足すのは通す', () => {
+  const diff = [
+    '@@ -1 +1 @@',
+    "-  it('SPEC-NTA-SEARCH-TSUTATSU-001 inputSchema に無い引数は INVALID_ARGUMENT', async () => {",
+    "+  it('SPEC-NTA-SEARCH-TSUTATSU-001 SPEC-NTA-COMMON-ERRORS-004 inputSchema に無い引数は INVALID_ARGUMENT', async () => {",
+  ].join('\n');
+  assert.equal(onlyIdsAdded(diff), true);
+});
+
+test('初版起こし: テスト名から既存の ID を消すと止まる', () => {
+  const removeOnly = [
+    '@@ -1 +1 @@',
+    "-  it('SPEC-NTA-GET-QA-001 未対応 topic はエラー', async () => {",
+    "+  it('未対応 topic はエラー', async () => {",
+  ].join('\n');
+  assert.equal(onlyIdsAdded(removeOnly), false);
+  const swap = [
+    '@@ -1 +1 @@',
+    "-  it('SPEC-NTA-GET-QA-001 未対応 topic はエラー', async () => {",
+    "+  it('SPEC-NTA-GET-QA-002 未対応 topic はエラー', async () => {",
+  ].join('\n');
+  assert.equal(onlyIdsAdded(swap), false);
+});
+
 test('初版起こし: テストの期待値を変えると止まる', () => {
   const t = 'src/tools/handlers.test.ts';
   const diff = ['@@ -1 +1 @@', "-    expect(r.error).toContain('未対応');", "+    expect(r.error).toContain('対応');"].join('\n');
