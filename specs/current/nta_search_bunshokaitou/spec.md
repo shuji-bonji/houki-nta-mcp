@@ -23,6 +23,29 @@
 
 検索の対象はローカル DB だけである。事前に `houki-nta-mcp --bulk-download-bunshokaitou` で文書回答事例を DB に入れておく必要がある。国税庁サイトには取りに行かない。
 
+## 処理の流れ
+
+呼び出しを受けてから応答を返すまでに、何をどの順で確かめるかを示します。図の中の番号は「できること」の仕様 ID の末尾 3 桁です。
+
+```mermaid
+flowchart TD
+  A["呼び出し（keyword・taxonomy・limit・hasPdf）"] --> B{"taxonomy が別表記のある税目か"}
+  B -- はい --> C["同じ組の値もまとめ、hasPdf でも絞って検索し、search_notes に書く（003）"]
+  B -- "いいえ（省略を含む）" --> D["taxonomy・hasPdf で絞って DB を検索する"]
+  C --> F{"キーワードに合う文書があるか"}
+  D --> F
+  F -- ある --> G["results に合う文書を返す。taxonomy は DB の値のまま（003）"]
+  F -- 無い --> H{"DB に文書回答事例があるか"}
+  H -- 無い --> E1["DOC_NOT_FOUND を返す（001）"]
+  H -- ある --> I{"taxonomy の範囲に文書があるか（別表記を含む）"}
+  I -- 無い --> J{"指定した税目は本庁の索引にある税目か"}
+  J -- ある --> K["hint の末尾に本庁の表記で --bunsho-taxonomy の投入コマンドを書く（002）"]
+  J -- 無い --> L["投入コマンドは書かない（002）"]
+  K --> E2["results: [] と available_taxonomies を返す（002）"]
+  L --> E2
+  I -- ある --> E3["results: [] と件数付きの「該当なし」を返す。件数は別表記を含む（004・003）"]
+```
+
 ## できること
 
 ### SPEC-NTA-SEARCH-BUNSHOKAITOU-001 文書回答事例が DB に 1 件も無いときは検索できないことをエラーで返す

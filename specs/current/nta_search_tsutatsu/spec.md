@@ -21,6 +21,33 @@
 
 検索の対象はローカル DB だけである。国税庁サイトには取りに行かない。DB に条項を入れるのは CLI の `--bulk-download`（通達 1 つ）または `--bulk-download-all`（基本通達 4 種）である。
 
+## 処理の流れ
+
+呼び出しを受けてから応答を返すまでに、何をどの順で確かめるかを示します。図の中の番号は「できること」の仕様 ID の末尾 3 桁です。
+
+```mermaid
+flowchart TD
+  A["呼び出し（keyword・limit）"] --> B{"引数が inputSchema に合うか"}
+  B -- いいえ --> E1["INVALID_ARGUMENT を返す（001）"]
+  B -- はい --> C{"keyword が空文字列か空白だけか"}
+  C -- はい --> E2["INVALID_ARGUMENT を返す（002）"]
+  C -- いいえ --> D{"ローカル DB に基本通達の条項があるか"}
+  D -- 無い --> E3["TSUTATSU_NOT_FOUND と --bulk-download の案内を返す（003）"]
+  D -- ある --> F{"2 文字の語を含むか"}
+  F -- はい --> G["2 文字の語は本文と題名の部分一致で補い、search_notes に書く（006）"]
+  F -- いいえ --> H["全部の語を含む条項を全文検索で探す（004）"]
+  G --> I{"元の語で 0 件で、keyword が辞書の通称か"}
+  H --> I
+  I -- はい --> J["正式名を含む条項に広げて探し直し、search_notes に書く（008）"]
+  I -- いいえ --> K{"合う条項があるか"}
+  J --> K
+  K -- ある --> L["keyword・count・hits・freshness・legal_status の応答（004）"]
+  L --> M["通達ごとの base_laws_by_tsutatsu と next_actions を付ける（009）"]
+  K -- 無い --> N["keyword・hits: []・message を返す。エラーにしない（005）"]
+  M --> O["語が全部 3 文字以上で通称の展開も無ければ search_notes を付けない（007）"]
+  N --> O
+```
+
 ## できること
 
 ### SPEC-NTA-SEARCH-TSUTATSU-001 inputSchema に合わない引数では検索しない

@@ -21,6 +21,25 @@
 
 このツールはローカル DB だけを引く。事務運営指針は `--bulk-download-jimu-unei` で DB に入れておく。
 
+## 処理の流れ
+
+呼び出しを受けてから応答を返すまでに、何をどの順で確かめるかを示します。図の中の番号は「できること」の仕様 ID の末尾 3 桁です。
+
+```mermaid
+flowchart TD
+  A["呼び出し（docId・format）"] --> B{"その docId の事務運営指針がローカル DB にあるか"}
+  B -- 無い --> D{"DB に事務運営指針が 1 件でもあるか"}
+  D -- 1 件も無い --> E1["TSUTATSU_NOT_FOUND と bulk download の案内を返す（001）"]
+  D -- ある --> E2["TSUTATSU_NOT_FOUND と available_doc_ids・nta_search_jimu_unei の案内を返す（002）"]
+  B -- ある --> C["DB の内容をそのまま使う（003。国税庁サイトには取りに行かない）"]
+  C --> F{"国税庁の索引から外れているか（004）"}
+  F -- はい --> G["索引から外れた印を付ける（004。json は index_status・orphaned_at・notice、markdown は索引の状態の行と注記）"]
+  F -- いいえ --> H{"format"}
+  G --> H
+  H -- markdown --> I["markdown の文字列を返す（003）"]
+  H -- json --> J["document を持つオブジェクトを返す（003）"]
+```
+
 ## できること
 
 ### SPEC-NTA-GET-JIMU-UNEI-001 事務運営指針が DB に 1 件も無いときは投入を案内する

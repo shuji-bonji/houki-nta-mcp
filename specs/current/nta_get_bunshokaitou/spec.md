@@ -21,6 +21,19 @@
 
 `docId` を省く、文字列でない値を渡す、上の 2 つ以外の引数を渡す、のいずれもエラー `INVALID_ARGUMENT` になる（入力の検査はすべてのツールに共通で、このツールのテストは無い。未決 1）。
 
+## 処理の流れ
+
+呼び出しを受けてから応答を返すまでに、何をどの順で確かめるかを示します。図の中の番号は「できること」の仕様 ID の末尾 3 桁です。
+
+```mermaid
+flowchart TD
+  A["呼び出し（docId・format）"] --> B{"その docId の文書回答事例がローカル DB にあるか"}
+  B -- ある --> C["DB の内容を code の無い応答で返す（001。国税庁サイトには取りに行かない）"]
+  B -- 無い --> D{"DB に文書回答事例が 1 件でもあるか"}
+  D -- 1 件も無い --> E1["DOC_NOT_FOUND と bulk download の案内を返す（002）"]
+  D -- ある --> E2["DOC_NOT_FOUND と available_doc_ids・nta_search_bunshokaitou の案内を返す（003）"]
+```
+
 ## できること
 
 ### SPEC-NTA-GET-BUNSHOKAITOU-001 ローカル DB にある文書はエラーにせず返す

@@ -23,6 +23,24 @@
 
 このツールはローカル DB だけを引く。国税庁サイトには取りに行かない。DB には事前に `--bulk-download-kaisei` で改正通達を入れておく。
 
+## 処理の流れ
+
+呼び出しを受けてから応答を返すまでに、何をどの順で確かめるかを示します。図の中の番号は「できること」の仕様 ID の末尾 3 桁です。
+
+```mermaid
+flowchart TD
+  A["呼び出し（keyword・taxonomy・limit・hasPdf）"] --> B["taxonomy・hasPdf で絞って DB を検索する"]
+  B --> C{"キーワードに合う文書があるか"}
+  C -- ある --> D["results に合う文書を返す（応答の形は「未決」の 4）"]
+  C -- 無い --> E{"DB に改正通達があるか"}
+  E -- 無い --> E1["DOC_NOT_FOUND を返す（001）"]
+  E -- ある --> F{"taxonomy の範囲に文書があるか"}
+  F -- 無い --> E2["results: [] と available_taxonomies を返す（002）"]
+  F -- ある --> G{"hasPdf の条件に合う文書があるか"}
+  G -- 無い --> E3["results: [] と hasPdf を外す案内を返す（003）"]
+  G -- ある --> E4["results: [] と件数付きの「該当なし」・freshness・legal_status を返す（004）"]
+```
+
 ## できること
 
 ### SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 DB に改正通達が 1 件も無いときは検索せずにエラーを返す

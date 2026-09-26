@@ -23,6 +23,38 @@
 
 保存先は、環境変数 `HOUKI_NTA_FILES_DIR` があればその下、無ければ `XDG_CACHE_HOME`（無ければ `~/.cache`）の下の `houki-nta-mcp/files/`。その中に `<docType>/<docId>/<URL の最後のパス要素>` の形で置く。
 
+## 処理の流れ
+
+呼び出しを受けてから応答を返すまでに、何をどの順で確かめるかを示します。図の中の番号は「できること」の仕様 ID の末尾 3 桁です。
+
+```mermaid
+flowchart TD
+  A["呼び出し（docType・docId・kind・save）"] --> B{"docType と docId の組がローカル DB にあるか"}
+  B -- 無い --> E1["DOC_NOT_FOUND を返す。国税庁サイトには取りに行かない（001）"]
+  B -- ある --> C["kind の無い PDF は題名から kind を決める（003）"]
+  C --> D["kaisei の「別紙 N」だけの題名の attachment を comparison にする（004）"]
+  D --> F["各 PDF に read_strategy と layout_note を付ける（005）"]
+  F --> G{"kind を渡したか"}
+  G -- はい --> H["その kind の PDF だけに絞る（006）"]
+  H --> I{"絞った結果が 0 件か"}
+  I -- はい --> K{"kaisei・kind が comparison で、attachment の PDF があるか"}
+  K -- はい --> L["別紙も読むよう note に書き足す（008）"]
+  K -- いいえ --> J["attachedPdfs: [] と、ある種別の note を返す。next_actions は付けない（007）"]
+  L --> J
+  I -- いいえ --> M{"save: true か"}
+  G -- いいえ --> M
+  M -- はい --> N{"保存先に同じパスのファイルがあるか（PDF ごと）"}
+  N -- ある --> O["取りに行かず cached: true で返す（013）"]
+  N -- 無い --> P["国税庁サイトから取って保存先に置く（010）"]
+  P --> Q{"取得の応答が 2xx か"}
+  Q -- いいえ --> R["saved[] に error 付きで残し、note に失敗の件数を書く（011）"]
+  Q -- はい --> T
+  O --> T
+  R --> T
+  M -- いいえ --> T["kind ごとの呼び出し例と read_pdf の 1 件を next_actions に付ける（009）。保存できた PDF は file_path を渡す形にする（012）"]
+  T --> U["kind の順の attachedPdfs・legal_status などの応答（002）と、save: true のときは saved[]（010）を返す"]
+```
+
 ## できること
 
 ### SPEC-NTA-INSPECT-PDF-META-001 ローカル DB に無い文書は取りに行かない

@@ -23,6 +23,24 @@
 
 検索するのはローカル DB だけである。DB には `houki-nta-mcp --bulk-download-jimu-unei` で入れる。この呼び出しで国税庁サイトには取りに行かない。
 
+## 処理の流れ
+
+呼び出しを受けてから応答を返すまでに、何をどの順で確かめるかを示します。図の中の番号は「できること」の仕様 ID の末尾 3 桁です。
+
+```mermaid
+flowchart TD
+  A["呼び出し（keyword・taxonomy・limit・hasPdf）"] --> B["taxonomy・hasPdf で絞って DB を検索する"]
+  B --> C{"キーワードに合う文書があるか"}
+  C -- ある --> D["関連度の高い順に limit 件まで results に入れる（003）"]
+  D --> E{"国税庁の索引から消えた文書が含まれるか"}
+  E -- はい --> F["その要素に index_status・orphaned_at を付け、search_notes に 1 行足す（004）"]
+  E -- いいえ --> G["results・freshness・legal_status を返す（003）"]
+  F --> G
+  C -- 無い --> H{"DB に事務運営指針があるか"}
+  H -- 無い --> E1["DOC_NOT_FOUND を返す（001）"]
+  H -- ある --> E2["results: [] と件数付きの「該当なし」・freshness を返す（002）"]
+```
+
 ## できること
 
 ### SPEC-NTA-SEARCH-JIMU-UNEI-001 DB に事務運営指針が 1 件も無いときはエラー DOC_NOT_FOUND を返す

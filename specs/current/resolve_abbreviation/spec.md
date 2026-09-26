@@ -19,6 +19,22 @@
 
 `format` は無い。応答は常に JSON。
 
+## 処理の流れ
+
+呼び出しを受けてから応答を返すまでに、何をどの順で確かめるかを示します。図の中の番号は「できること」の仕様 ID の末尾 3 桁です。
+
+```mermaid
+flowchart TD
+  A["呼び出し（abbr）"] --> B{"引数が inputSchema に合うか"}
+  B -- いいえ --> E1["辞書を引かずに INVALID_ARGUMENT を返す（005）"]
+  B -- はい --> C{"abbr が辞書の略称・正式名称・別名のどれかと完全一致するか"}
+  C -- いいえ --> E2["resolved: null と note を返す。エラーにしない（004）"]
+  C -- はい --> D["見つかったエントリを resolved に入れる（001）"]
+  D --> F{"エントリの source_mcp_hint が houki-nta か"}
+  F -- はい --> G["in_scope: true を付けて返す（002）"]
+  F -- いいえ --> H["in_scope: false と管轄先の MCP 名を書いた hint を付けて返す（003）"]
+```
+
 ## できること
 
 ### SPEC-NTA-RESOLVE-ABBREVIATION-001 略称でも正式名称でも辞書のエントリを返す

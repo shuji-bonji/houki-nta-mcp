@@ -22,6 +22,19 @@
 
 検索の対象は、`--bulk-download-tax-answer` でローカル DB に入れたタックスアンサーである。このツールは国税庁サイトには取りに行かない。
 
+## 処理の流れ
+
+呼び出しを受けてから応答を返すまでに、何をどの順で確かめるかを示します。図の中の番号は「できること」の仕様 ID の末尾 3 桁です。
+
+```mermaid
+flowchart TD
+  A["呼び出し（keyword・limit・hasPdf）"] --> B{"ローカル DB にタックスアンサーが 1 件でもあるか"}
+  B -- 無い --> E1["DOC_NOT_FOUND と投入コマンドの案内を返す（001）"]
+  B -- ある --> C{"keyword と hasPdf の条件に合う文書があるか"}
+  C -- ある --> R["results に合う文書を返す（応答の形は「未決」の 1）"]
+  C -- 無い --> D["results: []・keyword・件数付きの hint・freshness・legal_status を返す。エラーにしない（002）"]
+```
+
 ## できること
 
 ### SPEC-NTA-SEARCH-TAX-ANSWER-001 DB にタックスアンサーが 1 件も無いときは「該当なし」ではなくエラーを返す
