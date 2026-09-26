@@ -35,6 +35,10 @@
 | #72 | nta_search_qa の domain 引数 | nta_search_qa 8・9 |
 | #73 | DB に入れる値と保存するファイル名 | nta_get_tax_answer 9、nta_get_kaisei_tsutatsu 5、nta_inspect_pdf_meta 6 |
 
+### 承認日の書き誤りの修正
+
+#63（`20260926-processing-flow`）の承認で、12 本の `spec.md` と `specs/changes/20260926-processing-flow/proposal.md` の承認日が `2026-06-26` になっていた。#63 のマージは 2026-09-26（JST）なので `2026-09-26` に直した。また、#63 で「処理の流れ」を足した `nta_get_qa` と `nta_get_tsutatsu`（本文も書き直した）は、承認日の行に #63 の差分が書かれていなかったので書き足した。
+
 ## 変わらない振る舞い
 
 - 仕様 ID と「できること」「できないこと」「処理の流れ」
@@ -47,5 +51,5 @@
 
 ## 人が判断すること
 
-1. この PR は `spec/20260926-processing-flow` の上に積んである。先にそちらをマージし、署名で SHA が変わったときは `git rebase --onto main <processing-flow の元の先頭> spec/20260926-undecided-to-issues` で載せ替える。
-2. **承認日。** proposal.md に承認日と PR 番号を書く。`specs/current/` の 12 本の初版の承認日は、processing-flow の PR で書いたものがそのまま残る。
+1. **承認日。** proposal.md に承認日と PR 番号を書く。`specs/current/` の 14 本の承認日の行にも、この差分（`20260926-undecided-to-issues`）の承認日を書き足す。
+2. **#50 の初版の承認。** 12 本の初版（#50）は PR を通さずに main に入ったため、承認日の行には #63 の日付しか無い。初版の承認をどう記録するか（#63 の承認に含めたとみなすか、初版の日付を別に書くか）。
