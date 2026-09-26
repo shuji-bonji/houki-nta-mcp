@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日:
+- 承認日: 2026-06-26（PR #63）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaSearchJimuUnei`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/tools/doc-search-zero-hit.test.ts`、`src/tools/index-status-response.test.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #18（短い語の検索）、#21（通称の展開）、#23（0 件の理由を分ける）、#30（索引から消えた文書の印）
 
@@ -14,12 +14,12 @@
 
 ## 入力
 
-| 引数 | 必須 | 内容 |
-|---|---|---|
-| `keyword` | 必須 | 検索キーワード。例: `"書面添付"`、`"重加算税"`。空白で区切ると全部の語を含む文書を探す（AND）。3 文字以上の語を推奨。2 文字の語は本文の部分一致で補い、1 文字の語は外す |
-| `taxonomy` | 任意 | 税目フォルダで絞る。例: `"shotoku"` / `"hojin"` / `"sozoku"` / `"shohi"`。値の形は検査しない（DB にある値は、該当が無いときの応答の `available_taxonomies` で分かる） |
-| `limit` | 任意 | 返す件数。既定 10、最大 50 |
-| `hasPdf` | 任意 | 添付 PDF の有無で絞る。`true` = PDF 付きだけ、`false` = PDF 無しだけ、省略 = 絞らない |
+| 引数       | 必須 | 内容                                                                                                                                                                    |
+| ---------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `keyword`  | 必須 | 検索キーワード。例: `"書面添付"`、`"重加算税"`。空白で区切ると全部の語を含む文書を探す（AND）。3 文字以上の語を推奨。2 文字の語は本文の部分一致で補い、1 文字の語は外す |
+| `taxonomy` | 任意 | 税目フォルダで絞る。例: `"shotoku"` / `"hojin"` / `"sozoku"` / `"shohi"`。値の形は検査しない（DB にある値は、該当が無いときの応答の `available_taxonomies` で分かる）   |
+| `limit`    | 任意 | 返す件数。既定 10、最大 50                                                                                                                                              |
+| `hasPdf`   | 任意 | 添付 PDF の有無で絞る。`true` = PDF 付きだけ、`false` = PDF 無しだけ、省略 = 絞らない                                                                                   |
 
 検索するのはローカル DB だけである。DB には `houki-nta-mcp --bulk-download-jimu-unei` で入れる。この呼び出しで国税庁サイトには取りに行かない。
 
@@ -47,26 +47,26 @@ flowchart TD
 
 ローカル DB に事務運営指針が 1 件も入っていないときは、キーワードに関わらずエラー `DOC_NOT_FOUND` を返す。「該当なし」の結果（SPEC-NTA-SEARCH-JIMU-UNEI-002）とは応答の形で区別できる（`results` が無い）。応答は次を持つ。
 
-| フィールド | 内容 |
-|---|---|
-| `error` | `ローカル DB に事務運営指針が 1 件も無いため、検索できません（「該当なし」という結果ではありません）` |
-| `code` | `DOC_NOT_FOUND` |
-| `hint` | MCP サーバーが開いている DB のパスと、`houki-nta-mcp --bulk-download-jimu-unei` で投入する案内。投入したはずなら、bulk download を実行した環境と MCP サーバーとで環境変数 `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` が同じかを確かめる案内 |
-| `next_actions` | 1 件。`action: "cli_bulk_download"`、`example.command: "houki-nta-mcp --bulk-download-jimu-unei"` |
-| `tool` | `nta_search_jimu_unei` |
+| フィールド     | 内容                                                                                                                                                                                                                                    |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `error`        | `ローカル DB に事務運営指針が 1 件も無いため、検索できません（「該当なし」という結果ではありません）`                                                                                                                                   |
+| `code`         | `DOC_NOT_FOUND`                                                                                                                                                                                                                         |
+| `hint`         | MCP サーバーが開いている DB のパスと、`houki-nta-mcp --bulk-download-jimu-unei` で投入する案内。投入したはずなら、bulk download を実行した環境と MCP サーバーとで環境変数 `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` が同じかを確かめる案内 |
+| `next_actions` | 1 件。`action: "cli_bulk_download"`、`example.command: "houki-nta-mcp --bulk-download-jimu-unei"`                                                                                                                                       |
+| `tool`         | `nta_search_jimu_unei`                                                                                                                                                                                                                  |
 
 ### SPEC-NTA-SEARCH-JIMU-UNEI-002 事務運営指針はあるがキーワードに合わないときは成功で「該当なし」を返す
 
 DB に事務運営指針が 1 件以上あり、キーワードに合う文書が無いときは、エラーにせず次の応答を返す。
 
-| フィールド | 内容 |
-|---|---|
-| `results` | `[]` |
-| `keyword` | 渡された `keyword` |
-| `hint` | `該当なし。DB の事務運営指針 <件数> 件に「<keyword>」に合う文書はありません。別のキーワードで試してください`。`taxonomy` や `hasPdf` を渡していたときは、件数の前に `（taxonomy="shotoku"、hasPdf=true）` のように条件を書き、件数はその条件で絞った数になる |
-| `freshness` | DB に入れた日時の範囲（`oldest_fetched_at` / `newest_fetched_at` / `staleness` / `days_since_oldest`。古いときは `warning`）。`taxonomy` を渡していたときはその税目の範囲 |
-| `search_notes` | 短い語を補った・外したなどの注記があるときだけ付く |
-| `legal_status` | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と、通達は行政内部文書である旨の注 |
+| フィールド     | 内容                                                                                                                                                                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `results`      | `[]`                                                                                                                                                                                                                                                         |
+| `keyword`      | 渡された `keyword`                                                                                                                                                                                                                                           |
+| `hint`         | `該当なし。DB の事務運営指針 <件数> 件に「<keyword>」に合う文書はありません。別のキーワードで試してください`。`taxonomy` や `hasPdf` を渡していたときは、件数の前に `（taxonomy="shotoku"、hasPdf=true）` のように条件を書き、件数はその条件で絞った数になる |
+| `freshness`    | DB に入れた日時の範囲（`oldest_fetched_at` / `newest_fetched_at` / `staleness` / `days_since_oldest`。古いときは `warning`）。`taxonomy` を渡していたときはその税目の範囲                                                                                    |
+| `search_notes` | 短い語を補った・外したなどの注記があるときだけ付く                                                                                                                                                                                                           |
+| `legal_status` | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と、通達は行政内部文書である旨の注                                                                                                                                                |
 
 例: 事務運営指針が 1 件だけ入っている DB を `keyword: "滞納処分"` で検索すると、`code` は無く、`hint` は `該当なし。DB の事務運営指針 1 件に「滞納処分」に合う文書はありません。別のキーワードで試してください` になる。
 
@@ -74,13 +74,13 @@ DB に事務運営指針が 1 件以上あり、キーワードに合う文書�
 
 キーワードに合う文書があるときは、関連度の高い順に `limit` 件まで `results` に入れて返す。応答は次を持つ。
 
-| フィールド | 内容 |
-|---|---|
-| `keyword` | 渡された `keyword` |
-| `results[]` | 1 件につき `docType`（`jimu-unei`）・`docId`（`nta_get_jimu_unei` に渡す文書 ID。例: `shotoku/shinkoku/170331`）・`taxonomy`・`title`・`issuedAt`・`sourceUrl`・`snippet`（キーワードの前後を切り出し、合った語を `<b>` で囲んだ抜粋）・`score`（関連度）・`scoreReasons`（関連度の理由の文字列の配列） |
-| `freshness` | DB に入れた日時の範囲（SPEC-NTA-SEARCH-JIMU-UNEI-002 と同じ形） |
-| `search_notes` | 注記があるときだけ付く |
-| `legal_status` | SPEC-NTA-SEARCH-JIMU-UNEI-002 と同じ |
+| フィールド     | 内容                                                                                                                                                                                                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `keyword`      | 渡された `keyword`                                                                                                                                                                                                                                                                                      |
+| `results[]`    | 1 件につき `docType`（`jimu-unei`）・`docId`（`nta_get_jimu_unei` に渡す文書 ID。例: `shotoku/shinkoku/170331`）・`taxonomy`・`title`・`issuedAt`・`sourceUrl`・`snippet`（キーワードの前後を切り出し、合った語を `<b>` で囲んだ抜粋）・`score`（関連度）・`scoreReasons`（関連度の理由の文字列の配列） |
+| `freshness`    | DB に入れた日時の範囲（SPEC-NTA-SEARCH-JIMU-UNEI-002 と同じ形）                                                                                                                                                                                                                                         |
+| `search_notes` | 注記があるときだけ付く                                                                                                                                                                                                                                                                                  |
+| `legal_status` | SPEC-NTA-SEARCH-JIMU-UNEI-002 と同じ                                                                                                                                                                                                                                                                    |
 
 `results` には `total` のような全件数は付けない（返した件数が `results.length`）。
 

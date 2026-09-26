@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日:
+- 承認日: 2026-06-26（PR #63）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaGetBunshokaitou`、`explainDocIdNotFound`、`renderDocumentMarkdown`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/index-status.ts`、`src/services/pdf-meta.ts`、`src/constants.ts`、`src/errors.ts`、`src/tools/get-doc-not-found.test.ts`
 - 関連する Issue: houki-nta-mcp #2（文書回答事例の `legal_status` の文言）、#23（文書系の bulk download の案内）、#30（索引から消えた文書の印）
 
@@ -14,10 +14,10 @@
 
 ## 入力
 
-| 引数 | 必須 | 内容 |
-|---|---|---|
-| `docId` | 必須 | 文書 ID。本庁の事例は `税目/番号`（例: `shotoku/250416`）、国税局の事例は `局/税目/番号`（例: `tokyo/shotoku/260218`）。`nta_search_bunshokaitou` の結果の docId をそのまま渡す |
-| `format` | 任意 | `markdown`（既定）または `json` |
+| 引数     | 必須 | 内容                                                                                                                                                                            |
+| -------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docId`  | 必須 | 文書 ID。本庁の事例は `税目/番号`（例: `shotoku/250416`）、国税局の事例は `局/税目/番号`（例: `tokyo/shotoku/260218`）。`nta_search_bunshokaitou` の結果の docId をそのまま渡す |
+| `format` | 任意 | `markdown`（既定）または `json`                                                                                                                                                 |
 
 `docId` を省く、文字列でない値を渡す、上の 2 つ以外の引数を渡す、のいずれもエラー `INVALID_ARGUMENT` になる（入力の検査はすべてのツールに共通で、このツールのテストは無い。未決 1）。
 
@@ -44,12 +44,12 @@ flowchart TD
 
 ローカル DB に文書回答事例が 1 件も無い（DB が空、または質疑応答事例など他の種別の文書しか入っていない）ときは、エラー `DOC_NOT_FOUND` を返す。この応答は次を持つ。
 
-| フィールド | 内容 |
-|---|---|
-| `error` | `ローカル DB に文書回答事例が 1 件も無いため、docId="<渡した docId>" を取得できません` |
-| `hint` | MCP サーバーが開いている DB のパスと、`houki-nta-mcp --bulk-download-bunshokaitou` で投入する案内。投入したはずのときは環境変数 `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` が bulk download を実行した環境と同じかを確かめる案内 |
-| `next_actions` | 1 件。`action: "cli_bulk_download"`、`example.command: "houki-nta-mcp --bulk-download-bunshokaitou"` |
-| `tool` | `nta_get_bunshokaitou` |
+| フィールド     | 内容                                                                                                                                                                                                                         |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `error`        | `ローカル DB に文書回答事例が 1 件も無いため、docId="<渡した docId>" を取得できません`                                                                                                                                       |
+| `hint`         | MCP サーバーが開いている DB のパスと、`houki-nta-mcp --bulk-download-bunshokaitou` で投入する案内。投入したはずのときは環境変数 `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` が bulk download を実行した環境と同じかを確かめる案内 |
+| `next_actions` | 1 件。`action: "cli_bulk_download"`、`example.command: "houki-nta-mcp --bulk-download-bunshokaitou"`                                                                                                                         |
+| `tool`         | `nta_get_bunshokaitou`                                                                                                                                                                                                       |
 
 `available_doc_ids` は付けない（選ばせる文書が無い）。
 
@@ -57,13 +57,13 @@ flowchart TD
 
 ローカル DB に文書回答事例はあるが、渡した `docId` の文書が無いときは、エラー `DOC_NOT_FOUND` を返す。「投入されていない」とは書かず、docId の誤りとして案内する。この応答は次を持つ。
 
-| フィールド | 内容 |
-|---|---|
-| `error` | `文書回答事例 docId="<渡した docId>" は見つかりません` |
-| `hint` | DB にある文書回答事例の件数（例: `DB の文書回答事例 1,841 件に、この docId はありません`）、`available_doc_ids` から選ぶか `nta_search_bunshokaitou` で探す案内、DB を投入した後に公開された文書は `houki-nta-mcp --bulk-download-bunshokaitou` をもう一度実行すると取り込める旨 |
-| `available_doc_ids` | DB にある文書回答事例の docId を発出日の新しい順に最大 30 件。要素は `docId`・`title`・`issuedAt`。他の種別（改正通達・質疑応答事例など）の docId は入らない |
-| `next_actions` | 1 件。`{ action: "nta_search_bunshokaitou", reason: "キーワード検索で正しい docId を探せます" }` |
-| `tool` | `nta_get_bunshokaitou` |
+| フィールド          | 内容                                                                                                                                                                                                                                                                             |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `error`             | `文書回答事例 docId="<渡した docId>" は見つかりません`                                                                                                                                                                                                                           |
+| `hint`              | DB にある文書回答事例の件数（例: `DB の文書回答事例 1,841 件に、この docId はありません`）、`available_doc_ids` から選ぶか `nta_search_bunshokaitou` で探す案内、DB を投入した後に公開された文書は `houki-nta-mcp --bulk-download-bunshokaitou` をもう一度実行すると取り込める旨 |
+| `available_doc_ids` | DB にある文書回答事例の docId を発出日の新しい順に最大 30 件。要素は `docId`・`title`・`issuedAt`。他の種別（改正通達・質疑応答事例など）の docId は入らない                                                                                                                     |
+| `next_actions`      | 1 件。`{ action: "nta_search_bunshokaitou", reason: "キーワード検索で正しい docId を探せます" }`                                                                                                                                                                                 |
+| `tool`              | `nta_get_bunshokaitou`                                                                                                                                                                                                                                                           |
 
 ## できないこと
 

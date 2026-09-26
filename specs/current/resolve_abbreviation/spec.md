@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日:
+- 承認日: 2026-06-26（PR #63）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleResolveAbbreviation`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/tools/handlers.test.ts`、`src/server.test.ts`
 
 この文書は「このツールは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。
@@ -13,8 +13,8 @@
 
 ## 入力
 
-| 引数 | 必須 | 内容 |
-|---|---|---|
+| 引数   | 必須 | 内容                                                                                                                                                                    |
+| ------ | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `abbr` | 必須 | 略称・正式名称・別名（辞書の `aliases`）のどれか。例: `消基通` / `所基通` / `電帳法取通` / `消費税法基本通達`。前後の空白は無視する。完全一致で引く（部分一致はしない） |
 
 `format` は無い。応答は常に JSON。
@@ -43,16 +43,16 @@ flowchart TD
 
 `resolved` は辞書のエントリそのままで、次のフィールドを持つ。
 
-| フィールド | 内容 |
-|---|---|
-| `abbr` | 辞書に登録された略称。正式名称で引いたときもこれは略称（`消費税法基本通達` → `消基通`） |
-| `formal` | 正式名称 |
-| `law_id` | e-Gov の法令 ID。通達など e-Gov に無いものは `null` |
-| `law_num` / `law_type` | 法令番号と法令種別。法令系のエントリにだけ付く |
-| `domain` | 分野。例: `tax` |
-| `category` | 種別。例: `kihon-tsutatsu`（基本通達）/ `kobetsu-tsutatsu`（個別通達）/ `law`（法律） |
-| `source_mcp_hint` | 本文を持つ MCP の名前。例: `houki-nta` / `houki-egov` |
-| `aliases` / `note` | 別名の一覧と備考。辞書にあるときだけ付く |
+| フィールド             | 内容                                                                                    |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| `abbr`                 | 辞書に登録された略称。正式名称で引いたときもこれは略称（`消費税法基本通達` → `消基通`） |
+| `formal`               | 正式名称                                                                                |
+| `law_id`               | e-Gov の法令 ID。通達など e-Gov に無いものは `null`                                     |
+| `law_num` / `law_type` | 法令番号と法令種別。法令系のエントリにだけ付く                                          |
+| `domain`               | 分野。例: `tax`                                                                         |
+| `category`             | 種別。例: `kihon-tsutatsu`（基本通達）/ `kobetsu-tsutatsu`（個別通達）/ `law`（法律）   |
+| `source_mcp_hint`      | 本文を持つ MCP の名前。例: `houki-nta` / `houki-egov`                                   |
+| `aliases` / `note`     | 別名の一覧と備考。辞書にあるときだけ付く                                                |
 
 例: `abbr: "消基通"` の応答は `abbr: "消基通"`、`resolved.formal: "消費税法基本通達"`、`resolved.law_id: null`、`resolved.category: "kihon-tsutatsu"`、`resolved.source_mcp_hint: "houki-nta"`。
 

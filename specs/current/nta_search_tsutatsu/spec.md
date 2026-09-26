@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日:
+- 承認日: 2026-06-26（PR #63）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`searchTsutatsu`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/relevance-scoring.ts`、`src/services/freshness.ts`、`src/constants.ts`、`src/errors.ts`、`src/tools/handlers.test.ts`、`src/server.test.ts`
 - 関連する Issue: houki-nta-mcp #18（2 文字の語の補完）、#20（通達の応答に base_laws）、#21（通称の展開を 0 件のときだけにする）
 
@@ -14,10 +14,10 @@
 
 ## 入力
 
-| 引数 | 必須 | 内容 |
-|---|---|---|
+| 引数      | 必須 | 内容                                                                                                                                                                                                                                                          |
+| --------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `keyword` | 必須 | 検索キーワード。例: `"軽減税率"`、`"電子帳簿"`、`"棚卸資産"`。空白で区切ると全部の語を含む条項を探す。3 文字以上の語を推奨する。2 文字の語は本文の部分一致で補い、その旨を応答の `search_notes` に書く。略称・通称（`"消基通"`、`"インボイス"` など）も渡せる |
-| `limit` | 任意 | 取得件数。既定 10、最大 50 |
+| `limit`   | 任意 | 取得件数。既定 10、最大 50                                                                                                                                                                                                                                    |
 
 検索の対象はローカル DB だけである。国税庁サイトには取りに行かない。DB に条項を入れるのは CLI の `--bulk-download`（通達 1 つ）または `--bulk-download-all`（基本通達 4 種）である。
 
@@ -68,15 +68,15 @@ flowchart TD
 
 キーワードに合う条項があるときは、次のフィールドを持つ応答を返す。
 
-| フィールド | 内容 |
-|---|---|
-| `keyword` | 渡されたキーワード（前後の空白を除いたもの） |
-| `count` | `hits` の件数 |
-| `hits` | 条項の配列。要素は `tsutatsu`（正式名。例 `"法人税基本通達"`）・`abbr`（略称。例 `"法基通"`）・`clauseNumber`（例 `"9-2-1"`）・`title`・`snippet`（一致した語を `<b>…</b>` で囲んだ前後の抜粋）・`sourceUrl`・`score`（0.0〜1.5 の関連度）・`scoreReasons`（関連度の理由の文の配列） |
-| `freshness` | DB に入れた日時の範囲と鮮度（`oldest_fetched_at` / `newest_fetched_at` / `staleness` / `days_since_oldest`。古いときは `warning`）。基本通達 4 種をまとめて判定する。判定できるものが無ければ付かない |
-| `legal_status` | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と注（通達は行政内部文書で、納税者・裁判所を直接拘束しない） |
-| `base_laws_by_tsutatsu` / `next_actions` | SPEC-NTA-SEARCH-TSUTATSU-009 |
-| `search_notes` | SPEC-NTA-SEARCH-TSUTATSU-006・008。注記が無ければ付かない |
+| フィールド                               | 内容                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `keyword`                                | 渡されたキーワード（前後の空白を除いたもの）                                                                                                                                                                                                                                         |
+| `count`                                  | `hits` の件数                                                                                                                                                                                                                                                                        |
+| `hits`                                   | 条項の配列。要素は `tsutatsu`（正式名。例 `"法人税基本通達"`）・`abbr`（略称。例 `"法基通"`）・`clauseNumber`（例 `"9-2-1"`）・`title`・`snippet`（一致した語を `<b>…</b>` で囲んだ前後の抜粋）・`sourceUrl`・`score`（0.0〜1.5 の関連度）・`scoreReasons`（関連度の理由の文の配列） |
+| `freshness`                              | DB に入れた日時の範囲と鮮度（`oldest_fetched_at` / `newest_fetched_at` / `staleness` / `days_since_oldest`。古いときは `warning`）。基本通達 4 種をまとめて判定する。判定できるものが無ければ付かない                                                                                |
+| `legal_status`                           | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と注（通達は行政内部文書で、納税者・裁判所を直接拘束しない）                                                                                                                                              |
+| `base_laws_by_tsutatsu` / `next_actions` | SPEC-NTA-SEARCH-TSUTATSU-009                                                                                                                                                                                                                                                         |
+| `search_notes`                           | SPEC-NTA-SEARCH-TSUTATSU-006・008。注記が無ければ付かない                                                                                                                                                                                                                            |
 
 複数の語を空白で区切って渡したときは、全部の語を含む条項だけを返す。
 

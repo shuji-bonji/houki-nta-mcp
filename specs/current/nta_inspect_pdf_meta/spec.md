@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日:
+- 承認日: 2026-06-26（PR #63）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaInspectPdfMeta`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/pdf-meta.ts`、`src/services/pdf-files.ts`、`src/constants.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #36（読み方の事実と `save: true`）、#44（改正通達の「別紙 N」を新旧対照表として扱う）、#1（docType 別の `legal_status`）
 
@@ -14,12 +14,12 @@
 
 ## 入力
 
-| 引数 | 必須 | 内容 |
-|---|---|---|
-| `docType` | 必須 | 文書種別。`kaisei`（改正通達）/ `jimu-unei`（事務運営指針）/ `bunshokaitou`（文書回答事例）/ `tax-answer`（タックスアンサー）のどれか。質疑応答事例（qa-jirei）は PDF を持たないので選べない |
-| `docId` | 必須 | 文書 ID。`nta_search_*` の結果や `nta_get_*` の応答から得る |
-| `kind` | 任意 | 返す PDF の種別を 1 つに絞る。`comparison`（新旧対照表）/ `attachment`（別紙・別表）/ `qa-pdf`（Q&A）/ `related`（参考資料）/ `notice`（通知・連絡）/ `unknown`（判定できなかったもの）。省くと全件 |
-| `save` | 任意 | `true` のとき、返す PDF をサーバー側の保存先に取得し、`saved[]` に絶対パスを返す。既定は `false` |
+| 引数      | 必須 | 内容                                                                                                                                                                                                |
+| --------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docType` | 必須 | 文書種別。`kaisei`（改正通達）/ `jimu-unei`（事務運営指針）/ `bunshokaitou`（文書回答事例）/ `tax-answer`（タックスアンサー）のどれか。質疑応答事例（qa-jirei）は PDF を持たないので選べない        |
+| `docId`   | 必須 | 文書 ID。`nta_search_*` の結果や `nta_get_*` の応答から得る                                                                                                                                         |
+| `kind`    | 任意 | 返す PDF の種別を 1 つに絞る。`comparison`（新旧対照表）/ `attachment`（別紙・別表）/ `qa-pdf`（Q&A）/ `related`（参考資料）/ `notice`（通知・連絡）/ `unknown`（判定できなかったもの）。省くと全件 |
+| `save`    | 任意 | `true` のとき、返す PDF をサーバー側の保存先に取得し、`saved[]` に絶対パスを返す。既定は `false`                                                                                                    |
 
 保存先は、環境変数 `HOUKI_NTA_FILES_DIR` があればその下、無ければ `XDG_CACHE_HOME`（無ければ `~/.cache`）の下の `houki-nta-mcp/files/`。その中に `<docType>/<docId>/<URL の最後のパス要素>` の形で置く。
 
@@ -65,12 +65,12 @@ flowchart TD
 
 文書がローカル DB にあるとき、応答は次のフィールドを持つ。
 
-| フィールド | 内容 |
-|---|---|
-| `docType` / `docId` | 引数のとおり |
-| `title` / `sourceUrl` | 文書の題名と、文書ページの URL |
-| `attachedPdfs` | 添付 PDF の配列。要素は `title`・`url`・`sizeKb`（分かるときだけ）・`kind`・`read_strategy`・`layout_note` |
-| `legal_status` | 文書種別に応じた法的位置付け（`binds_citizens` / `binds_courts` / `binds_tax_office` と注） |
+| フィールド            | 内容                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `docType` / `docId`   | 引数のとおり                                                                                               |
+| `title` / `sourceUrl` | 文書の題名と、文書ページの URL                                                                             |
+| `attachedPdfs`        | 添付 PDF の配列。要素は `title`・`url`・`sizeKb`（分かるときだけ）・`kind`・`read_strategy`・`layout_note` |
+| `legal_status`        | 文書種別に応じた法的位置付け（`binds_citizens` / `binds_courts` / `binds_tax_office` と注）                |
 
 `attachedPdfs` は `kind` の順に並べる。順は `comparison` → `attachment` → `qa-pdf` → `related` → `notice` → `unknown`。同じ `kind` の中では DB に入っている順のまま。
 
@@ -92,14 +92,14 @@ DB に入っている PDF に `kind` が無い（v0.6.0 期に投入した文書
 
 `attachedPdfs` の各要素に、`kind` に応じた `read_strategy` と `layout_note` を付ける。どちらも PDF 読み取りツールの名前を含まない。
 
-| `kind` | `read_strategy` | `layout_note` の要点 |
-|---|---|---|
-| `comparison` | `tables` | 改正後と改正前を左右 2 列に並べた表。左が改正後・右が改正前のことが多いが見出し行で確かめる。「（同左）」「（省略）」「（新設）」「（削除）」と「【新設】」「【削除】」「【一部改正】」の 2 通りの印がある。表として取れないなら左右 2 列に分けて読む |
-| `attachment` | `tables` | 別紙・別表・様式。表として取れるなら表で、取れなければ本文として読む。改正通達（kaisei）の別紙は新旧対照表本体のことが多い |
-| `qa-pdf` | `text` | 問と答が交互に並ぶ散文。本文として通して読む |
-| `related` | `text` | 参考資料。本文として読む |
-| `notice` | `text` | 通知・連絡。本文として読む。調査の結論には通常含めない |
-| `unknown` | `sample` | 先頭ページを読んで中身を確かめてから決める |
+| `kind`       | `read_strategy` | `layout_note` の要点                                                                                                                                                                                                                                  |
+| ------------ | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `comparison` | `tables`        | 改正後と改正前を左右 2 列に並べた表。左が改正後・右が改正前のことが多いが見出し行で確かめる。「（同左）」「（省略）」「（新設）」「（削除）」と「【新設】」「【削除】」「【一部改正】」の 2 通りの印がある。表として取れないなら左右 2 列に分けて読む |
+| `attachment` | `tables`        | 別紙・別表・様式。表として取れるなら表で、取れなければ本文として読む。改正通達（kaisei）の別紙は新旧対照表本体のことが多い                                                                                                                            |
+| `qa-pdf`     | `text`          | 問と答が交互に並ぶ散文。本文として通して読む                                                                                                                                                                                                          |
+| `related`    | `text`          | 参考資料。本文として読む                                                                                                                                                                                                                              |
+| `notice`     | `text`          | 通知・連絡。本文として読む。調査の結論には通常含めない                                                                                                                                                                                                |
+| `unknown`    | `sample`        | 先頭ページを読んで中身を確かめてから決める                                                                                                                                                                                                            |
 
 ### SPEC-NTA-INSPECT-PDF-META-006 kind で絞る
 
@@ -127,12 +127,12 @@ DB に入っている PDF に `kind` が無い（v0.6.0 期に投入した文書
 
 保存していない PDF（`save` を渡さないか、保存に失敗した）の 1 件は、`action` が `pdf-reader-mcp:read_url` で、`example` は次のとおり。
 
-| `read_strategy` | `example` |
-|---|---|
+| `read_strategy`          | `example`                   |
+| ------------------------ | --------------------------- |
 | `tables`（`comparison`） | `{ url, split_columns: 2 }` |
-| `tables`（`attachment`） | `{ url }` |
-| `text` | `{ url }` |
-| `sample` | `{ url, pages: "1" }` |
+| `tables`（`attachment`） | `{ url }`                   |
+| `text`                   | `{ url }`                   |
+| `sample`                 | `{ url, pages: "1" }`       |
 
 例: 「新旧対照表」と「別紙1 計算明細書」のある改正通達を `save` 無しで呼ぶと、`next_actions` の `action` は `pdf-reader-mcp:read_url`・`pdf-reader-mcp:read_url`・`read_pdf` の 3 件で、`example` は順に `{ url: "…/a.pdf", split_columns: 2 }`・`{ url: "…/b.pdf" }`・`{ url: "…/a.pdf" }` になる。
 

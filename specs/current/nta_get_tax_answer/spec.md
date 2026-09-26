@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日:
+- 承認日: 2026-06-26（PR #63）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`getTaxAnswer`）、`src/tools/definitions.ts`、`src/services/tax-answer-render.ts`、`src/services/tax-answer-parser.ts`、`src/services/index-status.ts`、`src/tools/handlers.test.ts`、`src/tools/get-db-first.test.ts`
 - 関連する Issue: houki-nta-mcp #29（DB を先に引く）、#30（索引から消えた文書の印）
 
@@ -14,21 +14,21 @@
 
 ## 入力
 
-| 引数 | 必須 | 内容 |
-|---|---|---|
-| `no` | 必須 | タックスアンサー番号。半角の数字だけ。例: `"6101"`（消費税の基本的なしくみ）、`"1120"`（医療費控除）。先頭の桁で税目が決まる（下の表） |
-| `format` | 任意 | `markdown`（既定）または `json` |
+| 引数     | 必須 | 内容                                                                                                                                   |
+| -------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `no`     | 必須 | タックスアンサー番号。半角の数字だけ。例: `"6101"`（消費税の基本的なしくみ）、`"1120"`（医療費控除）。先頭の桁で税目が決まる（下の表） |
+| `format` | 任意 | `markdown`（既定）または `json`                                                                                                        |
 
-| 先頭の桁 | 税目 | 税目フォルダ |
-|---|---|---|
-| `1` | 所得税 | `shotoku` |
-| `2` | 源泉徴収 | `gensen` |
-| `3` | 譲渡所得 | `joto` |
-| `4` | 相続税・贈与税 | `sozoku` |
-| `5` | 法人税 | `hojin` |
-| `6` | 消費税 | `shohi` |
-| `7` | 印紙税 | `inshi` |
-| `9` | お知らせ（税目横断） | `osirase` |
+| 先頭の桁 | 税目                 | 税目フォルダ |
+| -------- | -------------------- | ------------ |
+| `1`      | 所得税               | `shotoku`    |
+| `2`      | 源泉徴収             | `gensen`     |
+| `3`      | 譲渡所得             | `joto`       |
+| `4`      | 相続税・贈与税       | `sozoku`     |
+| `5`      | 法人税               | `hojin`      |
+| `6`      | 消費税               | `shohi`      |
+| `7`      | 印紙税               | `inshi`      |
+| `9`      | お知らせ（税目横断） | `osirase`    |
 
 ## 処理の流れ
 
@@ -90,16 +90,16 @@ SPEC-NTA-GET-TAX-ANSWER-005 で取得した記事は DB に入る。同じ番号
 
 `format` を `json` にしたとき、応答は次のフィールドを持つ。
 
-| フィールド | 内容 |
-|---|---|
-| `taxAnswer.no` | 記事番号（ページの見出しから読んだもの）。例: `"1120"` |
-| `taxAnswer.title` | 題名。例: `"医療費を支払ったとき（医療費控除）"` |
-| `taxAnswer.effectiveDate` | ページに書かれた法令時点。例: `"令和7年4月1日現在法令等"`。無いときは付かない |
-| `taxAnswer.taxCategory` | 対象税目。例: `"消費税"`。無いときは付かない |
-| `taxAnswer.sections` | 見出しごとの節の配列。要素は `heading`（見出し）と `paragraphs`（段落の文字列の配列）。1 件以上ある |
-| `taxAnswer.sourceUrl` / `taxAnswer.fetchedAt` | 出典 URL と取得日時 |
-| `source` | `db` または `live` |
-| `legal_status` | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と注 |
+| フィールド                                    | 内容                                                                                                |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `taxAnswer.no`                                | 記事番号（ページの見出しから読んだもの）。例: `"1120"`                                              |
+| `taxAnswer.title`                             | 題名。例: `"医療費を支払ったとき（医療費控除）"`                                                    |
+| `taxAnswer.effectiveDate`                     | ページに書かれた法令時点。例: `"令和7年4月1日現在法令等"`。無いときは付かない                       |
+| `taxAnswer.taxCategory`                       | 対象税目。例: `"消費税"`。無いときは付かない                                                        |
+| `taxAnswer.sections`                          | 見出しごとの節の配列。要素は `heading`（見出し）と `paragraphs`（段落の文字列の配列）。1 件以上ある |
+| `taxAnswer.sourceUrl` / `taxAnswer.fetchedAt` | 出典 URL と取得日時                                                                                 |
+| `source`                                      | `db` または `live`                                                                                  |
+| `legal_status`                                | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と注                    |
 
 ## できないこと
 
