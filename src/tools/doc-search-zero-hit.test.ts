@@ -177,7 +177,7 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.freshness?.staleness).toBe('fresh');
   });
 
-  it('SPEC-NTA-SEARCH-TAX-ANSWER-001 nta_search_qa: 他の種別だけが入っている DB（qa のみ）でタックスアンサーを検索すると DOC_NOT_FOUND', async () => {
+  it('SPEC-NTA-SEARCH-TAX-ANSWER-001 nta_search_tax_answer: 他の種別だけが入っている DB（qa のみ）でタックスアンサーを検索すると DOC_NOT_FOUND', async () => {
     const r = (await handleNtaSearchTaxAnswer(
       { keyword: '医療費控除' },
       { dbPath: qaOnlyPath }
