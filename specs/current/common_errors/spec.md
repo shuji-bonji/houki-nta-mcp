@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: 共通
 - 版: current
-- 承認日: 2026-09-27 （PR #77）
+- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）
 - 起こした元: v0.21.0 の `src/server.ts`、`src/tools/tool-args.ts`、`src/errors.ts`、`src/tools/definitions.ts`、`src/tools/handlers.ts`（ツールの登録の表）、`src/server.test.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue:
 
@@ -76,12 +76,13 @@ flowchart TD
   A["tools/call（name・arguments）"] --> B{"name は 14 ツールのどれかか"}
   B -- いいえ --> E1["UNKNOWN_TOOL を返す（002）"]
   B -- はい --> C{"arguments が tools/list の inputSchema に合うか"}
-  C -- "型・必須・enum が合わない" --> E2["INVALID_ARGUMENT を返す（003）"]
-  C -- "inputSchema に無い引数がある" --> E3["INVALID_ARGUMENT を返す。path に引数名（004・005）"]
+  C -- "型・必須・enum が合わない" --> E2["INVALID_ARGUMENT を返す。inputSchema を確かめる案内を付け、ツールの処理に進まない（003・007・008）"]
+  C -- "inputSchema に無い引数がある" --> E3["INVALID_ARGUMENT を返す。path に引数名。ツールの処理に進まない（004・005・007・008）"]
   C -- 合う --> D["ツールの処理"]
   D -- "エラーを返した" --> F["isError: true と JSON の本文（001）"]
   D -- "成功を返した" --> G["isError を付けない（001）"]
   D -- "想定外の例外" --> E4["INTERNAL_ERROR を返す。retryable: true（006）"]
+  D -- "国税庁のページの解析に失敗" --> E5["INTERNAL_ERROR を返す。ページの構造の変更を疑う案内を付ける（009）"]
 ```
 
 ## できること
@@ -125,6 +126,37 @@ tools/list が返す 14 ツールの inputSchema には、どれも `additionalP
 - `retryable` は `true`
 - `detail.cause` に、元の例外の文を入れる（例: 例外の文が `boom` なら `detail.cause` は `boom`）
 
+### SPEC-NTA-COMMON-ERRORS-007 inputSchema の検査で返す `INVALID_ARGUMENT` には、inputSchema を確かめる案内を付ける
+
+SPEC-NTA-COMMON-ERRORS-003・004 のエラーは、14 ツールとも次の形で返す。
+
+- `error` は `引数が tools/list の inputSchema に合いません: ` で始まり、その後に `detail.issues` の問題を `<path>: <message>` の形で続ける（`path` が空なら `<message>` だけ）
+- `hint` は `tools/list の <ツール名> の inputSchema を確認してください (型・必須・enum・未知の引数)`
+- `next_actions` は `{ action: "list_tools", reason: "inputSchema で引数の型と必須項目を確認できます" }` の 1 件
+
+例: `nta_search_jimu_unei` に `{ keyword: "x", foo: 1 }` を渡すと、`error` は `引数が tools/list の inputSchema に合いません: foo: inputSchema に無い引数です`、`hint` は `tools/list の nta_search_jimu_unei の inputSchema を確認してください (型・必須・enum・未知の引数)` になる。`nta_get_jimu_unei` に `{}` を渡すと、`detail.issues[0].path` は空文字で、`error` は `引数が tools/list の inputSchema に合いません: ` の後に必須の引数が無いことを表す文が続く。
+
+### SPEC-NTA-COMMON-ERRORS-008 inputSchema に合わない引数では、ツールの処理に進まない
+
+SPEC-NTA-COMMON-ERRORS-003・004 のエラーを返すときは、ツールの処理に進まない。ローカル DB を開かず、国税庁サイトに取りに行かず、略称辞書も引かない。例: `nta_get_qa` に `{ topic: "shohi", category: "01" }`（必須の `id` が無い）を渡しても、国税庁サイトへの取得は起きない。
+
+### SPEC-NTA-COMMON-ERRORS-009 国税庁のページの解析に失敗したときは `INTERNAL_ERROR` で、ページの構造の変更を疑う案内を付ける
+
+国税庁サイトから取ったページを読み取れなかったときは、エラー `INTERNAL_ERROR` を返す（`isError: true`）。当てはまるのは次の 3 ツールである。
+
+| ツール | 読み取れなかったページ | `error` |
+|---|---|---|
+| `nta_get_tsutatsu` | 条項のある節のページ、または目次のページ（SPEC-NTA-GET-TSUTATSU-006・014） | `通達ページのパースに失敗: <理由>` |
+| `nta_get_qa` | 事例のページ（SPEC-NTA-GET-QA-005） | `質疑応答事例ページのパースに失敗: <理由>` |
+| `nta_get_tax_answer` | 記事のページ（SPEC-NTA-GET-TAX-ANSWER-005） | `タックスアンサーページのパースに失敗: <理由>` |
+
+- `hint` は `パーサのバグまたは国税庁ページの構造変更の可能性。報告してください`
+- `url` に、読み取れなかったページの URL を入れる
+- `detail` は `{ url: <同じ URL>, cause: <理由> }`
+- 読み取れなかったページの内容は DB に書き戻さない
+
+ページの取得そのものに失敗したとき（`SOURCE_API_ERROR`）と、処理中の想定外の例外（SPEC-NTA-COMMON-ERRORS-006）は、この ID に当たらない。
+
 ## できないこと
 
 - ツール固有のエラー（`ARTICLE_NOT_FOUND`・`DOC_NOT_FOUND` など）をどの場面で返すかを決めること（各ツールの spec.md に書く）
@@ -139,8 +171,6 @@ tools/list が返す 14 ツールの inputSchema には、どれも `additionalP
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **引数の検査のエラーの `hint`・`next_actions`・`error` の文面。** `hint` は「tools/list の <ツール名> の inputSchema を確認してください (型・必須・enum・未知の引数)」、`next_actions` は `action: "list_tools"`（inputSchema で引数の型と必須項目を確かめる案内）の 1 件、`error` は「引数が tools/list の inputSchema に合いません: <path>: <message>; …」。テストは `code`・`tool`・`detail.issues[0].path` しか確かめていない。ID を振るのは受入テストを書いてから。
-2. **引数の検査に通らないときは、ツールの処理（DB・国税庁サイト・略称辞書）に進まない。** 今の振る舞いはそうなっているが、処理に進まなかったことを確かめるテストが無い。ID を振るのは受入テストを書いてから。
 3. **`arguments` を省いた呼び出し。** 空のオブジェクトを渡したものとして検査する（14 ツールとも必須の引数があるので `INVALID_ARGUMENT` になる）。テストが無い。ID を振るのは受入テストを書いてから。
 4. **inputSchema に無い引数の `detail.issues` の `message` と、2 つ以上あるときの `path`。** `message` は「inputSchema に無い引数です」。inputSchema に無い引数が 2 つ以上あるときは、`path` にそれらの名前がすべて「, 」区切りで入り、問題 1 件ごとにどの引数かを分けない。どちらもテストが無い。問題ごとに引数を分けるかは人が決める。
 5. **`UNKNOWN_TOOL` の `error` の文面と `tool`。** `error` は英語の「Unknown tool: <name>」で、ほかのエラーと違い日本語でない。`tool` は付かない。どちらもテストが無い。文面を揃えるかは人が決める。

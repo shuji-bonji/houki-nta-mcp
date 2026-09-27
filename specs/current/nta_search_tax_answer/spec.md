@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaSearchTaxAnswer`）、`src/tools/definitions.ts`、`src/services/db-search.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/tools/handlers.test.ts`、`src/tools/doc-search-zero-hit.test.ts`
 - 関連する Issue: houki-nta-mcp #18（短い語の扱い）、#21（通称の展開）、#23（0 件の理由を分ける）、#30（索引から消えた文書の印）
 
@@ -30,9 +30,11 @@
 flowchart TD
   A["呼び出し（keyword・limit・hasPdf）"] --> B{"ローカル DB にタックスアンサーが 1 件でもあるか"}
   B -- 無い --> E1["DOC_NOT_FOUND と投入コマンドの案内を返す（001）"]
-  B -- ある --> C{"keyword と hasPdf の条件に合う文書があるか"}
-  C -- ある --> R["results に合う文書を返す（応答の形は「未決」の 1）"]
-  C -- 無い --> D["results: []・keyword・件数付きの hint・freshness・legal_status を返す。エラーにしない（002）"]
+  B -- ある --> C{"keyword と hasPdf の条件に合う文書があるか（003）"}
+  C -- ある --> R["results・keyword・freshness・legal_status を返す（015）"]
+  C -- 無い --> H{"hasPdf の条件に合う文書があるか（003）"}
+  H -- 無い --> E2["results: [] と hasPdf を外す案内を返す（003）"]
+  H -- "ある（hasPdf を省いたときを含む）" --> D["results: []・keyword・件数付きの hint・freshness・legal_status を返す。エラーにしない（002）"]
 ```
 
 ## できること
@@ -60,6 +62,22 @@ DB にタックスアンサーはあるが、キーワード（と `hasPdf` の�
 | `search_notes` | 2 文字以下の語や通称の展開があったときだけ、その扱いを書いた文字列の配列                                                                                                                                                    |
 | `legal_status` | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と、参考解説資料である旨の注                                                                                                                    |
 
+### SPEC-NTA-SEARCH-TAX-ANSWER-003 `hasPdf` で絞り、合う文書が無いときは `hasPdf` を外すよう案内する
+
+`hasPdf: true` を渡すと添付 PDF のある記事だけを、`hasPdf: false` を渡すと添付 PDF の無い記事だけを探す。
+
+DB にタックスアンサーはあるが、`hasPdf` の条件に合う記事が 1 件も無いときは、エラーにせず次を返す。
+
+- `results`: `[]`
+- `keyword`: 渡した `keyword`
+- `hint`: `DB のタックスアンサー <件数> 件に、PDF 付きの文書はありません。hasPdf を外して検索してください`。`hasPdf: false` なら「PDF 無しの文書はありません」。件数は DB のタックスアンサー全体の件数
+- `freshness`: DB のタックスアンサー全体の取得時点（形は SPEC-NTA-SEARCH-RULES-017）
+- `legal_status`
+
+例: DB のタックスアンサー 2 件がどちらも PDF を持たないとき、`{ keyword: "源泉徴収", hasPdf: true }` の `hint` は `DB のタックスアンサー 2 件に、PDF 付きの文書はありません。hasPdf を外して検索してください` になる。
+
+0 件の理由は SPEC-NTA-SEARCH-TAX-ANSWER-001 → 003 → 002 の順に決める。
+
 ## できないこと
 
 - 国税庁サイトからタックスアンサーを探すこと（探すのはローカル DB だけ。DB に入れるのは `--bulk-download-tax-answer`）
@@ -74,11 +92,6 @@ DB にタックスアンサーはあるが、キーワード（と `hasPdf` の�
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **キーワードに合う文書があるときの応答。** `results` の要素は `docType`（`tax-answer`）・`docId`（タックスアンサー番号。例: `6101`）・`taxonomy`・`title`・`sourceUrl`・`snippet`（合った語を `<b>` で囲んだ抜粋）・`score`・`scoreReasons` を持ち、`score` の高い順に並ぶ。応答には `keyword`・`freshness`・`legal_status` も付く。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-2. **`hasPdf` で絞ったとき。** 条件に合う文書だけを返す。条件に合う文書が 1 件も無いときは `results: []` と、`hasPdf` を外すよう案内する `hint`（例: `DB のタックスアンサー 1 件に、PDF 付きの文書はありません。hasPdf を外して検索してください`）を返す。このツールの応答としてのテストが無い（同じ分け方のテストは `nta_search_qa` / `nta_search_kaisei_tsutatsu` にある）。ID を振るのは受入テストを書いてから。
-3. **短い語の扱いと `search_notes`。** 2 文字の語は、3 文字以上の語があればその全文検索の結果を本文の部分一致で絞り込み、無ければ本文と題名の部分一致だけで探す（このときは `snippet` が部分一致の周辺の抜粋になる）。1 文字の語は検索条件から外す。どちらも `search_notes` に文で書き、`scoreReasons` にも残す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-4. **略称・通称の展開。** `keyword` が略称辞書（houki-abbreviations）の略称そのもの（例: `消基通`）なら正式名も合わせて探す。通称（例: `インボイス` → 消費税法）は、元の語で 0 件のときだけ正式名に広げて探し直し、広げたことを `search_notes` に書く。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-5. **国税庁の索引から消えた文書の印。** 索引から外れた文書も結果から外さず、その要素に `index_status: "removed_from_index"` と `orphaned_at` を付け、`search_notes` に「検索結果 N 件のうち M 件は国税庁の索引から外れています」の文を足す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 6. **`limit` の範囲外の値を黙って丸める。** → houki-nta-mcp #68
 7. **空のキーワード。** → houki-nta-mcp #69
 8. **`nta_get_tax_answer` へ進む案内が無い。** → houki-nta-mcp #70

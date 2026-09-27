@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`searchTsutatsu`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/relevance-scoring.ts`、`src/services/freshness.ts`、`src/constants.ts`、`src/errors.ts`、`src/tools/handlers.test.ts`、`src/server.test.ts`
 - 関連する Issue: houki-nta-mcp #18（2 文字の語の補完）、#20（通達の応答に base_laws）、#21（通称の展開を 0 件のときだけにする）
 
@@ -41,7 +41,7 @@ flowchart TD
   I -- はい --> J["正式名を含む条項に広げて探し直し、search_notes に書く（008）"]
   I -- いいえ --> K{"合う条項があるか"}
   J --> K
-  K -- ある --> L["keyword・count・hits・freshness・legal_status の応答（004）"]
+  K -- ある --> L["keyword・count・hits・freshness・legal_status の応答（004・010）"]
   L --> M["通達ごとの base_laws_by_tsutatsu と next_actions を付ける（009）"]
   K -- 無い --> N["keyword・hits: []・message を返す。エラーにしない（005）"]
   M --> O["語が全部 3 文字以上で通称の展開も無ければ search_notes を付けない（007）"]
@@ -121,6 +121,10 @@ DB に条項はあるがキーワードに合うものが無いときは、`keyw
 
 例: 法人税基本通達 2 件と消費税法基本通達 1 件が当たったとき、`base_laws_by_tsutatsu` は `{ 法人税基本通達: ["法人税法", "法人税法施行令", "法人税法施行規則"], 消費税法基本通達: ["消費税法", "消費税法施行令", "消費税法施行規則"] }`、`next_actions` は `law_name` が `"法人税法"` と `"消費税法"` の 2 件。
 
+### SPEC-NTA-SEARCH-TSUTATSU-010 `legal_status` はヒットしたときだけ付ける
+
+キーワードに合う条項があるとき（SPEC-NTA-SEARCH-TSUTATSU-004）は、応答に `legal_status`（`binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と、通達は行政内部文書で納税者・裁判所を直接は拘束しないが税務署員は職務として守る旨の `note`）を付ける。キーワードに合う条項が無いとき（SPEC-NTA-SEARCH-TSUTATSU-005）は `legal_status` を付けない。
+
 ## できないこと
 
 - 国税庁サイトを検索すること（対象はローカル DB に入れた条項だけ。DB に入れるのは CLI の `--bulk-download` / `--bulk-download-all`）
@@ -137,13 +141,6 @@ DB に条項はあるがキーワードに合うものが無いときは、`keyw
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
 1. **`limit` の範囲外の値の扱い。** → houki-nta-mcp #68
-2. **`score` / `scoreReasons` と並び順。** `hits` は関連度の降順（同点は全文検索の順位順）で並ぶ。関連度は全文検索の順位から作り、`keyword` に条項番号（例 `"9-2-1"`）が含まれていてその条項と一致するときは 0.5 を足す（`scoreReasons` に `"clause exact match"`）。2 文字の語の補完や通称の展開をしたときも `scoreReasons` に理由の文が入る。検索側の単体テストはあるが（`src/services/db-search.test.ts`）、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-3. **`freshness`。** 基本通達 4 種をまとめて判定し（通達ごとではない）、最も古い取得日時から 7 日未満は `fresh`、30 日未満は `stale`、それ以上は `outdated`（`warning` に `--bulk-download-all` を案内）。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-4. **`legal_status`。** ヒットしたときだけ付き、0 件のときは付かない。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-5. **略称そのもの（`"消基通"`、`"消法"` など）の展開。** `keyword` が辞書の略称そのものなら、元の語と正式名の両方を含む条項を探す（OR）。通称と違って 0 件を待たず常に広げ、`search_notes` には書かない。展開の対象は管轄が houki-nta と houki-egov の項目だけで、判例・裁決の略称は広げない。略称が 3 文字未満（`"消法"`）のときは正式名だけで探す。検索側の単体テストはあるが、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-6. **1 文字の語を外す注記。** `keyword` に 1 文字の語があるときは検索条件から外し、`search_notes` に「1 文字のため検索条件から外しました」の文を入れる。1 文字の語しか無いときは 0 件になる。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-7. **全角の数字・英字・ハイフン・空白は半角に揃えてから探す。** DB に入れるときも同じ揃え方をしている。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 8. **`TSUTATSU_NOT_FOUND` の案内するフラグ。** → houki-nta-mcp #70
 9. **`keyword` が空のときの `INVALID_ARGUMENT` の形。** → houki-nta-mcp #69
 10. **0 件のときの `count`。** → houki-nta-mcp #71
-11. **空白で区切った複数の語。** 全部の語を含む条項だけを返す（AND）。検索側の単体テストはあるが、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。

@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: 共通
 - 版: current
-- 承認日: 2026-09-27 （PR #78）
+- 承認日: 2026-09-27 （PR #78）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）
 - 起こした元: v0.21.0 の `src/services/db-search.ts`、`src/services/text-normalize.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/services/relevance-scoring.ts`、`src/tools/handlers.ts`（検索系 6 ツールのハンドラー）、各種別の取り込み処理（`src/services/*-bulk-downloader.ts`・`src/services/*-parser.ts`・`src/services/document-writeback.ts`）、`src/services/db-search.test.ts`、`src/services/text-normalize.test.ts`、`src/services/relevance-scoring.test.ts`、`src/services/index-status.test.ts`、`src/services/db-writeback.test.ts`、`src/services/kaisei-parser.test.ts`、`src/tools/handlers.test.ts`、`src/tools/index-status-response.test.ts`
 - 関連する Issue: houki-nta-mcp #14（通称の展開）、#18（短い語の扱い）、#21（通称の展開を 0 件のときだけにする）、#27（全角英字の揃え方）、#30（索引から消えた文書の印）、#68（limit の丸め）、#69（空のキーワード）、#71（応答の形の不揃い）
 
@@ -37,13 +37,13 @@ flowchart TD
   B --> C["空白で語に分ける。記号 \" * : ( ) は区切りとして扱う（001）"]
   C --> D["語の長さで分ける: 3 文字以上・2 文字・1 文字（002）"]
   D --> E["1 文字の語は検索条件から外す（005）"]
-  D --> F{"keyword 全体が辞書の略称そのものか"}
+  D --> F{"keyword 全体が辞書の略称そのものか（houki-nta・houki-egov の管轄で、正式名が keyword と違う項目だけ。016）"}
   F -- はい --> G["元の語と正式名のどちらかを含むものを探す（009）"]
   F -- いいえ --> H{"3 文字以上の語があるか"}
   G --> K
   H -- ある --> I["3 文字以上の語を全部含むものを全文検索し、2 文字の語で絞り込む（002・004）"]
   H -- 無い --> J["2 文字の語を全部、本文か題名に含むものを部分一致で探す（003）"]
-  I --> K{"0 件で、keyword 全体が辞書の通称か"}
+  I --> K{"0 件で、keyword 全体が辞書の通称か（houki-nta・houki-egov の管轄で、正式名が keyword と違う項目だけ。016）"}
   J --> K
   K -- はい --> L["正式名を含むものに広げて探し直す（010）"]
   K -- いいえ --> M["関連度 score と scoreReasons を付ける（012・013）"]
@@ -156,6 +156,69 @@ flowchart TD
 
 結果は `score` の降順に並べる。`score` が同じときは全文検索の順位の強い順に並べる。そのうえで `limit` 件を返す。
 
+### SPEC-NTA-SEARCH-RULES-015 文書系 5 ツールは、ヒットしたときに `results` と `keyword`・`freshness`・`legal_status` を返す
+
+文書系 5 ツール（`nta_search_qa`・`nta_search_tax_answer`・`nta_search_kaisei_tsutatsu`・`nta_search_jimu_unei`・`nta_search_bunshokaitou`）は、キーワードに合う文書が 1 件以上あるとき、エラーにせず次を返す。
+
+- `keyword`: 渡した `keyword`
+- `results`: 合った文書の配列。`score` の高い順（SPEC-NTA-SEARCH-RULES-014）で、最大 `limit` 件。各要素は次のフィールドを持つ
+
+| フィールド | 内容 |
+|---|---|
+| `docType` | 種別。`qa-jirei` / `tax-answer` / `kaisei` / `jimu-unei` / `bunshokaitou` |
+| `docId` | 文書 ID。取得ツール（`nta_get_*`）や `nta_inspect_pdf_meta` にそのまま渡せる値。例: 質疑応答事例は `shohi/02/19`、タックスアンサーは `6101` |
+| `taxonomy` | DB に入っている税目の値 |
+| `title` | 題名 |
+| `sourceUrl` | 国税庁ページの URL |
+| `snippet` | 本文の抜粋。合った語を `<b>` で囲む。例: `<b>源泉徴収</b>の事務について …` |
+| `score` / `scoreReasons` | 関連度とその理由（SPEC-NTA-SEARCH-RULES-012） |
+| `index_status` / `orphaned_at` | 国税庁の索引から消えた文書にだけ付く（SPEC-NTA-SEARCH-RULES-011） |
+
+- `freshness`: その種別の文書の取得時点の範囲。税目で絞ったときはその範囲（`nta_search_bunshokaitou` は別表記を含む）
+- `search_notes`: 短い語・通称の展開・索引から消えた文書・税目の別表記の注記があるときだけ付く
+- `legal_status`: 種別ごとの資料の位置付け。次の表のとおり
+
+| ツール | `binds_citizens` | `binds_courts` | `binds_tax_office` | `note` の要点 |
+|---|---|---|---|---|
+| `nta_search_qa` / `nta_search_tax_answer` | `false` | `false` | `false` | 国税庁の参考解説資料で法的拘束力はなく、実務判断は通達・法令本文に基づく必要がある |
+| `nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` | `false` | `false` | `true` | 通達は行政内部文書で納税者・裁判所を直接は拘束しないが、税務署員は職務として守る（最高裁 昭和43.12.24） |
+| `nta_search_bunshokaitou` | `false` | `false` | `false` | 個別事案への回答で一般的な法的拘束力はなく、実務判断は通達・法令本文に基づく必要がある |
+
+例: 質疑応答事例が 2 件ある DB で `nta_search_qa` に `{ keyword: "源泉徴収" }` を渡すと、`results` の各要素は `docType: "qa-jirei"` と上の表のフィールドを持ち、`scoreReasons` の先頭は `doc_type=qa weight 0.70` になる。
+
+### SPEC-NTA-SEARCH-RULES-016 略称・通称を広げるのは houki-nta と houki-egov の管轄の項目だけで、正式名が `keyword` と同じなら広げない
+
+SPEC-NTA-SEARCH-RULES-009・010 で `keyword` を正式名に広げるのは、略称辞書の項目の管轄（`source_mcp_hint`）が `houki-nta` か `houki-egov` のときだけである。
+
+- 管轄がほかの MCP（`houki-court`・`houki-saiketsu` など）の項目に当たったときは広げず、元の語だけで探す。`scoreReasons` に `abbreviation expanded:` は入らず、`search_notes` に通称の展開の文も入らない
+- 辞書の正式名が `keyword` と同じ文字列のとき（例: `酒税法`。辞書の略称と正式名がどちらも `酒税法`）は広げない。`scoreReasons` に `abbreviation expanded:` は入らない
+
+### SPEC-NTA-SEARCH-RULES-017 `freshness` は DB の取得時点の範囲と段階を返し、古いときだけ `warning` を付ける
+
+検索系 6 ツールが応答に付ける `freshness` は、次のフィールドを持つオブジェクトである。
+
+| フィールド | 内容 |
+|---|---|
+| `oldest_fetched_at` / `newest_fetched_at` | 判定した範囲で最も古い取得日時と最も新しい取得日時（ISO 8601） |
+| `days_since_oldest` | 最も古い取得日時から呼び出した時点までの日数 |
+| `staleness` | `days_since_oldest` が 7 日未満なら `fresh`、30 日未満なら `stale`、それ以上なら `outdated` |
+| `warning` | `staleness` が `outdated` のときだけ付く。`一部ドキュメントが <日数> 日前のデータです。最新化するには <フラグ> を実行してください` |
+
+判定する範囲と、`warning` に書くフラグは次のとおり。
+
+| ツール | 範囲 | フラグ |
+|---|---|---|
+| `nta_search_tsutatsu` | DB にある通達の節すべて（通達ごとには分けない） | `` `--bulk-download-all` `` |
+| `nta_search_qa` | 質疑応答事例。`topic` を渡したときはその税目 | `` `--bulk-download-qa` `` |
+| `nta_search_tax_answer` | タックスアンサー全体 | `` `--bulk-download-tax-answer` `` |
+| `nta_search_kaisei_tsutatsu` | 改正通達。`taxonomy` を渡したときはその税目 | `` `--bulk-download-kaisei` `` |
+| `nta_search_jimu_unei` | 事務運営指針。`taxonomy` を渡したときはその税目 | `` `--bulk-download-jimu-unei` `` |
+| `nta_search_bunshokaitou` | 文書回答事例。`taxonomy` を渡したときはその税目と別表記 | `` `--bulk-download-bunshokaitou` `` |
+
+範囲に文書が 1 件も無いときは `freshness` を付けない。0 件の応答で範囲がどう変わるかは、各ツールの spec.md に書く。
+
+例: 取得日時が `2026-01-01T00:00:00Z` と `2026-09-25T00:00:00Z` の質疑応答事例がある DB で、2026-09-27 に `nta_search_qa` を呼ぶと、`oldest_fetched_at` は `2026-01-01T00:00:00Z`、`staleness` は `outdated` で、`warning` は「一部ドキュメントが 269 日前のデータです。最新化するには `--bulk-download-qa` を実行してください」になる。
+
 ## できないこと
 
 - 表記の揺れ（ひらがなとカタカナ、送り仮名、漢数字と算用数字）を揃えること（揃えるのは全角と半角だけ）
@@ -170,16 +233,12 @@ flowchart TD
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **`freshness` の `staleness` と `warning`。** 検索範囲で最も古い取得日時から 7 日未満は `fresh`、30 日未満は `stale`、それ以上は `outdated` とし、`outdated` のときだけ `warning`（`一部ドキュメントが <日数> 日前のデータです。最新化するには <フラグ> を実行してください`）を付ける。フラグは `nta_search_tsutatsu` が `--bulk-download-all`、文書系はツールごとの `--bulk-download-qa` などである。`nta_search_tsutatsu` は基本通達 4 種をまとめて判定し、文書系は税目で絞ったときはその範囲で判定する。閾値は houki-abbreviations の共通値で、このリポジトリには閾値と `warning` を確かめるテストが無い。ID を振るのは受入テストを書いてから。
 2. **`freshness` を付ける場面の違い。** 文書系 5 ツールはヒットしたときも 0 件のときも付けるが、`nta_search_tsutatsu` はヒットしたときだけ付ける。→ houki-nta-mcp #71
 3. **応答の形の違い。** `nta_search_tsutatsu` は `hits`・`count`・0 件のときの `message`、文書系は `results`。`nta_search_tsutatsu` は `keyword` の前後の空白を落として応答に返すが、文書系は受けた `keyword` をそのまま返す。→ houki-nta-mcp #71
 4. **`limit` の丸め。** → houki-nta-mcp #68
 5. **空のキーワード。** → houki-nta-mcp #69
-6. **文書系で 3 文字以上の語と 2 文字の語が混ざるときの絞り込み（SPEC-NTA-SEARCH-RULES-004）。** 条項と文書は別々の同じ形の処理で検索しており、絞り込みを確かめる単体テストは条項の側にしか無い。文書系 5 ツールの側のテストが無い。ID は条項の側のテストで振ったが、文書系にも受入テストを書くか。
 7. **DB に入れるときの揃え方（SPEC-NTA-SEARCH-RULES-007）の証拠。** 取り込みの処理は種別ごとにあり、揃えた形で入ることを確かめるテストは基本通達の条項（書き戻し）と改正通達の本文にしか無い。質疑応答事例・タックスアンサー・文書回答事例・事務運営指針は、揃える処理を通ることをコードで確かめたが、テストが無い。ID を振るのは受入テストを書いてから（種別ごとの受入テストを足すか）。
 8. **英字の 2 文字の語が 3 文字以上の語と混ざるときに当たらない。** キーワードは英字を小文字に寄せる（SPEC-NTA-SEARCH-RULES-008）が、DB の本文は大文字のまま入る（SPEC-NTA-SEARCH-RULES-007）。全文検索と、2 文字の語だけのときの部分一致は大文字と小文字を区別しないので当たる。しかし SPEC-NTA-SEARCH-RULES-004 の絞り込みは大文字と小文字を区別して比べるため、例えば `"DX 投資促進税制"` は本文に `DX` があっても 0 件になるとコードから読める。不具合か。テストは無い。
 9. **3 文字未満の略称の `search_notes` が実際の検索と食い違う。** `keyword` が 3 文字未満の略称（例: `消法`）のときは、正式名（`消費税法`）だけで全文検索し、部分一致は行わない。しかし `search_notes` には「部分一致 (LIKE) で検索しました」の文（SPEC-NTA-SEARCH-RULES-006）が入るとコードから読める。文を直すか。正式名だけで探すこと自体もテストが無い。
-10. **略称・通称の展開の対象を管轄で限る。** 辞書の項目のうち管轄が houki-nta と houki-egov のものだけを広げ、判例・裁決（houki-court・houki-saiketsu）の項目は広げない。正式名が `keyword` と同じ文字列のときも広げない。houki-egov の項目を広げることはテストがある（SPEC-NTA-SEARCH-RULES-010）が、広げない側のテストが無い。ID を振るのは受入テストを書いてから。
 11. **種別の重みと条項番号の加点の値。** 今の重みは 通達 1.0 / 改正通達 0.95 / 文書回答事例 0.9 / 事務運営指針 0.85 / 質疑応答事例 0.7 / タックスアンサー 0.6、条項番号の一致の加点は 0.5。テストが確かめているのは重みの順序と通達の 1.0、加点すると `score` が上がることだけである。値そのものを仕様にするか。
 12. **部分一致だけで当たったものの `score`。** 2 文字の語だけのとき（SPEC-NTA-SEARCH-RULES-003）は全文検索の順位が無いので、全件に同じ仮の順位を与え、`score` は種別の重み × 約 0.09 の同じ値になる。並びは DB に入れた順になる。この値と並びを確かめるテストが無い。ID を振るのは受入テストを書いてから。
-13. **文書系 5 ツールの応答での短い語・通称・関連度。** SPEC-NTA-SEARCH-RULES-003〜006・009・010・012・014 は、共通の処理の単体テストと `nta_search_tsutatsu` の応答のテストで確かめている。文書系 5 ツールが同じ処理を通ることはコードで確かめたが、ツールの応答として `search_notes` や `scoreReasons` を確かめるテストは無い（索引から消えた文書の印だけは `nta_search_jimu_unei` の応答のテストがある）。各ツールの spec.md の未決の該当項目は、この文書を参照する形に直すか。

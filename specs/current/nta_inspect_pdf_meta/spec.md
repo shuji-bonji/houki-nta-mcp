@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-get-responses` は 2026-09-27（PR #89）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaInspectPdfMeta`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/pdf-meta.ts`、`src/services/pdf-files.ts`、`src/constants.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #36（読み方の事実と `save: true`）、#44（改正通達の「別紙 N」を新旧対照表として扱う）、#1（docType 別の `legal_status`）
 
@@ -31,7 +31,8 @@
 flowchart TD
   A["呼び出し（docType・docId・kind・save）"] --> B{"docType と docId の組がローカル DB にあるか"}
   B -- 無い --> E1["DOC_NOT_FOUND を返す。国税庁サイトには取りに行かない（001）"]
-  B -- ある --> C["kind の無い PDF は題名から kind を決める（003）"]
+  B -- ある --> B2["添付 PDF の記録が読めなければ、PDF が無い文書として扱う（017）"]
+  B2 --> C["kind の無い PDF は題名から kind を決める（003）"]
   C --> D["kaisei の「別紙 N」だけの題名の attachment を comparison にする（004）"]
   D --> F["各 PDF に read_strategy と layout_note を付ける（005）"]
   F --> G{"kind を渡したか"}
@@ -46,13 +47,13 @@ flowchart TD
   M -- はい --> N{"保存先に同じパスのファイルがあるか（PDF ごと）"}
   N -- ある --> O["取りに行かず cached: true で返す（013）"]
   N -- 無い --> P["国税庁サイトから取って保存先に置く（010）"]
-  P --> Q{"取得の応答が 2xx か"}
-  Q -- いいえ --> R["saved[] に error 付きで残し、note に失敗の件数を書く（011）"]
+  P --> Q{"取得でき、応答が 2xx の PDF で 50MB 以下か（011・015）"}
+  Q -- いいえ --> R["saved[] に error 付きで残し、note に失敗の件数を書く（011・015）"]
   Q -- はい --> T
   O --> T
   R --> T
-  M -- いいえ --> T["kind ごとの呼び出し例と read_pdf の 1 件を next_actions に付ける（009）。保存できた PDF は file_path を渡す形にする（012）"]
-  T --> U["kind の順の attachedPdfs・legal_status などの応答（002）と、save: true のときは saved[]（010）を返す"]
+  M -- いいえ --> T["kind ごとの呼び出し例と read_pdf の 1 件を next_actions に付ける（009）。保存できた PDF は file_path を渡す形にする（012）。保存した unknown の PDF は先に中身を確かめる形にする（014）"]
+  T --> U["kind の順の attachedPdfs・docType ごとの legal_status（016）などの応答（002）と、save: true のときは saved[]（010）を返す"]
 ```
 
 ## できること
@@ -158,6 +159,38 @@ DB に入っている PDF に `kind` が無い（v0.6.0 期に投入した文書
 
 例: 同じ文書を `save: true` で 2 回呼ぶと、2 回目の `saved[]` は `cached: true` になり、取得の回数は増えない。
 
+### SPEC-NTA-INSPECT-PDF-META-014 保存した `unknown` の PDF の next_actions は、先に中身を確かめる形にする
+
+保存に成功した PDF のうち `read_strategy` が `sample`（`kind` が `unknown`）のものは、`next_actions` の 1 件の `action` を `pdf-reader-mcp:summarize` にし、`example` を `{ file_path: <saved[].path> }` にする。SPEC-NTA-INSPECT-PDF-META-012 の `tables` / `text` と並ぶ 3 つ目の場合である。
+
+### SPEC-NTA-INSPECT-PDF-META-015 取得の応答が PDF でない、大きすぎる、取得できないときも saved[] に error 付きで残す
+
+SPEC-NTA-INSPECT-PDF-META-011 の HTTP の失敗のほかに、次の場合も PDF を保存せず、`saved[]` に `path: null`・`bytes: null`・`cached: false`・`error` で残す。`note` の件数（011）にも数える。
+
+| 場合 | `error` |
+|---|---|
+| 応答の `Content-Type` が `application/pdf` でなく、本文の先頭も `%PDF-` でない | `PDF ではありません（Content-Type: <値>）`。`Content-Type` が無ければ `不明` |
+| 本文が 50MB（52,428,800 バイト）を超える | `<バイト数> バイトあり、上限 52428800 バイトを超えています` |
+| 30 秒で応答が終わらない、またはネットワークの例外 | 例外の文 |
+
+`Content-Type` が `application/pdf` でなくても、本文の先頭が `%PDF-` なら保存する。
+
+例: `Content-Type: text/html` の応答は `error: "PDF ではありません（Content-Type: text/html）"`、`Content-Type: application/octet-stream` で本文が `%PDF-1.4` で始まる応答は保存される。
+
+### SPEC-NTA-INSPECT-PDF-META-016 legal_status は docType ごとの資料の位置付けを返す
+
+応答の `legal_status` は `docType` で決まる。
+
+| `docType` | `binds_citizens` | `binds_courts` | `binds_tax_office` | `note` の要点 |
+|---|---|---|---|---|
+| `kaisei` / `jimu-unei` | `false` | `false` | `true` | 通達は行政内部文書で納税者・裁判所を直接は拘束しないが、税務署員は職務として守る（最高裁 昭和43.12.24） |
+| `bunshokaitou` | `false` | `false` | `false` | 個別事案への回答で一般的な法的拘束力はなく、実務判断は通達・法令本文に基づく必要がある |
+| `tax-answer` | `false` | `false` | `false` | 国税庁の参考解説資料で法的拘束力はなく、実務判断は通達・法令本文に基づく必要がある |
+
+### SPEC-NTA-INSPECT-PDF-META-017 DB の添付 PDF の記録が読めない文書は、PDF が無い文書として返す
+
+DB にある文書の添付 PDF の記録が JSON として読めないときは、エラーにせず、添付 PDF が無い文書と同じ応答を返す。`attachedPdfs` は `[]` で、`next_actions` は付かない。`docType`・`docId`・`title`・`sourceUrl`・`legal_status` は付く。
+
 ## できないこと
 
 - PDF の本文を読むこと・要約すること（読むのは pdf-reader-mcp などの PDF 読み取りツール。このツールは一覧・種別・読み方・保存だけ）
@@ -174,10 +207,5 @@ DB に入っている PDF に `kind` が無い（v0.6.0 期に投入した文書
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
 1. **索引から消えた文書の印が付かない。** → houki-nta-mcp #71
-2. **`legal_status` の docType 別の出し分け。** `kaisei` / `jimu-unei` は通達の位置付け（`binds_tax_office: true`）、`bunshokaitou` は文書回答事例の位置付け、`tax-answer` は解説資料の位置付けを返す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-3. **`read_strategy` が `sample` の PDF を保存したときの `next_actions`** は `pdf-reader-mcp:summarize`（`example` は `{ file_path }`）になる。テストは `unknown` の PDF の保存に失敗する経路しか無い。ID を振るのは受入テストを書いてから。
-4. **保存に失敗する条件のうち HTTP 404 以外**（応答が PDF でない: `Content-Type` が `application/pdf` でなく先頭が `%PDF-` でもない、50MB を超える、30 秒のタイムアウト、ネットワークの例外）は、`saved[].error` に理由を書いて残す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 5. **`save: true` で絞った結果が 0 件のとき `saved` を付けない。** → houki-nta-mcp #71
 6. **保存ファイル名は URL の最後のパス要素だけで決める。** → houki-nta-mcp #73
-7. **DB の添付 PDF の記録が壊れている（JSON として読めない）文書**は、エラーにせず `attachedPdfs: []` で返す。テストが無い。ID を振るのは受入テストを書いてから。
-8. **`docType` が 4 種以外、`kind` が 6 種以外、`save` が真偽値でない、未知の引数があるとき**は、tools/call の入力の検査でエラー `INVALID_ARGUMENT`（`tool: "nta_inspect_pdf_meta"`、`detail.issues` に引数名）になる。このツールとしてのテストが無い。ID を振るのは受入テストを書いてから。

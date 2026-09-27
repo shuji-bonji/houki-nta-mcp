@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaSearchBunshokaitou`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/constants.ts`、`src/services/db-search.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/tools/doc-search-zero-hit.test.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #18（短い語の検索）、#21（通称の展開）、#23（0 件の理由を分ける）、#30（索引から消えた文書の印）
 
@@ -34,7 +34,7 @@ flowchart TD
   B -- "いいえ（省略を含む）" --> D["taxonomy・hasPdf で絞って DB を検索する"]
   C --> F{"キーワードに合う文書があるか"}
   D --> F
-  F -- ある --> G["results に合う文書を返す。taxonomy は DB の値のまま（003）"]
+  F -- ある --> G["results に合う文書を返す。taxonomy は DB の値のまま（003・015）"]
   F -- 無い --> H{"DB に文書回答事例があるか"}
   H -- 無い --> E1["DOC_NOT_FOUND を返す（001）"]
   H -- ある --> I{"taxonomy の範囲に文書があるか（別表記を含む）"}
@@ -43,7 +43,9 @@ flowchart TD
   J -- 無い --> L["投入コマンドは書かない（002）"]
   K --> E2["results: [] と available_taxonomies を返す（002）"]
   L --> E2
-  I -- ある --> E3["results: [] と件数付きの「該当なし」を返す。件数は別表記を含む（004・003）"]
+  I -- ある --> M{"hasPdf の条件に合う文書があるか"}
+  M -- 無い --> E4["results: [] と hasPdf を外す案内を返す（005）"]
+  M -- ある --> E3["results: [] と件数付きの「該当なし」を返す。件数は別表記を含む（004・003）"]
 ```
 
 ## できること
@@ -89,6 +91,22 @@ DB に文書回答事例があり、`taxonomy` と `hasPdf` の範囲にも文�
 
 例: `taxonomy: "sozoku"` で DB に `sozoku` 1 件・`souzoku` 1 件があるとき、`hint` は「該当なし。DB の文書回答事例（taxonomy="sozoku"）2 件に「量子暗号通信」に合う文書はありません。別のキーワードで試してください」。絞り込みを指定しなければ「（…）」の部分は付かず、`hasPdf` を指定すれば `hasPdf=true` のように条件に加わる。
 
+### SPEC-NTA-SEARCH-BUNSHOKAITOU-005 `hasPdf` の条件に合う文書が無いときは `hasPdf` を外すよう案内する
+
+`taxonomy` の範囲（別表記を含む。`taxonomy` を省いたときは DB の文書回答事例全体）には文書があるが、`hasPdf` の条件に合う文書が 1 件も無いときは、エラーにせず `results: []` を返す。
+
+- `hint` は `DB の文書回答事例（taxonomy="<指定した値>"）<件数> 件に、PDF 付きの文書はありません。hasPdf を外して検索してください`。`hasPdf: false` なら「PDF 無しの文書はありません」。`taxonomy` を省いたときは `（taxonomy="…"）` の部分を書かない。件数は別表記を含めた `taxonomy` の範囲の件数
+- `keyword` と `legal_status` も付く
+
+SPEC-NTA-SEARCH-BUNSHOKAITOU-002（税目の範囲に文書が無い）に当たるときは、そちらを返す。
+
+### SPEC-NTA-SEARCH-BUNSHOKAITOU-006 0 件のときの `freshness` は、0 件の理由ごとに範囲を変える
+
+0 件のとき（SPEC-NTA-SEARCH-BUNSHOKAITOU-002・004・005）の `freshness`（形は SPEC-NTA-SEARCH-RULES-017）は、次の範囲で判定する。
+
+- 税目の範囲に文書が無いとき（002）: DB の文書回答事例全体
+- `hasPdf` の条件に合う文書が無いとき（005）と、キーワードに合う文書が無いとき（004）: `taxonomy` で絞った範囲（別表記を含む）。`hasPdf` では絞らない。`taxonomy` を省いたときは DB の文書回答事例全体
+
 ## できないこと
 
 - 文書の本文を返すこと（結果は `docId`・題名・抜粋まで。本文は `nta_get_bunshokaitou`）
@@ -103,11 +121,6 @@ DB に文書回答事例があり、`taxonomy` と `hasPdf` の範囲にも文�
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **ヒットしたときの応答の形。** `results` の各要素は `docType`（`bunshokaitou`）・`docId`・`taxonomy`・`title`・`issuedAt`・`sourceUrl`・`snippet`（合った語を `<b>` で囲んだ抜粋）・`score`・`scoreReasons` を持ち、応答には `keyword`・`freshness`（DB の取得時点の範囲と `staleness`）・`legal_status`（`binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と注）が付く。結果は `score` の高い順。このツールの応答としてのテストは `results` の件数と `taxonomy` しか確かめていない。ID を振るのは受入テストを書いてから。
-2. **`hasPdf` の条件に合う文書が無いときの応答。** `results: []` と、`hint` に「PDF 付き（または PDF 無し）の文書はありません。hasPdf を外して検索してください」を返す。同じ動きは `nta_search_qa` / `nta_search_kaisei_tsutatsu` ではテストがあるが、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-3. **0 件のときの `freshness`。** SPEC-NTA-SEARCH-BUNSHOKAITOU-002 では DB 全体、SPEC-NTA-SEARCH-BUNSHOKAITOU-004 では絞り込んだ範囲の取得時点を `freshness` に付ける。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-4. **短い語と通称の扱い。** 2 文字の語は本文と題名の部分一致で補い、1 文字の語は検索条件から外し、どちらも `search_notes` に書く。キーワードが略称辞書の通称（例: `インボイス`）で 0 件のときは、辞書の法令名（例: `消費税法`）に広げて検索し直し、`search_notes` に書く。読み取り側のテストは `src/services/db-search.test.ts` にあるが、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-5. **国税庁の索引から消えた文書の印。** 索引から外れた文書は除外せず、その要素に `index_status: "removed_from_index"` と `orphaned_at` を付け、`search_notes` に「検索結果 N 件のうち M 件は国税庁の索引から外れています」の行を足す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 6. **`limit` の範囲外の値を黙って丸める。** → houki-nta-mcp #68
 7. **空の `keyword`。** → houki-nta-mcp #69
 8. **`taxonomy` の値を検査しない。** → houki-nta-mcp #67

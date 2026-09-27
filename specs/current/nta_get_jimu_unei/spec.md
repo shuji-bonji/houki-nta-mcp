@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-get-responses` は 2026-09-27（PR #89）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaGetJimuUnei`）、`src/tools/definitions.ts`、`src/services/index-status.ts`、`src/services/pdf-meta.ts`、`src/services/db-search.ts`、`src/tools/get-doc-not-found.test.ts`、`src/tools/index-status-response.test.ts`
 - 関連する Issue: houki-nta-mcp #30（索引から消えた文書の印）
 
@@ -36,8 +36,8 @@ flowchart TD
   F -- はい --> G["索引から外れた印を付ける（004。json は index_status・orphaned_at・notice、markdown は索引の状態の行と注記）"]
   F -- いいえ --> H{"format"}
   G --> H
-  H -- markdown --> I["markdown の文字列を返す（003）"]
-  H -- json --> J["document を持つオブジェクトを返す（003）"]
+  H -- markdown --> I["markdown の文字列を返す（003・006。添付 PDF の節は 007）"]
+  H -- json --> J["document を持つオブジェクトを返す（003・005。attachedPdfs は 007）"]
 ```
 
 ## できること
@@ -72,6 +72,43 @@ DB から返す文書が国税庁の索引から外れている（bulk download 
 - `format` が `json` のとき: `index_status: "removed_from_index"`、`orphaned_at`（確認した日時。例: `"2026-10-01T00:30:00Z"`）、`notice`（索引から外れている旨と、過去の課税期間では意味を持つ場合があること、現在の取扱いは最新の通達で確かめること、出典 URL が 404 になることがあることの注記）を付ける。索引にある文書では `index_status` / `orphaned_at` / `notice` を付けない
 - `format` を省くか `markdown` のとき: 文書の先頭の情報に `- **索引の状態**: removed_from_index（<確認した日時> に確認）` の行と、`>` で始まる注記の行を入れる。索引にある文書ではこの行を入れない
 
+### SPEC-NTA-GET-JIMU-UNEI-005 json の応答
+
+`format` を `json` にしたとき、応答は次のフィールドを持つ。
+
+| フィールド | 内容 |
+|---|---|
+| `document.docType` | `jimu-unei` |
+| `document.docId` / `document.taxonomy` / `document.title` | 文書 ID・税目・題名 |
+| `document.issuedAt` / `document.issuer` | 発出日と宛先・発出者。DB にあるときだけ付く |
+| `document.sourceUrl` / `document.fetchedAt` | 出典 URL と DB に入れた日時 |
+| `document.fullText` | 本文 |
+| `document.attachedPdfs` | 添付 PDF の配列（SPEC-NTA-GET-JIMU-UNEI-007） |
+| `legal_status` | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と注 |
+| `source` | `db` |
+
+### SPEC-NTA-GET-JIMU-UNEI-006 markdown（既定）の応答
+
+`format` を省くか `markdown` にしたとき、応答は次の順に並ぶ文字列である。
+
+- 見出し `# <題名>`
+- `- **種別**: 事務運営指針`、`- **発出日**: <発出日>`（DB にあるときだけ）、`- **税目**: <税目>`（DB にあるときだけ）、`` - **docId**: `<docId>` ``、`- **出典**: <国税庁ページの URL>`、`- **取得**: <DB に入れた日時>` の行
+- 国税庁の索引から消えた文書では、索引の状態の行と注記（SPEC-NTA-GET-JIMU-UNEI-004）
+- 宛先・発出者が DB にある文書では `## 宛先・発出者` の節。各行を `> ` で引用する
+- `## 本文` の節と本文
+- 添付 PDF がある文書では `## 添付 PDF (<件数> 件)` の節（SPEC-NTA-GET-JIMU-UNEI-007）
+- 最後に `---` と、`*通達・事務運営指針は行政内部文書であり、納税者・裁判所への直接的拘束力なし（最高裁 昭和43.12.24）*` の注
+
+### SPEC-NTA-GET-JIMU-UNEI-007 添付 PDF の一覧を返す
+
+json では `document.attachedPdfs` に、DB にある添付 PDF をそのまま入れる。要素は `title`・`url`・`sizeKb`・`kind`。添付が無ければ空の配列。
+
+markdown では、添付 PDF がある文書に限り、`## 本文` の後に `## 添付 PDF (<件数> 件)` の節を置く。節の中身は次のとおり。
+
+- PDF の本文はこのサーバーが読まないことと、pdf-reader-mcp の `read_url` か、`nta_inspect_pdf_meta` を `save: true` で呼んで `extract_tables` に渡す読み方の案内（`>` の引用）
+- 種別・タイトル・サイズ・読み方・URL の表。行は種別の順（新旧対照表・別紙・Q&A・参考資料・通知・その他）で、同じ種別の中は DB に入っている順
+- `### 読み方` の節。表に現れた種別ごとに 1 行ずつ、その種別の PDF の読み方（`nta_inspect_pdf_meta` の `layout_note` と同じ文。SPEC-NTA-INSPECT-PDF-META-005）
+
 ## できないこと
 
 - 国税庁サイトから事務運営指針を取ること（DB に無い文書はエラーになる。DB に入れるのは `--bulk-download-jimu-unei`）
@@ -87,9 +124,5 @@ DB から返す文書が国税庁の索引から外れている（bulk download 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
 1. **エラー `code` が `TSUTATSU_NOT_FOUND` である。** → houki-nta-mcp #64
-2. **json の応答の形**（`document`（`docId` / `taxonomy` / `title` / `issuedAt` / `issuer` / `sourceUrl` / `fetchedAt` / `fullText` / `attachedPdfs`）、`legal_status`（`binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と注）、`source: "db"`）は、SPEC-NTA-GET-JIMU-UNEI-004 のテストが `document.docId` を見るほかは、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-3. **markdown の応答の形**（見出し `# <題名>`、`- **種別**: 事務運営指針`、発出日・税目・`docId`・出典・取得の行、`## 宛先・発出者`（`>` の引用）、`## 本文`、末尾の「通達・事務運営指針は行政内部文書であり、納税者・裁判所への直接的拘束力なし（最高裁 昭和43.12.24）」の注）は、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-4. **添付 PDF の一覧。** 添付 PDF がある文書では、markdown に `## 添付 PDF (N 件)` の節（種別 / タイトル / サイズ / 読み方 / URL の表と、`### 読み方` の種別ごとの 1 行。新旧対照表・別紙・Q&A・参考資料・通知・その他の順）が付き、json では `document.attachedPdfs` に `title` / `url` / `sizeKb` / `kind` が入る。この節の描画側のテストは `src/services/` にあるが、このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-5. **`docId` を省いたときの `INVALID_ARGUMENT`。** 引数は inputSchema で検証され、`docId` が無いときや `inputSchema` に無い引数があるときはエラー `INVALID_ARGUMENT` になる。このツールでのテストが無い。ID を振るのは受入テストを書いてから。
 6. **`legal_status.note` の文言が「通達は行政内部文書。…」で、事務運営指針を名指ししない。** → houki-nta-mcp #70
 7. **markdown に「取得元」の行が無い。** → houki-nta-mcp #71

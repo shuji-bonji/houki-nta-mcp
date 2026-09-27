@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaSearchJimuUnei`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/tools/doc-search-zero-hit.test.ts`、`src/tools/index-status-response.test.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #18（短い語の検索）、#21（通称の展開）、#23（0 件の理由を分ける）、#30（索引から消えた文書の印）
 
@@ -34,11 +34,15 @@ flowchart TD
   C -- ある --> D["関連度の高い順に limit 件まで results に入れる（003）"]
   D --> E{"国税庁の索引から消えた文書が含まれるか"}
   E -- はい --> F["その要素に index_status・orphaned_at を付け、search_notes に 1 行足す（004）"]
-  E -- いいえ --> G["results・freshness・legal_status を返す（003）"]
+  E -- いいえ --> G["results・keyword・freshness・legal_status を返す（003・015）"]
   F --> G
   C -- 無い --> H{"DB に事務運営指針があるか"}
   H -- 無い --> E1["DOC_NOT_FOUND を返す（001）"]
-  H -- ある --> E2["results: [] と件数付きの「該当なし」・freshness を返す（002）"]
+  H -- ある --> I{"taxonomy の範囲に文書があるか"}
+  I -- 無い --> E3["results: [] と available_taxonomies を返す（005）"]
+  I -- ある --> J{"hasPdf の条件に合う文書があるか"}
+  J -- 無い --> E4["results: [] と hasPdf を外す案内を返す（006）"]
+  J -- ある --> E2["results: [] と件数付きの「該当なし」・freshness を返す（002）"]
 ```
 
 ## できること
@@ -92,6 +96,31 @@ DB にはあるが国税庁の索引から消えた（bulk download の再実行
 
 例: 索引にある文書 A と索引から消えた文書 B の両方に合うキーワードで検索すると、`results` は A・B の 2 件。A には `index_status` が無く、B には `index_status: "removed_from_index"` と `orphaned_at` が付き、`search_notes` に「2 件のうち 1 件」を含む行が入る。
 
+### SPEC-NTA-SEARCH-JIMU-UNEI-005 `taxonomy` の範囲に文書が無いときは税目の一覧を返す
+
+DB に事務運営指針はあるが、`taxonomy` で絞った範囲に文書が 1 件も無いときは、エラーにせず次を返す。
+
+- `results`: `[]`
+- `keyword`: 渡した `keyword`
+- `hint`: `DB の事務運営指針 <件数> 件のうち、taxonomy="<値>" の文書はありません。taxonomy を外すか、available_taxonomies の値を指定してください。`。事務運営指針には税目を絞って投入するフラグが無いので、投入コマンドの案内は書かない
+- `available_taxonomies`: DB の事務運営指針が持つ税目の一覧（昇順）
+- `freshness`: DB の事務運営指針全体の取得時点（形は SPEC-NTA-SEARCH-RULES-017）
+- `legal_status`: 通達の位置付け（`binds_tax_office: true`）
+
+例: `shotoku` の事務運営指針 2 件だけがある DB で `{ keyword: "源泉徴収", taxonomy: "hojin" }` を渡すと、`hint` は `DB の事務運営指針 2 件のうち、taxonomy="hojin" の文書はありません。taxonomy を外すか、available_taxonomies の値を指定してください。`、`available_taxonomies` は `["shotoku"]` になる。
+
+### SPEC-NTA-SEARCH-JIMU-UNEI-006 `hasPdf` の条件に合う文書が無いときは `hasPdf` を外すよう案内する
+
+`taxonomy` の範囲（省いたときは DB の事務運営指針全体）には文書があるが、`hasPdf` の条件に合う文書が 1 件も無いときは、エラーにせず次を返す。
+
+- `results`: `[]`
+- `keyword`: 渡した `keyword`
+- `hint`: `DB の事務運営指針（taxonomy="<値>"）<件数> 件に、PDF 付きの文書はありません。hasPdf を外して検索してください`。`hasPdf: false` なら「PDF 無しの文書はありません」。`taxonomy` を省いたときは `（taxonomy="…"）` の部分を書かない
+- `freshness`: `taxonomy` で絞った範囲の取得時点（`hasPdf` では絞らない）
+- `legal_status`
+
+0 件の理由は SPEC-NTA-SEARCH-JIMU-UNEI-001 → 005 → 006 → 002 の順に決める。先に当てはまった理由の応答を返す。
+
 ## できないこと
 
 - 国税庁サイトに取りに行くこと（DB に無い文書は `--bulk-download-jimu-unei` で入れてから検索する）
@@ -107,13 +136,6 @@ DB にはあるが国税庁の索引から消えた（bulk download の再実行
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **`taxonomy` の範囲に文書が無いときの応答。** `taxonomy` を渡し、その税目の事務運営指針が DB に無いときは、成功で `results: []`、`hint`（`DB の事務運営指針 <件数> 件のうち、taxonomy="<値>" の文書はありません。taxonomy を外すか、available_taxonomies の値を指定してください`）、`available_taxonomies`（DB にある税目の一覧）、`freshness` を返す。事務運営指針には税目を絞って投入するフラグが無いので、`nta_search_qa` の `--qa-topic` のような追加投入の案内は付かない。このツールの応答としてのテストが無い（同じ形のテストは `nta_search_qa` / `nta_search_bunshokaitou` にある）。ID を振るのは受入テストを書いてから。
-2. **`hasPdf` の条件に合う文書が無いときの応答。** 成功で `results: []`、`hint`（`DB の事務運営指針<（taxonomy="…"）> <件数> 件に、PDF 付き|PDF 無しの文書はありません。hasPdf を外して検索してください`）、`freshness` を返す。このツールの応答としてのテストが無い（同じ形のテストは `nta_search_kaisei_tsutatsu` にある）。ID を振るのは受入テストを書いてから。
-3. **2 文字の語と 1 文字の語の扱い。** 3 文字未満の語は全文索引に乗らない。2 文字の語は、3 文字以上の語があればその検索結果を本文・題名の部分一致で絞り込み、無ければ部分一致だけで探す（このとき `score` は順位に基づかず、`snippet` は本文から切り出す）。1 文字の語は検索条件から外す。どちらも `search_notes` にその旨の文を入れ、`scoreReasons` に `short token filter (LIKE): …` / `short token search (LIKE, no FTS rank): …` を足す。このツールの応答としてのテストが無い（部分一致の検索側のテストは `src/services/db-search.test.ts` にある）。ID を振るのは受入テストを書いてから。
-4. **略称・通称の展開。** `keyword` 全体が houki-abbreviations の辞書にある略称（例: `消基通`）のときは正式名も含めて探す。通称（例: `インボイス`）のときは、元の語で 0 件のときだけ正式名（`消費税法`）に広げて探し直し、広げたときは `search_notes` にその旨の文を入れ、`scoreReasons` に `abbreviation expanded: <元> → <先>` を足す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 5. **`limit` の範囲。** → houki-nta-mcp #68
 6. **`keyword` が空のときの応答。** → houki-nta-mcp #69
 7. **`taxonomy` の値の形を検査しない。** → houki-nta-mcp #67
-8. **inputSchema に合わない引数のエラー `INVALID_ARGUMENT`。** `keyword` が無い、型が違う、inputSchema に無い引数がある、のいずれでも `code: "INVALID_ARGUMENT"`・`hint`・`next_actions`（`list_tools`）・`detail.issues` を返し、DB は引かない。全ツールに共通の入力の検査で行うが、このツールを呼ぶテストが無い。ID を振るのは受入テストを書いてから。
-9. **`freshness` の `staleness` と `warning`。** DB に入れた最古の日時から 7 日未満は `fresh`、30 日未満は `stale`、それ以上は `outdated` で、`outdated` のときだけ `warning`（`--bulk-download-jimu-unei` で最新化する案内）を付ける。このツールの応答としてのテストが無い（閾値は houki-abbreviations の共通値）。ID を振るのは受入テストを書いてから。
-10. **SPEC-NTA-SEARCH-JIMU-UNEI-003 の `results` の要素のフィールド**（`title` / `snippet` / `score` / `scoreReasons` / `freshness` など）は、現在のテストが `docId` しか確かめていない。項目ごとの受入テストを足すか。

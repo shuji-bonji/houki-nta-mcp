@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaSearchKaiseiTsutatsu`・`explainDocZeroHits`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/errors.ts`、`src/tools/doc-search-zero-hit.test.ts`
 - 関連する Issue: houki-nta-mcp #18（短い語の補完）、#21（通称の展開）、#23（0 件の理由を分ける）、#30（索引から消えた文書の印）
 
@@ -31,7 +31,7 @@
 flowchart TD
   A["呼び出し（keyword・taxonomy・limit・hasPdf）"] --> B["taxonomy・hasPdf で絞って DB を検索する"]
   B --> C{"キーワードに合う文書があるか"}
-  C -- ある --> D["results に合う文書を返す（応答の形は「未決」の 4）"]
+  C -- ある --> D["results・keyword・freshness・legal_status を返す（015）"]
   C -- 無い --> E{"DB に改正通達があるか"}
   E -- 無い --> E1["DOC_NOT_FOUND を返す（001）"]
   E -- ある --> F{"taxonomy の範囲に文書があるか"}
@@ -111,9 +111,4 @@ DB に改正通達はあるが、`taxonomy` で絞った範囲に文書が 1 件
 1. **`taxonomy` の値を検査しない。** → houki-nta-mcp #67
 2. **`keyword` が空文字のとき。** → houki-nta-mcp #69
 3. **`limit` の丸め。** → houki-nta-mcp #68
-4. **キーワードに合う文書があるときの応答。** `results` の各要素は `docType`（`kaisei`）・`docId`・`taxonomy`・`title`・`issuedAt`・`sourceUrl`・`snippet`（合った箇所の抜粋。合った語を `<b>` で囲む）・`score`（0.0〜1.5 の関連度）・`scoreReasons`。並びは `score` の降順。応答には `keyword`・`freshness`・`legal_status` も付く。このツールの応答としてのテストが無い（検索側のテストは `src/services/db-search.test.ts` にある）。ID を振るのは受入テストを書いてから。
-5. **短い語の補完と `search_notes`。** 2 文字の語は本文・題名の部分一致で補い（3 文字以上の語があれば全文検索した結果をその語で絞り込み、無ければ部分一致だけで探す）、1 文字の語は条件から外す。いずれも `search_notes` にその旨の 1 行が入る。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-6. **略称・通称の展開と `search_notes`。** `keyword` 全体が houki-abbreviations の略称（`消基通` など）なら正式名も合わせて探す。通称（`インボイス` → 消費税法 など）は元の語で 0 件のときだけ正式名に広げて探し直し、広げたときは `search_notes` にその旨の 1 行が入る（`scoreReasons` にも展開の記録が入る）。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-7. **国税庁の索引から消えた文書の印。** 索引から外れた文書は検索結果から除かず、その要素に `index_status: "removed_from_index"` と `orphaned_at` が付き、`search_notes` に「検索結果 N 件のうち M 件は国税庁の索引から外れています」の 1 行が入る。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-8. **inputSchema に合わない引数のときの `INVALID_ARGUMENT`**（`keyword` 無し、型違い、未知の引数。`hint` に tools/list の inputSchema を確かめる案内、`next_actions` に `list_tools`、`tool` にこのツール名）は、このツールの引数でのテストが無い。ID を振るのは受入テストを書いてから。
 9. **SPEC-NTA-SEARCH-KAISEI-TSUTATSU-002 の `hint` の末尾。** → houki-nta-mcp #70

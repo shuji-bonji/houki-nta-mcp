@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleResolveAbbreviation`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/tools/handlers.test.ts`、`src/server.test.ts`
 
 この文書は「このツールは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。
@@ -27,7 +27,7 @@
 flowchart TD
   A["呼び出し（abbr）"] --> B{"引数が inputSchema に合うか"}
   B -- いいえ --> E1["辞書を引かずに INVALID_ARGUMENT を返す（005）"]
-  B -- はい --> C{"abbr が辞書の略称・正式名称・別名のどれかと完全一致するか"}
+  B -- はい --> C{"abbr が辞書の略称・正式名称・別名のどれかと完全一致するか（001・006）"}
   C -- いいえ --> E2["resolved: null と note を返す。エラーにしない（004）"]
   C -- はい --> D["見つかったエントリを resolved に入れる（001）"]
   D --> F{"エントリの source_mcp_hint が houki-nta か"}
@@ -80,6 +80,12 @@ flowchart TD
 
 例: `abbr: 123` を渡すと `code: "INVALID_ARGUMENT"`、`tool: "resolve_abbreviation"`、`detail.issues[0].path: "abbr"`。
 
+### SPEC-NTA-RESOLVE-ABBREVIATION-006 辞書の別名（`aliases`）でも同じエントリを返す
+
+`abbr` が辞書のエントリの略称でも正式名称でもなく、そのエントリの `aliases` にある名前のときも、そのエントリを `resolved` に入れて返す（SPEC-NTA-RESOLVE-ABBREVIATION-001 と同じ形）。管轄の判定（SPEC-NTA-RESOLVE-ABBREVIATION-002・003）も同じように行う。
+
+例: `abbr: "電帳法取扱通達"` は `resolved.abbr: "電帳法取通"`・`resolved.source_mcp_hint: "houki-nta"` のエントリに解決され、`in_scope: true`。`abbr: "消費税"` は `resolved.abbr: "消法"`・`resolved.formal: "消費税法"` のエントリに解決され、houki-egov の管轄なので `in_scope: false` と誘導の `hint` が付く。応答の `abbr` は渡した値のまま。
+
 ## できないこと
 
 - 部分一致やあいまい一致で探すこと（完全一致だけ。`消費税` のような通称は辞書の別名に登録されているときだけ引ける）
@@ -101,4 +107,3 @@ flowchart TD
 3. **空文字・空白だけの `abbr`。** → houki-nta-mcp #69
 4. **`hint` が案内する MCP 名。** → houki-nta-mcp #70
 5. **ツールの説明文の例。** → houki-nta-mcp #70
-6. **別名（辞書の `aliases`）からの解決。** `電帳法取扱通達` や `消費税`（消費税法の別名）のように、辞書の `aliases` に登録された名前でも同じエントリに解決される。このツールの応答としてのテストが無い（略称と正式名称だけ）。ID を振るのは受入テストを書いてから。

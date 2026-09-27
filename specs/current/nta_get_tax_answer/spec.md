@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`getTaxAnswer`）、`src/tools/definitions.ts`、`src/services/tax-answer-render.ts`、`src/services/tax-answer-parser.ts`、`src/services/index-status.ts`、`src/tools/handlers.test.ts`、`src/tools/get-db-first.test.ts`
 - 関連する Issue: houki-nta-mcp #29（DB を先に引く）、#30（索引から消えた文書の印）
 
@@ -41,10 +41,15 @@ flowchart TD
   B -- はい --> C{"先頭の桁が対応する番号帯か"}
   C -- いいえ --> E2["INVALID_ARGUMENT と対応する番号帯を返す（002）"]
   C -- はい --> D{"その番号の記事がローカル DB にあるか"}
-  D -- ある --> G["DB の内容を使う（004、source: db）"]
+  D -- ある --> D2{"節の構造を持つ行か（010）"}
+  D2 -- 持つ --> G["DB の内容を使う（004、source: db）"]
+  D2 -- "持たない・構造の記録が読めない" --> H
   D -- 無い --> H["先頭の桁で決めた税目フォルダのページを国税庁サイトから 1 回取る（003・005、source: live）"]
   H --> I["取った記事を DB に入れる（006。失敗しても応答は返す）"]
-  G --> J{"format"}
+  G --> X{"国税庁の索引から外れているか（009）"}
+  X -- はい --> Y["索引から外れた印を付ける（009。json は index_status・orphaned_at・notice、markdown は索引の状態の行と注記）"]
+  X -- いいえ --> J{"format"}
+  Y --> J
   I --> J
   J -- markdown --> K["markdown の応答（007）"]
   J -- json --> L["json の応答（008）"]
@@ -101,6 +106,20 @@ SPEC-NTA-GET-TAX-ANSWER-005 で取得した記事は DB に入る。同じ番号
 | `source`                                      | `db` または `live`                                                                                  |
 | `legal_status`                                | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と注                    |
 
+### SPEC-NTA-GET-TAX-ANSWER-009 国税庁の索引から消えた記事に印を付ける
+
+DB から返す記事（SPEC-NTA-GET-TAX-ANSWER-004）が国税庁の索引から外れている（bulk download で外れたことを確認した日時が付いている）ときは、応答に印を付ける。索引にある記事と、この呼び出しで国税庁サイトから取った記事には何も付けない。
+
+- `format` が `json` のとき: `index_status: "removed_from_index"`、`orphaned_at`（確認した日時。例: `"2026-10-01T00:30:00Z"`）、`notice`（索引から外れている旨と、過去の課税期間では意味を持つ場合があること、現在の取扱いは最新の通達で確かめること、出典 URL が 404 になることがあることの注記）を付ける
+- `format` を省くか `markdown` のとき: `# No.<番号> <題名>` の見出しと `> 法令時点:` / `> 対象税目:` の行（あるとき）の後、最初の `## ` の節の前に、`> **索引の状態**: removed_from_index（<確認した日時> に確認）` の行と、`> ` で始まる注記の行を入れる
+- 索引にある記事では、json に `index_status` / `orphaned_at` / `notice` を付けず、markdown に「索引の状態」の行と注記を入れない
+
+注記の文は `nta_get_jimu_unei`（SPEC-NTA-GET-JIMU-UNEI-004）と同じである。
+
+### SPEC-NTA-GET-TAX-ANSWER-010 節の構造を持たない DB の行は、国税庁サイトから取り直す
+
+DB にその記事の行があっても、節の構造（見出しと段落を分けたもの）を持たない行（v0.16.0 より前に DB に入れた行）や、構造の記録が読めない行は、DB から返さず、DB に無いとき（SPEC-NTA-GET-TAX-ANSWER-005）と同じく国税庁サイトから取る。応答の `source` は `live` になり、取った記事は SPEC-NTA-GET-TAX-ANSWER-006 のとおり DB に書き戻す。次の呼び出しからは DB から返す（`source: "db"`）。
+
 ## できないこと
 
 - 記事を題名やキーワードから探すこと（探すのは `nta_search_tax_answer`）
@@ -120,8 +139,4 @@ SPEC-NTA-GET-TAX-ANSWER-005 で取得した記事は DB に入る。同じ番号
 2. **全角の数字を受け付けない。** → houki-nta-mcp #66
 3. **番号の桁数と先頭の `0` を確かめない。** → houki-nta-mcp #66
 4. **未対応の番号帯のエラー文に古い版が書かれている。** → houki-nta-mcp #70
-5. **ページの解析に失敗したときの `INTERNAL_ERROR`**（国税庁ページの構造変更を疑う `hint` 付き、`url` と `detail.cause`）はテストが無い。ID を振るのは受入テストを書いてから。
-6. **国税庁の索引から消えた記事の印。** DB から返した記事が索引から外れているとき、json では `index_status: "removed_from_index"`・`orphaned_at`・`notice` が付き、markdown では `> **索引の状態**: removed_from_index（<日時> に確認）` の行と注記が付く。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-7. **v0.16.0 より前に DB に入れた記事**（節の構造を持たない行）は、DB にあっても国税庁サイトから取り直す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-8. **`--bulk-download-tax-answer` で入れた記事を DB から返す経路**は、SPEC-NTA-GET-TAX-ANSWER-004 の文に含めたが、テストが確かめているのは以前の取得で書き戻した記事を返す経路だけである。bulk download で入れた行を用意して確かめる受入テストを足すか。
 9. **`taxAnswer.no` は引数ではなくページの見出しから読む。** → houki-nta-mcp #73

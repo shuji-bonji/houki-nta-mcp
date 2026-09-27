@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-22（初版。PR #49 のマージ）。差分 `20260924-tsutatsu-clause-forms` は 2026-09-24（PR #53 のマージ）。差分 `20260925-tsutatsu-live-toc` は 2026-09-25（PR #59）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-22（初版。PR #49 のマージ）。差分 `20260924-tsutatsu-clause-forms` は 2026-09-24（PR #53 のマージ）。差分 `20260925-tsutatsu-live-toc` は 2026-09-25（PR #59）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）
 - 起こした元: v0.20.2 の `src/tools/handlers.ts`（`getTsutatsu`）、`src/tools/definitions.ts`、`src/tools/handlers.test.ts`
 - 関連する判断: houki-hub `docs/DECISIONS.md`（2026-09-21 の行）
 - 取り込んだ差分: `specs/releases/v0.20.3/20260924-tsutatsu-clause-forms/`（入力の `clause`。2026-09-24 JST）
@@ -67,8 +67,8 @@ flowchart TD
   R -- いいえ --> Z
   Z -- いいえ --> E8["INVALID_ARGUMENT と nta_search_tsutatsu の案内を返す（008）"]
   Z -- はい --> E9
-  O -- markdown --> P1["markdown の応答（011）と解釈の対象になる法律の行（013）"]
-  O -- json --> Q1["json の応答（012）に base_laws と next_actions を付ける（013）"]
+  O -- markdown --> P1["markdown の応答（011）と解釈の対象になる法律の行（013）。本文に画像があれば注意の行（016）"]
+  O -- json --> Q1["json の応答（012）に base_laws と next_actions を付ける（013）。本文に画像があれば content_notes（016）"]
 ```
 
 ## できること
@@ -176,6 +176,14 @@ DB に保存してあった目次を使った呼び出しで次のどれかが�
 
 1 回の呼び出しで取得する候補ページは 10 までにする（目次ページは数えない）。ページとページのあいだは 0.3 秒あける。上限に達しても条項が見つからないときは、SPEC-NTA-GET-TSUTATSU-010 の `ARTICLE_NOT_FOUND` を返し、`hint` に上限に達したことを書く。
 
+### SPEC-NTA-GET-TSUTATSU-016 本文に画像がある条項には、画像を読めない旨の注記を付ける
+
+条項の本文に画像（算式などを GIF で載せた箇所）があるときは、DB から返したとき（SPEC-NTA-GET-TSUTATSU-004）も国税庁サイトから取ったとき（SPEC-NTA-GET-TSUTATSU-006）も、次の注記を付ける。画像が無い条項には付けない。
+
+- 注記の文: `本文に画像が <箇所数> 箇所含まれています（算式などが GIF 画像で掲載されている箇所）。画像の内容は取得できないため、本文には alt テキストを [画像: …] として同じ位置に残しています（"<alt1>" / "<alt2>"）。算式の正確な内容は出典 URL の原ページで確認してください`。alt テキストが 1 つも無いときは `（"…"）` の部分を書かない
+- `format` が `json` のとき: `content_notes` に、この注記 1 件の配列を入れる
+- `format` を省くか `markdown` のとき: 本文の後、`出典:` の行の前に `> 注意: <注記>` の行を入れる
+
 ## できないこと
 
 - 通達の条項と法律の条番号の対応を示すこと（`base_laws` は法令名まで。条は付けない）
@@ -190,9 +198,6 @@ DB に保存してあった目次を使った呼び出しで次のどれかが�
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **ライブ取得した節の条項を DB に書き戻す動き**（次回から SPEC-NTA-GET-TSUTATSU-004 で返る）は、このツールの応答として「2 回目は取りに行かない」ことのテストが無い。SPEC-NTA-GET-TSUTATSU-006 に書き戻しを書いたので、この差分の受入テストで確かめる。
-2. **ページの解析に失敗したときの `INTERNAL_ERROR`**（国税庁ページの構造変更を疑う `hint` 付き）はテストが無い。ID を振るのは受入テストを書いてから。
-3. **本文に画像があるときの `content_notes`**（json）と `> 注意:` の行（markdown）は、解析側のテストはあるがこのツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
 4. **`available_clauses` の件数** → houki-nta-mcp #71
 
 （旧未決 1「ライブ取得経路では clause の全角を半角に揃えない」は、入力の表の変更で解消する。）

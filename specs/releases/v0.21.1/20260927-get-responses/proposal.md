@@ -3,7 +3,7 @@
 - 対象: `specs/current/` の `nta_get_bunshokaitou`・`nta_get_jimu_unei`・`nta_get_kaisei_tsutatsu`・`nta_get_tsutatsu`・`nta_get_qa`・`resolve_abbreviation`・`nta_inspect_pdf_meta` の `spec.md`（「できること」への追加）
 - 実装の変更: 要（受入テストを足す。`src/` は変えない）
 - 承認日: 2026-09-27（PR #89）
-- 状態: 草案。承認後、実装 PR（Test Designer が受入テストを足す）の最終コミットで `specs/current/` に取り込み、`specs/releases/<tag>/` へ移す
+- 状態: 取り込み済み。受入テストは v0.21.1、`specs/current/` への取り込みは 2026-09-28（JST、実装 PR の最終コミット）
 - 起こした日: 2026-09-27（JST）
 - 起こした役: Spec Steward
 - 関連: houki-nta-mcp #1（docType 別の `legal_status`）、#17（画像の注記）、#22（関係法令通達の案内）、#36（PDF の保存）、#44（「別紙 N」の付け替え）、#50（初版起こし）、#74、houki-hub `docs/notes/issues-2026-09-26-nta-undecided/README.md`（A の一覧）

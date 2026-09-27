@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-24（初版。PR #52 のマージ）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）
+- 承認日: 2026-09-24（初版。PR #52 のマージ）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）
 - 起こした元: v0.20.2 の `src/tools/handlers.ts`（`getQa`）、`src/tools/definitions.ts`、`src/services/tax-answer-render.ts`、`src/tools/handlers.test.ts`、`src/tools/get-db-first.test.ts`
 - 関連する Issue: houki-nta-mcp #22（関係法令通達の構造化）、#29（DB を先に引く）、#30（索引から消えた文書の印）
 
@@ -33,13 +33,18 @@ flowchart TD
   C -- いいえ --> E2["INVALID_ARGUMENT を返す（002）"]
   C -- はい --> D["1 桁の category・id を 2 桁に揃える（003）"]
   D --> F{"その事例がローカル DB にあるか"}
-  F -- ある --> G["DB の内容を使う（004、source: db）"]
+  F -- ある --> F2{"段落の構造を持つ行か（012）"}
+  F2 -- 持つ --> G["DB の内容を使う（004、source: db）"]
+  F2 -- "持たない・構造の記録が読めない" --> H
   F -- 無い --> H["国税庁サイトから取る（005、source: live）"]
   H --> I["取った事例を DB に入れる（006。失敗しても応答は返す）"]
-  G --> J{"format"}
+  G --> X{"国税庁の索引から外れているか（010）"}
+  X -- はい --> Y["索引から外れた印を付ける（010。json は index_status・orphaned_at・notice、markdown は索引の状態の行と注記）"]
+  X -- いいえ --> J{"format"}
+  Y --> J
   I --> J
   J -- markdown --> K["markdown の応答（007）"]
-  J -- json --> L["json の応答（008）に関係法令通達の読み取り結果を付ける（009）"]
+  J -- json --> L["json の応答（008）に関係法令通達の読み取り結果を付ける（009）。条まで読めない法令と 4 種以外の通達は next_actions に入れない（011）"]
 ```
 
 ## できること
@@ -103,6 +108,31 @@ json の応答では、【関係法令通達】を読み取って次を付ける
 
 例: shohi/02/19 の「消費税法第2条第1項第8号、消費税法基本通達5-1-1」からは、`related_laws` に `{ law_name: "消費税法", article: "2", paragraph: 1, item: 8 }`、`related_tsutatsu` に `{ name: "消費税法基本通達", clause: "5-1-1" }` が入り、`next_actions` はこの 2 つを読む案内の 2 件になる。
 
+### SPEC-NTA-GET-QA-010 国税庁の索引から消えた事例に印を付ける
+
+DB から返す事例（SPEC-NTA-GET-QA-004）が国税庁の索引から外れている（bulk download で外れたことを確認した日時が付いている）ときは、応答に印を付ける。索引にある事例と、この呼び出しで国税庁サイトから取った事例には何も付けない。
+
+- `format` が `json` のとき: `index_status: "removed_from_index"`、`orphaned_at`（確認した日時。例: `"2026-10-01T00:30:00Z"`）、`notice`（索引から外れている旨と、過去の課税期間では意味を持つ場合があること、現在の取扱いは最新の通達で確かめること、出典 URL が 404 になることがあることの注記）を付ける
+- `format` を省くか `markdown` のとき: `> 税目: … / カテゴリ: … / 事例番号: …` の行の後に、`> **索引の状態**: removed_from_index（<確認した日時> に確認）` の行と、`> ` で始まる注記の行を入れる
+- 索引にある事例では、json に `index_status` / `orphaned_at` / `notice` を付けず、markdown に「索引の状態」の行と注記を入れない
+
+注記の文は `nta_get_jimu_unei`（SPEC-NTA-GET-JIMU-UNEI-004）と同じである。
+
+### SPEC-NTA-GET-QA-011 条まで読めない法令や、基本通達 4 種以外の通達は `next_actions` に入れない
+
+SPEC-NTA-GET-QA-009 の `next_actions` には、読み取った参照のうち次のものを入れない。入れないものも `related_laws` / `related_tsutatsu` には残す。
+
+- 法令: 条（`article`）まで読めなかったもの。法令名が「法」「令」「規則」「法律」のどれでも終わらないもの（例: `日米租税条約`）。法令名が「旧」で始まるか「改正前」を含むもの（例: `旧所得税法`）
+- 通達: 番号（`clause`）まで読めなかったもの。消費税法基本通達・所得税基本通達・法人税基本通達・相続税法基本通達の 4 種以外の通達
+
+通達の番号の末尾に `(4)` のような細目があるときは、`next_actions` の `example.clause` からは細目を外す（`related_tsutatsu` の `clause` は元のまま）。
+
+例: 【関係法令通達】が「消費税法第2条第1項第8号、消費税法基本通達5-1-1(4)」「日米租税条約第3条」「旧所得税法第9条」の事例では、`related_laws` は 3 件だが、`next_actions` の法令の案内は `消費税法` の 1 件だけになる。通達の案内の `example` は `{ name: "消費税法基本通達", clause: "5-1-1" }` で、`related_tsutatsu` の `clause` は `5-1-1(4)` のまま。
+
+### SPEC-NTA-GET-QA-012 段落の構造を持たない DB の行は、国税庁サイトから取り直す
+
+DB にその事例の行があっても、段落の構造（照会要旨・回答要旨・関係法令通達を分けたもの）を持たない行（v0.16.0 より前に DB に入れた行）や、構造の記録が読めない行は、DB から返さず、DB に無いとき（SPEC-NTA-GET-QA-005）と同じく国税庁サイトから取る。応答の `source` は `live` になり、取った事例は SPEC-NTA-GET-QA-006 のとおり DB に書き戻す。次の呼び出しからは DB から返す（`source: "db"`）。
+
 ## できないこと
 
 - markdown の応答で `related_laws` / `related_tsutatsu` / `next_actions` を返すこと（json のときだけ。markdown は【関係法令通達】の節をページの表記のまま載せる）
@@ -118,7 +148,3 @@ json の応答では、【関係法令通達】を読み取って次を付ける
 
 1. **存在しない事例を指定したときのエラー。** → houki-nta-mcp #65
 2. **`category` と `id` の形を確かめない。** → houki-nta-mcp #66
-3. **ページの解析に失敗したときの `INTERNAL_ERROR`**（国税庁ページの構造変更を疑う `hint` 付き）はテストが無い。ID を振るのは受入テストを書いてから。
-4. **国税庁の索引から消えた事例の印。** DB から返した事例が索引から外れているとき、json では `index_status: "removed_from_index"`・`orphaned_at`・`notice` が付き、markdown では「索引の状態」の行が付く。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-5. **v0.16.0 より前に DB に入れた事例**（段落の構造を持たない行）は、DB にあっても国税庁サイトから取り直す。このツールの応答としてのテストが無い。ID を振るのは受入テストを書いてから。
-6. **`next_actions` に入れない参照。** 条まで読めない法令、法令名が「法・令・規則・法律」で終わらないもの（条約の通称など）、「旧」「改正前」の付く法令、基本通達 4 種以外の通達、番号の無い通達は `next_actions` に入れない（`related_laws` / `related_tsutatsu` には残る）。通達の番号の末尾の `(4)` のような細目は `clause` から外して案内する。この絞り込みはこのツールの応答としてのテストが無い（読み取り側のテストは `src/services/related-law-parser.test.ts` にある）。ID を振るのは受入テストを書いてから。
