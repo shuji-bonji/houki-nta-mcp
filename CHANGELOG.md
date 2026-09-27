@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.21.1] - 2026-09-28
+
+**patch リリース** — 検索ツールの `snippet`（本文の抜粋）が、4 文字以上の語の途中で `<b>` を閉じて切れることがあった不具合を直した（#97）。あわせて、初版の仕様の「未決」のうちテストが無いだけだった 65 件に受入テストと仕様 ID（34 件）を足し、7 本の仕様の差分を `specs/current/` に取り込んだ。検索の抜粋のほかに、応答の形は変わらない。
+
+### Fixed
+
+- **検索の `snippet` が語の途中で切れる**（#97、SPEC-NTA-SEARCH-RULES-015・SPEC-NTA-SEARCH-TSUTATSU-004）: 抜粋を FTS5 の `snippet()`（トークン 16 個）で作っていたため、trigram で 2 トークン以上にまたがる 4 文字以上の語が抜粋の端にかかると、`<b>源泉徴</b> … ` のように語の途中で切れていた。`highlight()` で合った箇所に印を付け、最初に合った箇所の前後 16 文字を JS で切り出すように変えた。合った箇所の途中では切らず、前後を切った側に ` … ` を付ける。2 文字の語を LIKE で探したときの抜粋も同じ切り出し方にした。抜粋の長さは、トークン 16 個分から前後 16 文字ずつに変わる。文書系検索 5 ツールと `nta_search_tsutatsu` の両方
+
+### Tests
+
+- 仕様の差分 7 本の受入テストを足した（`src/tools/spec-20260927-*.test.ts`）。仕様 PR は #84・#85・#86・#88・#89・#90・#91。テストは実装を変えずに通り、#85 の 1 件だけが上の不具合で落ちていた
+- #97 の受入テスト（`src/tools/snippet-cut.test.ts`）を足した
+- `src/tools/doc-search-zero-hit.test.ts` のテスト名 1 件を、呼んでいるツールの名前（`nta_search_tax_answer`）に直した
+
+### Specs
+
+- 7 本の差分（`20260927-index-status-marks`・`-argument-and-parse-errors`・`-search-hit-responses`・`-search-keyword-rules`・`-search-zero-hits`・`-get-responses`・`-fetch-paths`）を `specs/current/` に取り込み、`specs/releases/v0.21.1/` へ移した。足した仕様 ID は 34 件。取り込み済みだった `20260926-processing-flow`（#63）と `20260926-undecided-to-issues`（#74）も同じ場所へ移した
+
 ## [0.21.0] - 2026-09-26
 
 **minor リリース** — `nta_get_tsutatsu` が、DB に無い条項を基本通達 4 種とも国税庁サイトから取れるようにした（#54）。これまで国税庁サイトから取れたのは消費税法基本通達だけで、法人税基本通達は存在しない URL を取りに行って `SOURCE_API_ERROR`、所得税・相続税法基本通達は `INVALID_ARGUMENT` になっていた。また、国税庁サイトから 1 節取って書き戻すと、同じ通達の他の節が `ARTICLE_NOT_FOUND` になって取れなくなっていた。仕様の差分は `specs/releases/v0.21.0/20260925-tsutatsu-live-toc/`（承認 2026-09-25、PR #59）、設計は houki-hub `docs/notes/2026-09-25-design-nta-54-tsutatsu-live-toc.md` の 4 章・6 章。DB は起動時に schema v10 へ移行し、再ダウンロードは要らない。
