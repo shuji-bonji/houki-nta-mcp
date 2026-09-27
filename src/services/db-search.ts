@@ -3,7 +3,7 @@
  *
  * - `clause_fts` (trigram) で keyword を MATCH
  * - rank（FTS5 標準のスコア）で並べる
- * - snippet() で前後 5 トークンを抽出してハイライト
+ * - highlight() で合った箇所に印を付け、前後の文字数を決めて JS で切り出す（#97）
  * - tsutatsu join で formal_name フィルタ（特定通達のみ検索）
  */
 
@@ -78,19 +78,78 @@ function escapeLike(token: string): string {
   return `%${token.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
 }
 
+/** 抜粋で、合った箇所の前後に残す文字数 */
+export const SNIPPET_CONTEXT_CHARS = 16;
+
+/**
+ * 合った箇所の始まりと終わりの印。FTS5 の highlight() と LIKE 補完の両方で使う。
+ * 本文に現れない私用領域の文字にして、本文の `<b>` などの文字と取り違えないようにする。
+ */
+export const MATCH_OPEN = '\uE000';
+export const MATCH_CLOSE = '\uE001';
+
+/**
+ * 印（MATCH_OPEN / MATCH_CLOSE）を付けた本文から、最初に合った箇所の前後 `width` 文字を切り出し、
+ * 合った箇所を `<b>` で囲んで返す（#97）。
+ *
+ * - 合った箇所の途中では切らない。切り出す範囲の終わりにかかる箇所は、その箇所の終わりまで含める
+ * - 前後を切った側に ` … ` を付ける
+ * - 合った箇所が無ければ、先頭の `width * 2` 文字を返す
+ */
+export function cutAroundMatch(marked: string, width = SNIPPET_CONTEXT_CHARS): string {
+  // 印を外した本文と、合った箇所の範囲 [start, end) を作る
+  const ranges: Array<[number, number]> = [];
+  let plain = '';
+  let openAt = -1;
+  for (const ch of marked) {
+    if (ch === MATCH_OPEN) {
+      openAt = plain.length;
+    } else if (ch === MATCH_CLOSE) {
+      if (openAt >= 0 && plain.length > openAt) ranges.push([openAt, plain.length]);
+      openAt = -1;
+    } else {
+      plain = `${plain}${ch}`;
+    }
+  }
+  if (ranges.length === 0) return plain.slice(0, width * 2);
+
+  const [firstStart, firstEnd] = ranges[0];
+  const start = Math.max(0, firstStart - width);
+  let end = Math.min(plain.length, firstEnd + width);
+  for (const [s, e] of ranges) {
+    if (s < end && e > end) end = e;
+  }
+
+  let out = '';
+  let pos = start;
+  for (const [s, e] of ranges) {
+    if (e <= start || s >= end) continue;
+    const from = Math.max(s, start);
+    out = `${out}${plain.slice(pos, from)}<b>${plain.slice(from, e)}</b>`;
+    pos = e;
+  }
+  out = `${out}${plain.slice(pos, end)}`;
+  const head = start > 0 ? ' … ' : '';
+  const tail = end < plain.length ? ' … ' : '';
+  return `${head}${out}${tail}`;
+}
+
 /**
  * LIKE 補完で拾った行の snippet を JS で作る (FTS5 の snippet() は使えないため)。
  * 最初に見つかった短い語の前後 `width` 文字を切り出し `<b>` で囲む。
  */
-export function makeLikeSnippet(text: string, tokens: string[], width = 16): string {
+export function makeLikeSnippet(
+  text: string,
+  tokens: string[],
+  width = SNIPPET_CONTEXT_CHARS
+): string {
   for (const t of tokens) {
     const i = text.indexOf(t);
     if (i < 0) continue;
-    const start = Math.max(0, i - width);
-    const end = Math.min(text.length, i + t.length + width);
-    const head = start > 0 ? ' … ' : '';
-    const tail = end < text.length ? ' … ' : '';
-    return `${head}${text.slice(start, i)}<b>${t}</b>${text.slice(i + t.length, end)}${tail}`;
+    return cutAroundMatch(
+      `${text.slice(0, i)}${MATCH_OPEN}${t}${MATCH_CLOSE}${text.slice(i + t.length)}`,
+      width
+    );
   }
   return text.slice(0, width * 2);
 }
@@ -238,7 +297,7 @@ function runClauseQuery(
       c.clause_number AS clauseNumber,
       c.title       AS title,
       c.full_text   AS fullText,
-      snippet(clause_fts, 2, '<b>', '</b>', ' … ', 16) AS snippet,
+      highlight(clause_fts, 2, char(57344), char(57345)) AS snippet,
       c.source_url  AS sourceUrl,
       clause_fts.rank AS rank
     FROM clause_fts
@@ -290,7 +349,8 @@ function runClauseQuery(
           : `short token search (LIKE, no FTS rank): ${shortTokens.join(', ')}`
       );
     }
-    const snippet = useFts ? hit.snippet : makeLikeSnippet(fullText, shortTokens);
+    // #97: FTS の行の snippet 列は highlight() で印を付けた本文全体。ここで前後を切り出す
+    const snippet = useFts ? cutAroundMatch(hit.snippet) : makeLikeSnippet(fullText, shortTokens);
     return { ...hit, snippet, score, scoreReasons };
   });
   return sortByScoreDesc(scored).slice(0, limit);
@@ -778,7 +838,7 @@ function runDocumentQuery(
       d.source_url AS sourceUrl,
       d.full_text AS fullText,
       d.orphaned_at AS orphanedAt,
-      snippet(document_fts, 3, '<b>', '</b>', ' … ', 16) AS snippet,
+      highlight(document_fts, 3, char(57344), char(57345)) AS snippet,
       document_fts.rank AS rank
     FROM document_fts
     JOIN document d ON d.id = document_fts.rowid
@@ -827,7 +887,8 @@ function runDocumentQuery(
           : `short token search (LIKE, no FTS rank): ${shortTokens.join(', ')}`
       );
     }
-    const snippet = useFts ? hit.snippet : makeLikeSnippet(fullText, shortTokens);
+    // #97: FTS の行の snippet 列は highlight() で印を付けた本文全体。ここで前後を切り出す
+    const snippet = useFts ? cutAroundMatch(hit.snippet) : makeLikeSnippet(fullText, shortTokens);
     return { ...hit, snippet, score, scoreReasons };
   });
   return sortByScoreDesc(scored).slice(0, limit);
