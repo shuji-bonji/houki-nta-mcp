@@ -2,7 +2,7 @@
 
 - 対象: `specs/current/search_rules/spec.md` と `specs/current/nta_search_tsutatsu/spec.md`（「できること」への追加）
 - 実装の変更: 要（受入テストを足す。`src/` は変えない）
-- 承認日:
+- 承認日: 2026-09-27 （JST）
 - 状態: 草案。承認後、実装 PR（Test Designer が受入テストを足す）の最終コミットで `specs/current/` に取り込み、`specs/releases/<tag>/` へ移す
 - 起こした日: 2026-09-27（JST）
 - 起こした役: Spec Steward
@@ -18,15 +18,15 @@
 
 ## 足す仕様 ID（ADDED、2 件）
 
-| 仕様 ID | 内容 | 元の未決 |
-|---|---|---|
-| SPEC-NTA-SEARCH-RULES-015 | 文書系 5 ツールのヒットしたときの応答（`results` の要素・`keyword`・`freshness`・`legal_status`） | nta_search_bunshokaitou 1、nta_search_jimu_unei 10、nta_search_kaisei_tsutatsu 4、nta_search_qa 1、nta_search_tax_answer 1 |
-| SPEC-NTA-SEARCH-TSUTATSU-010 | `legal_status` はヒットしたときだけ付ける | nta_search_tsutatsu 4 |
+| 仕様 ID                      | 内容                                                                                              | 元の未決                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| SPEC-NTA-SEARCH-RULES-015    | 文書系 5 ツールのヒットしたときの応答（`results` の要素・`keyword`・`freshness`・`legal_status`） | nta_search_bunshokaitou 1、nta_search_jimu_unei 10、nta_search_kaisei_tsutatsu 4、nta_search_qa 1、nta_search_tax_answer 1 |
+| SPEC-NTA-SEARCH-TSUTATSU-010 | `legal_status` はヒットしたときだけ付ける                                                         | nta_search_tsutatsu 4                                                                                                      |
 
 ## 既存の仕様 ID で受ける項目（ID は足さず、ツールの応答としてのテストを足す）
 
-| ツール | 未決の番号 | 受ける仕様 ID |
-|---|---|---|
+| ツール              | 未決の番号                                                   | 受ける仕様 ID                       |
+| ------------------- | ------------------------------------------------------------ | ----------------------------------- |
 | nta_search_tsutatsu | 2（`score` / `scoreReasons` と並び順、条項番号の一致の加点） | SPEC-NTA-SEARCH-RULES-012・013・014 |
 
 ## 約束にしなかったこと
@@ -36,14 +36,14 @@
 
 ## 取り込みのときに消す「未決」
 
-| spec.md | 消す未決の番号 |
-|---|---|
-| nta_search_bunshokaitou | 1 |
-| nta_search_jimu_unei | 10 |
-| nta_search_kaisei_tsutatsu | 4 |
-| nta_search_qa | 1 |
-| nta_search_tax_answer | 1 |
-| nta_search_tsutatsu | 2、4 |
+| spec.md                    | 消す未決の番号 |
+| -------------------------- | -------------- |
+| nta_search_bunshokaitou    | 1              |
+| nta_search_jimu_unei       | 10             |
+| nta_search_kaisei_tsutatsu | 4              |
+| nta_search_qa              | 1              |
+| nta_search_tax_answer      | 1              |
+| nta_search_tsutatsu        | 2、4           |
 
 ## 変わらない振る舞い
 
