@@ -2,7 +2,7 @@
 
 - 対象: `specs/current/` の `nta_get_bunshokaitou`・`nta_get_kaisei_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer` の `spec.md`（「できること」への追加）。検索系 4 ツールは ID を足さない
 - 実装の変更: 要（受入テストを足す。`src/` は変えない）
-- 承認日:
+- 承認日: 2026-09-27 （PR #91）
 - 状態: 草案。承認後、実装 PR（Test Designer が受入テストを足す）の最終コミットで `specs/current/` に取り込み、`specs/releases/<tag>/` へ移す
 - 起こした日: 2026-09-27（JST）
 - 起こした役: Spec Steward
@@ -18,38 +18,38 @@
 
 ## 足す仕様 ID（ADDED、4 件）
 
-| ツール | 未決の番号 → 仕様 ID |
-|---|---|
-| nta_get_bunshokaitou | 4 → SPEC-NTA-GET-BUNSHOKAITOU-004 |
+| ツール                  | 未決の番号 → 仕様 ID                 |
+| ----------------------- | ------------------------------------ |
+| nta_get_bunshokaitou    | 4 → SPEC-NTA-GET-BUNSHOKAITOU-004    |
 | nta_get_kaisei_tsutatsu | 3 → SPEC-NTA-GET-KAISEI-TSUTATSU-004 |
-| nta_get_qa | 4 → SPEC-NTA-GET-QA-010 |
-| nta_get_tax_answer | 6 → SPEC-NTA-GET-TAX-ANSWER-009 |
+| nta_get_qa              | 4 → SPEC-NTA-GET-QA-010              |
+| nta_get_tax_answer      | 6 → SPEC-NTA-GET-TAX-ANSWER-009      |
 
 取得系は、共通の spec.md（`common_errors` / `search_rules`）のどちらの範囲にも入らない。先に ID のある SPEC-NTA-GET-JIMU-UNEI-004 と同じく、ツールごとに ID を振った（「人が判断すること」の 2）。
 
 ## 既存の仕様 ID で受ける項目（ID は足さず、ツールの応答としてのテストを足す）
 
-| ツール | 未決の番号 | 受ける仕様 ID |
-|---|---|---|
-| nta_search_bunshokaitou | 5 | SPEC-NTA-SEARCH-RULES-011 |
-| nta_search_kaisei_tsutatsu | 7 | SPEC-NTA-SEARCH-RULES-011 |
-| nta_search_qa | 5 | SPEC-NTA-SEARCH-RULES-011 |
-| nta_search_tax_answer | 5 | SPEC-NTA-SEARCH-RULES-011 |
+| ツール                     | 未決の番号 | 受ける仕様 ID             |
+| -------------------------- | ---------- | ------------------------- |
+| nta_search_bunshokaitou    | 5          | SPEC-NTA-SEARCH-RULES-011 |
+| nta_search_kaisei_tsutatsu | 7          | SPEC-NTA-SEARCH-RULES-011 |
+| nta_search_qa              | 5          | SPEC-NTA-SEARCH-RULES-011 |
+| nta_search_tax_answer      | 5          | SPEC-NTA-SEARCH-RULES-011 |
 
 SPEC-NTA-SEARCH-RULES-011 の本文は、文書系 5 ツールのすべてに当てはまる形で書かれている。受入テストは、ツールごとに「索引にある文書と消えた文書の両方が返る」「消えた文書だけに `index_status` と `orphaned_at` が付く」「`search_notes` に件数の文が入る」を確かめ、テスト名に SPEC-NTA-SEARCH-RULES-011 を入れる。
 
 ## 取り込みのときに消す「未決」
 
-| spec.md | 消す未決の番号 |
-|---|---|
-| nta_get_bunshokaitou | 4 |
-| nta_get_kaisei_tsutatsu | 3 |
-| nta_get_qa | 4 |
-| nta_get_tax_answer | 6 |
-| nta_search_bunshokaitou | 5 |
-| nta_search_kaisei_tsutatsu | 7 |
-| nta_search_qa | 5 |
-| nta_search_tax_answer | 5 |
+| spec.md                    | 消す未決の番号 |
+| -------------------------- | -------------- |
+| nta_get_bunshokaitou       | 4              |
+| nta_get_kaisei_tsutatsu    | 3              |
+| nta_get_qa                 | 4              |
+| nta_get_tax_answer         | 6              |
+| nta_search_bunshokaitou    | 5              |
+| nta_search_kaisei_tsutatsu | 7              |
+| nta_search_qa              | 5              |
+| nta_search_tax_answer      | 5              |
 
 ## 変わらない振る舞い
 
