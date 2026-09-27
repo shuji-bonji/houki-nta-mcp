@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: 共通
 - 版: current
-- 承認日:
+- 承認日: 2026-09-27 （PR #78）
 - 起こした元: v0.21.0 の `src/services/db-search.ts`、`src/services/text-normalize.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/services/relevance-scoring.ts`、`src/tools/handlers.ts`（検索系 6 ツールのハンドラー）、各種別の取り込み処理（`src/services/*-bulk-downloader.ts`・`src/services/*-parser.ts`・`src/services/document-writeback.ts`）、`src/services/db-search.test.ts`、`src/services/text-normalize.test.ts`、`src/services/relevance-scoring.test.ts`、`src/services/index-status.test.ts`、`src/services/db-writeback.test.ts`、`src/services/kaisei-parser.test.ts`、`src/tools/handlers.test.ts`、`src/tools/index-status-response.test.ts`
 - 関連する Issue: houki-nta-mcp #14（通称の展開）、#18（短い語の扱い）、#21（通称の展開を 0 件のときだけにする）、#27（全角英字の揃え方）、#30（索引から消えた文書の印）、#68（limit の丸め）、#69（空のキーワード）、#71（応答の形の不揃い）
 
@@ -16,14 +16,14 @@
 
 ## 対象
 
-| ツール                       | 当てはまる場面                                                                                                                                                             |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ツール                       | 当てはまる場面                                                                                                                                                                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `nta_search_tsutatsu`        | 基本通達の条項の検索。キーワードの扱い・全角の揃え方・略称と通称の展開・関連度と並び順・`freshness` が当てはまる。条項番号の一致による加点はこのツールだけ。索引から消えた文書の印は当てはまらない（条項には印を持たない） |
-| `nta_search_qa`              | 質疑応答事例の検索。索引から消えた文書の印を含め、条項番号の一致による加点以外のすべてが当てはまる                                                                         |
-| `nta_search_tax_answer`      | タックスアンサーの検索。`nta_search_qa` と同じ                                                                                                                             |
-| `nta_search_bunshokaitou`    | 文書回答事例の検索。`nta_search_qa` と同じ                                                                                                                                 |
-| `nta_search_jimu_unei`       | 事務運営指針の検索。`nta_search_qa` と同じ                                                                                                                                 |
-| `nta_search_kaisei_tsutatsu` | 改正通達の検索。`nta_search_qa` と同じ                                                                                                                                     |
+| `nta_search_qa`              | 質疑応答事例の検索。索引から消えた文書の印を含め、条項番号の一致による加点以外のすべてが当てはまる                                                                                                                         |
+| `nta_search_tax_answer`      | タックスアンサーの検索。`nta_search_qa` と同じ                                                                                                                                                                             |
+| `nta_search_bunshokaitou`    | 文書回答事例の検索。`nta_search_qa` と同じ                                                                                                                                                                                 |
+| `nta_search_jimu_unei`       | 事務運営指針の検索。`nta_search_qa` と同じ                                                                                                                                                                                 |
+| `nta_search_kaisei_tsutatsu` | 改正通達の検索。`nta_search_qa` と同じ                                                                                                                                                                                     |
 
 ツールによって応答の形が違う点（`nta_search_tsutatsu` は `hits`・`count`・0 件のときの `message`、文書系 5 ツールは `results`）がある。統一するかは → houki-nta-mcp #71
 
@@ -77,7 +77,7 @@ flowchart TD
 3 文字以上の語が無く 2 文字の語があるときは、2 文字の語をすべて本文か題名に含むものを部分一致で探す。例: 「役員の範囲」「退職給与の打切支給（本文に「役員」を含む）」「棚卸資産の販売」の 3 条項があるとき、`"役員"` は前の 2 条項を返す。質疑応答事例などの文書系でも同じで、種別・税目の絞り込みも効く。
 
 - `%` や `_` は部分一致の特別な記号として扱わず、文字そのものとして探す。例: `"%%"`・`"__"` はそれらの文字を含まない限り 0 件
-- `snippet` は、本文で最初に見つかった 2 文字の語の前後を切り出し、その語を `<b>` で囲む。例: `… ああああ<b>役員</b>いいいい …`。前後を切った側には ` … ` を付ける
+- `snippet` は、本文で最初に見つかった 2 文字の語の前後を切り出し、その語を `<b>` で囲む。例: `… ああああ<b>役員</b>いいいい …`。前後を切った側には `…` を付ける
 - `scoreReasons` に `short token search (LIKE, no FTS rank): <語>` を足す
 - `nta_search_tsutatsu` の応答では、この場合も `count` と `hits` を返し、`search_notes` を付ける（SPEC-NTA-SEARCH-RULES-006）
 
