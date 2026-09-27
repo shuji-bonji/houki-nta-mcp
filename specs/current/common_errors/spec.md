@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: 共通
 - 版: current
-- 承認日:
+- 承認日: 2026-09-27 （PR #77）
 - 起こした元: v0.21.0 の `src/server.ts`、`src/tools/tool-args.ts`、`src/errors.ts`、`src/tools/definitions.ts`、`src/tools/handlers.ts`（ツールの登録の表）、`src/server.test.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue:
 
@@ -17,55 +17,55 @@
 
 この規則は、tools/call で呼べる次の 14 ツールすべてに当てはまる。どのツールも、tools/list の inputSchema と同じものを使って引数を検査してから、ツールの処理に進む。
 
-| ツール | 当てはまる場面 |
-|---|---|
-| `nta_search_tsutatsu` | 引数の検査、エラー応答の形、処理中の想定外の例外 |
-| `nta_get_tsutatsu` | 同上 |
-| `nta_search_qa` | 同上 |
-| `nta_get_qa` | 同上 |
-| `nta_search_tax_answer` | 同上 |
-| `nta_get_tax_answer` | 同上 |
-| `nta_search_kaisei_tsutatsu` | 同上 |
-| `nta_get_kaisei_tsutatsu` | 同上 |
-| `nta_search_jimu_unei` | 同上 |
-| `nta_get_jimu_unei` | 同上 |
-| `nta_search_bunshokaitou` | 同上 |
-| `nta_get_bunshokaitou` | 同上 |
-| `nta_inspect_pdf_meta` | 同上 |
-| `resolve_abbreviation` | 同上 |
-| 上の 14 個以外の名前 | 存在しないツール名のエラー（SPEC-NTA-COMMON-ERRORS-002） |
+| ツール                       | 当てはまる場面                                           |
+| ---------------------------- | -------------------------------------------------------- |
+| `nta_search_tsutatsu`        | 引数の検査、エラー応答の形、処理中の想定外の例外         |
+| `nta_get_tsutatsu`           | 同上                                                     |
+| `nta_search_qa`              | 同上                                                     |
+| `nta_get_qa`                 | 同上                                                     |
+| `nta_search_tax_answer`      | 同上                                                     |
+| `nta_get_tax_answer`         | 同上                                                     |
+| `nta_search_kaisei_tsutatsu` | 同上                                                     |
+| `nta_get_kaisei_tsutatsu`    | 同上                                                     |
+| `nta_search_jimu_unei`       | 同上                                                     |
+| `nta_get_jimu_unei`          | 同上                                                     |
+| `nta_search_bunshokaitou`    | 同上                                                     |
+| `nta_get_bunshokaitou`       | 同上                                                     |
+| `nta_inspect_pdf_meta`       | 同上                                                     |
+| `resolve_abbreviation`       | 同上                                                     |
+| 上の 14 個以外の名前         | 存在しないツール名のエラー（SPEC-NTA-COMMON-ERRORS-002） |
 
 ### エラー応答のフィールド
 
 エラーの本文は、次のフィールドを持つ JSON オブジェクトである。`error` と `code` は必ず付き、ほかは値があるときだけ付く。
 
-| フィールド | 内容 |
-|---|---|
-| `error` | 1 文のエラーの説明（人も LLM も読む） |
-| `code` | 失敗の種類を表す文字列（下の表） |
-| `hint` | 次に何を確かめるかの案内 |
-| `next_actions` | 次に呼ぶツールや取る手段の候補の配列。要素は `action`（ツール名、または `list_tools` / `retry_later` / `cli_bulk_download` / `delegate_to_mcp` のような手段の名前）・`reason`（どんなときに有効か）・`example`（引数の例。任意） |
-| `retryable` | `true` なら、時間をおいて同じ呼び出しをやり直すと結果が変わりうる |
-| `detail` | 調べるための詳細。`status`（HTTP ステータス）・`url`・`cause`（元の例外の文）・`issues`（引数の検査の問題の一覧） |
-| `tool` | エラーが起きたツールの名前 |
-| `url` / `resolved` / `available_clauses` / `searched_urls` / `available_doc_ids` / `supported_for_live` | ツール固有の補足。どのツールがどの場面で付けるかは各ツールの spec.md |
+| フィールド                                                                                              | 内容                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `error`                                                                                                 | 1 文のエラーの説明（人も LLM も読む）                                                                                                                                                                                            |
+| `code`                                                                                                  | 失敗の種類を表す文字列（下の表）                                                                                                                                                                                                 |
+| `hint`                                                                                                  | 次に何を確かめるかの案内                                                                                                                                                                                                         |
+| `next_actions`                                                                                          | 次に呼ぶツールや取る手段の候補の配列。要素は `action`（ツール名、または `list_tools` / `retry_later` / `cli_bulk_download` / `delegate_to_mcp` のような手段の名前）・`reason`（どんなときに有効か）・`example`（引数の例。任意） |
+| `retryable`                                                                                             | `true` なら、時間をおいて同じ呼び出しをやり直すと結果が変わりうる                                                                                                                                                                |
+| `detail`                                                                                                | 調べるための詳細。`status`（HTTP ステータス）・`url`・`cause`（元の例外の文）・`issues`（引数の検査の問題の一覧）                                                                                                                |
+| `tool`                                                                                                  | エラーが起きたツールの名前                                                                                                                                                                                                       |
+| `url` / `resolved` / `available_clauses` / `searched_urls` / `available_doc_ids` / `supported_for_live` | ツール固有の補足。どのツールがどの場面で付けるかは各ツールの spec.md                                                                                                                                                             |
 
 ### エラーの code
 
 どの場面でどの code を返すかは、存在しないツール名・引数の検査・処理中の想定外の例外を除いて、各ツールの spec.md に書く。
 
-| code | 失敗の種類 |
-|---|---|
-| `INVALID_ARGUMENT` | 引数が inputSchema に合わない、または値の形がツールの受け付ける形でない（呼び出し側の誤り） |
-| `UNKNOWN_TOOL` | 存在しないツール名を呼んだ（呼び出し側の誤り） |
-| `OUT_OF_SCOPE` | このサーバーの管轄でない資料を求めた（別の MCP サーバーで取る） |
-| `ABBREVIATION_NOT_FOUND` | 略称辞書に無い名前を指定した |
-| `TSUTATSU_NOT_FOUND` | 求めた通達（改正通達・事務運営指針を含む）、または検索の対象になる通達が、ローカル DB に無く国税庁サイトから取る先も無い |
-| `ARTICLE_NOT_FOUND` | 通達はあるが、求めた条項が無い |
-| `DOC_NOT_FOUND` | 求めた文書（または検索の対象になる文書）がローカル DB に無い |
-| `SOURCE_API_ERROR` | 国税庁サイトからの取得に失敗した |
-| `SOURCE_TIMEOUT` / `SOURCE_RATE_LIMITED` | 取得の時間切れ / 取得の回数制限。v0.21.0 ではどのツールも返さない |
-| `INTERNAL_ERROR` | サーバー内部の失敗（ページの解析の失敗や、処理中の想定外の例外） |
+| code                                     | 失敗の種類                                                                                                               |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `INVALID_ARGUMENT`                       | 引数が inputSchema に合わない、または値の形がツールの受け付ける形でない（呼び出し側の誤り）                              |
+| `UNKNOWN_TOOL`                           | 存在しないツール名を呼んだ（呼び出し側の誤り）                                                                           |
+| `OUT_OF_SCOPE`                           | このサーバーの管轄でない資料を求めた（別の MCP サーバーで取る）                                                          |
+| `ABBREVIATION_NOT_FOUND`                 | 略称辞書に無い名前を指定した                                                                                             |
+| `TSUTATSU_NOT_FOUND`                     | 求めた通達（改正通達・事務運営指針を含む）、または検索の対象になる通達が、ローカル DB に無く国税庁サイトから取る先も無い |
+| `ARTICLE_NOT_FOUND`                      | 通達はあるが、求めた条項が無い                                                                                           |
+| `DOC_NOT_FOUND`                          | 求めた文書（または検索の対象になる文書）がローカル DB に無い                                                             |
+| `SOURCE_API_ERROR`                       | 国税庁サイトからの取得に失敗した                                                                                         |
+| `SOURCE_TIMEOUT` / `SOURCE_RATE_LIMITED` | 取得の時間切れ / 取得の回数制限。v0.21.0 ではどのツールも返さない                                                        |
+| `INTERNAL_ERROR`                         | サーバー内部の失敗（ページの解析の失敗や、処理中の想定外の例外）                                                         |
 
 ## 処理の流れ
 
