@@ -2,7 +2,7 @@
 
 - 対象: `specs/current/common_errors/spec.md`（「できること」への追加）。ツールの spec.md には ID を足さない
 - 実装の変更: 要（受入テストを足す。`src/` は変えない）
-- 承認日:
+- 承認日: 2026-09-27 （PR #84）
 - 状態: 草案。承認後、実装 PR（Test Designer が受入テストを足す）の最終コミットで `specs/current/` に取り込み、`specs/releases/<tag>/` へ移す
 - 起こした日: 2026-09-27（JST）
 - 起こした役: Spec Steward
@@ -18,37 +18,37 @@
 
 ## 足す仕様 ID（ADDED、3 件、すべて common_errors）
 
-| 仕様 ID | 内容 | 元の未決 |
-|---|---|---|
+| 仕様 ID                    | 内容                                                                           | 元の未決                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | SPEC-NTA-COMMON-ERRORS-007 | inputSchema の検査で返す `INVALID_ARGUMENT` の `error`・`hint`・`next_actions` | common_errors 1、nta_search_jimu_unei 8・nta_search_kaisei_tsutatsu 8 の `hint`・`next_actions` の部分 |
-| SPEC-NTA-COMMON-ERRORS-008 | inputSchema に合わない引数では、ツールの処理に進まない | common_errors 2、nta_search_jimu_unei 8 の「DB は引かない」の部分 |
-| SPEC-NTA-COMMON-ERRORS-009 | 国税庁のページの解析に失敗したときの `INTERNAL_ERROR` | nta_get_tsutatsu 2、nta_get_qa 3、nta_get_tax_answer 5 |
+| SPEC-NTA-COMMON-ERRORS-008 | inputSchema に合わない引数では、ツールの処理に進まない                         | common_errors 2、nta_search_jimu_unei 8 の「DB は引かない」の部分                                      |
+| SPEC-NTA-COMMON-ERRORS-009 | 国税庁のページの解析に失敗したときの `INTERNAL_ERROR`                          | nta_get_tsutatsu 2、nta_get_qa 3、nta_get_tax_answer 5                                                 |
 
 ## 既存の仕様 ID で受ける項目（ID は足さず、ツールの応答としてのテストを足す）
 
-| ツール | 未決の番号 | 受ける仕様 ID | テストで渡す引数の例 |
-|---|---|---|---|
-| nta_get_jimu_unei | 5 | SPEC-NTA-COMMON-ERRORS-003・004 | `{}`（`docId` が無い）、`{ docId: "x", foo: 1 }` |
-| nta_get_kaisei_tsutatsu | 7 | SPEC-NTA-COMMON-ERRORS-003 | `{}`、`{ docId: 1 }` |
-| nta_inspect_pdf_meta | 8 | SPEC-NTA-COMMON-ERRORS-003・004 | `docType: "qa-jirei"`、`kind: "zzz"`、`save: "yes"`、未知の引数。違反は 1 つずつ渡す |
-| nta_search_jimu_unei | 8 | SPEC-NTA-COMMON-ERRORS-003・004・007・008 | `{}`、`{ keyword: 1 }`、`{ keyword: "x", foo: 1 }` |
-| nta_search_kaisei_tsutatsu | 8 | SPEC-NTA-COMMON-ERRORS-003・004・007 | `{}`、`{ keyword: 1 }`、`{ keyword: "x", foo: 1 }` |
+| ツール                     | 未決の番号 | 受ける仕様 ID                             | テストで渡す引数の例                                                                 |
+| -------------------------- | ---------- | ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| nta_get_jimu_unei          | 5          | SPEC-NTA-COMMON-ERRORS-003・004           | `{}`（`docId` が無い）、`{ docId: "x", foo: 1 }`                                     |
+| nta_get_kaisei_tsutatsu    | 7          | SPEC-NTA-COMMON-ERRORS-003                | `{}`、`{ docId: 1 }`                                                                 |
+| nta_inspect_pdf_meta       | 8          | SPEC-NTA-COMMON-ERRORS-003・004           | `docType: "qa-jirei"`、`kind: "zzz"`、`save: "yes"`、未知の引数。違反は 1 つずつ渡す |
+| nta_search_jimu_unei       | 8          | SPEC-NTA-COMMON-ERRORS-003・004・007・008 | `{}`、`{ keyword: 1 }`、`{ keyword: "x", foo: 1 }`                                   |
+| nta_search_kaisei_tsutatsu | 8          | SPEC-NTA-COMMON-ERRORS-003・004・007      | `{}`、`{ keyword: 1 }`、`{ keyword: "x", foo: 1 }`                                   |
 
 1 回の呼び出しに違反を 2 つ以上入れた場合の `detail.issues` は、この差分では約束しない（→ houki-nta-mcp #79。手元で呼ぶと、違反が 1 件にまとまり、片方の引数名が `message` の中に残るか、落ちる）。
 
 ## 取り込みのときに消す「未決」
 
-| spec.md | 消す未決の番号 |
-|---|---|
-| common_errors | 1、2 |
-| nta_get_jimu_unei | 5 |
-| nta_get_kaisei_tsutatsu | 7 |
-| nta_inspect_pdf_meta | 8 |
-| nta_search_jimu_unei | 8 |
-| nta_search_kaisei_tsutatsu | 8 |
-| nta_get_tsutatsu | 2 |
-| nta_get_qa | 3 |
-| nta_get_tax_answer | 5 |
+| spec.md                    | 消す未決の番号 |
+| -------------------------- | -------------- |
+| common_errors              | 1、2           |
+| nta_get_jimu_unei          | 5              |
+| nta_get_kaisei_tsutatsu    | 7              |
+| nta_inspect_pdf_meta       | 8              |
+| nta_search_jimu_unei       | 8              |
+| nta_search_kaisei_tsutatsu | 8              |
+| nta_get_tsutatsu           | 2              |
+| nta_get_qa                 | 3              |
+| nta_get_tax_answer         | 5              |
 
 ## 変わらない振る舞い
 
