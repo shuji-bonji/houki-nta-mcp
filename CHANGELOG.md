@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 (none)
 
+## [0.21.2] - 2026-09-29
+
+**patch リリース** — 実行されるコードは変えていない。業務の名前（税法・税務・通達など）で探す人に見つかるよう、npm の説明と keywords、README の冒頭を直した。
+
+### Changed
+
+- **npm の `description`**（`package.json`）: 日本語の文を「税務の下調べで、国税庁の通達と事例を LLM から引くための MCP サーバー。」で始めた（合計 215 文字。npm の上限 255 文字以内）。英語の 1 文と `server.json` の `description` は変えていない
+- **npm の `keywords`** と plugin の `keywords`: `japanese-law` `tax-law` `japanese-tax` `legal-research` と、日本語の `国税庁` `税法` `税務` `通達` `基本通達` `質疑応答事例` `タックスアンサー` `文書回答事例` を足した
+- **README**: 冒頭に「できること」（6 種類の文書の件数と `legal_status` の表）、「相談の形の問いでの使い方」（タックスアンサー 1900・1906 と所得税法第 121 条第 1 項の例）、「まず試す」（設定と `--quickstart`）を置いた
+
 ## [0.21.1] - 2026-09-28
 
 **patch リリース** — 検索ツールの `snippet`（本文の抜粋）が、4 文字以上の語の途中で `<b>` を閉じて切れることがあった不具合を直した（#97）。あわせて、初版の仕様の「未決」のうちテストが無いだけだった 65 件に受入テストと仕様 ID（34 件）を足し、7 本の仕様の差分を `specs/current/` に取り込んだ。検索の抜粋のほかに、応答の形は変わらない。
