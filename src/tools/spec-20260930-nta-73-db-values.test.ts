@@ -11,7 +11,6 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
-import { encode as iconvEncode } from 'iconv-lite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { initSchema } from '../db/schema.js';
@@ -34,16 +33,20 @@ function readFixture(fileName: string): string {
   return readFileSync(resolve(fixturesDir, fileName), 'utf8');
 }
 
-/** fixture は UTF-8 で保存しているので、国税庁サイトと同じ Shift_JIS にして返す */
-function sjisHtmlResponse(html: string): Response {
-  return new Response(iconvEncode(html, 'shift_jis'), {
+/**
+ * タックスアンサーのページは国税庁サイトでも UTF-8（fixture の `<meta charset="utf-8">` のとおり）なので、
+ * UTF-8 のまま返す。Shift_JIS にすると、見出しの `No.6101` と題名のあいだの EM SPACE（U+2003）が
+ * Shift_JIS に無く `?` に化ける
+ */
+function utf8HtmlResponse(html: string): Response {
+  return new Response(new TextEncoder().encode(html), {
     status: 200,
-    headers: { 'Content-Type': 'text/html; charset=Shift_JIS' },
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
   });
 }
 
 function htmlFetch(html: string): typeof fetch {
-  return vi.fn(async () => sjisHtmlResponse(html)) as unknown as typeof fetch;
+  return vi.fn(async () => utf8HtmlResponse(html)) as unknown as typeof fetch;
 }
 
 function fetchMustNotBeCalled(): typeof fetch {
@@ -87,11 +90,12 @@ type TaxAnswerJson = {
   taxAnswer?: { no: string; title: string; sections: unknown[] };
 };
 
-/** 見出しから `No.6101 ` を除いた 6101 のページ */
+/** 見出しから `No.6101` と続く EM SPACE（U+2003）を除いた 6101 のページ */
 function pageWithoutNo(): string {
   const html = readFixture(TAX_ANSWER_FIXTURE);
-  expect(html).toContain('<h1>No.6101 消費税の基本的なしくみ</h1>');
-  return html.replace('<h1>No.6101 消費税の基本的なしくみ</h1>', '<h1>消費税の基本的なしくみ</h1>');
+  const heading = '<h1>No.6101\u2003消費税の基本的なしくみ</h1>';
+  expect(html).toContain(heading);
+  return html.replace(heading, '<h1>消費税の基本的なしくみ</h1>');
 }
 
 describe('nta_get_tax_answer — SPEC-NTA-GET-TAX-ANSWER-011 記事番号は引数の no で決め、応答と DB の行に空の番号を入れない', () => {
