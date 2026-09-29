@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-(none)
+### Changed
+
+- **`@shuji-bonji/houki-abbreviations` の依存を `^0.4.1` から `^0.6.1` に上げた**: 0.x の `^` は minor を跨がないため、0.4.1 のまま取り込んでいた。このサーバーが使う関数（`resolveAbbreviation` / `normalizeJpText` / `normalizeSearchQuery` / `listBySourceMcpHint` / `judgeStaleness` / `STALENESS_THRESHOLDS`）の結果は 0.4.1 と 0.6.1 で同じで、実行されるコードは変えていない。houki-hub `docs/notes/2026-09-29-plan-spec-issues.md` の段階 0
 
 ## [0.21.2] - 2026-09-29
 
