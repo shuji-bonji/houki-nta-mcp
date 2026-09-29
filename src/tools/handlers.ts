@@ -1521,8 +1521,8 @@ export async function handleNtaGetJimuUnei(
 ) {
   const db = openDb(options.dbPath);
   try {
-    const doc = getDocumentFromDb(db, 'jimu-unei', args.docId);
-    if (!doc) {
+    const stored = getDocumentFromDb(db, 'jimu-unei', args.docId);
+    if (!stored) {
       return explainDocIdNotFound(
         db,
         'jimu-unei',
@@ -1532,6 +1532,8 @@ export async function handleNtaGetJimuUnei(
         options
       );
     }
+    // #73（判断 3）: kind の無い添付 PDF は題名から kind を決める（SPEC-NTA-GET-JIMU-UNEI-008）。DB は書き換えない
+    const doc = { ...stored, attachedPdfs: fillMissingKinds(stored.attachedPdfs) };
     if (args.format === 'json') {
       return {
         document: doc,
@@ -1689,8 +1691,8 @@ export async function handleNtaGetBunshokaitou(
 ) {
   const db = openDb(options.dbPath);
   try {
-    const doc = getDocumentFromDb(db, 'bunshokaitou', args.docId);
-    if (!doc) {
+    const stored = getDocumentFromDb(db, 'bunshokaitou', args.docId);
+    if (!stored) {
       return explainDocIdNotFound(
         db,
         'bunshokaitou',
@@ -1700,6 +1702,8 @@ export async function handleNtaGetBunshokaitou(
         options
       );
     }
+    // #73（判断 3）: kind の無い添付 PDF は題名から kind を決める（SPEC-NTA-GET-BUNSHOKAITOU-008）。DB は書き換えない
+    const doc = { ...stored, attachedPdfs: fillMissingKinds(stored.attachedPdfs) };
     if (args.format === 'json') {
       return {
         document: doc,
