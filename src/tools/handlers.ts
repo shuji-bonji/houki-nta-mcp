@@ -59,7 +59,7 @@ import {
   REMOVED_FROM_INDEX_NOTICE,
 } from '../services/index-status.js';
 import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
-import { type SavedPdf, savePdf } from '../services/pdf-files.js';
+import { pdfFileNamesForUrls, type SavedPdf, savePdf } from '../services/pdf-files.js';
 import {
   buildPdfNextActions,
   fillMissingKinds,
@@ -1144,7 +1144,9 @@ export async function getTaxAnswer(
 
   let taxAnswer: ReturnType<typeof parseTaxAnswer>;
   try {
-    taxAnswer = parseTaxAnswer(html, sourceUrl, fetchedAt);
+    // #73: 記事番号は引数の no で決める。ページの見出しが `No.<番号> <題名>` の形でないとき、
+    // 見出しから読んだ番号は空文字になり、DB に文書 ID が空の行ができてしまうため
+    taxAnswer = { ...parseTaxAnswer(html, sourceUrl, fetchedAt), no };
   } catch (err) {
     if (err instanceof TsutatsuParseError) {
       return makeError('INTERNAL_ERROR', `タックスアンサーページのパースに失敗: ${err.message}`, {
@@ -1168,6 +1170,7 @@ export async function getTaxAnswer(
  *
  * `structured_json` を持つ行だけを返す。v0.16.0 より前に投入した行は構造を持たないので、
  * `null` を返して呼び出し側に国税庁サイトから取り直させる。
+ * 返す `taxAnswer.no` は引数の `no`（#73）。
  */
 function readTaxAnswerFromDb(
   no: string,
@@ -1179,7 +1182,9 @@ function readTaxAnswerFromDb(
     if (!doc?.structured) return null;
     const structured = doc.structured as StoredTaxAnswerStructure;
     return {
-      taxAnswer: { ...structured, sourceUrl: doc.sourceUrl, fetchedAt: doc.fetchedAt },
+      // #73: 行に記録された番号が空（見出しに No. の無いページを bulk download で入れた行）でも、
+      // 応答の番号は引数の no にする
+      taxAnswer: { ...structured, no, sourceUrl: doc.sourceUrl, fetchedAt: doc.fetchedAt },
       ...(doc.orphanedAt ? { orphanedAt: doc.orphanedAt } : {}),
     };
   } catch {
@@ -1375,8 +1380,12 @@ export async function handleNtaGetKaiseiTsutatsu(
         options
       );
     }
+    // #73: kind の無い PDF（v0.6.0 期に投入した行）は nta_inspect_pdf_meta と同じく題名から kind を決める。
     // v0.20.0 (#44): 「別紙 N」だけの PDF は新旧対照表本体として comparison にする（DB は変えない）
-    const doc = { ...stored, attachedPdfs: refinePdfKindsForDoc(stored.attachedPdfs, 'kaisei') };
+    const doc = {
+      ...stored,
+      attachedPdfs: refinePdfKindsForDoc(fillMissingKinds(stored.attachedPdfs), 'kaisei'),
+    };
 
     if (args.format === 'json') {
       return {
@@ -1764,14 +1773,18 @@ export async function handleNtaInspectPdfMeta(
     const availableKinds = Array.from(new Set(sorted.map((p) => p.kind)));
 
     // v0.19.0: save: true のときだけ PDF を取得して保存する。失敗した PDF も saved[] に error 付きで残す
+    // #73: ファイル名は kind で絞る前の添付 PDF 全体から決める。同じ文書の中で URL の最後のパス要素が
+    // 重なる PDF（別のディレクトリの 01.pdf など）を、1 つ目のファイルを cached: true で返さず区別する
     let saved: SavedPdf[] | undefined;
     if (args.save && filtered.length > 0) {
+      const fileNames = pdfFileNamesForUrls(described.map((p) => p.url));
       saved = [];
       for (const pdf of filtered) {
         saved.push(
           await savePdf(pdf.url, {
             docType: doc.docType,
             docId: doc.docId,
+            fileName: fileNames.get(pdf.url),
             filesDir: options.filesDir,
             fetchImpl: options.fetchImpl,
           })

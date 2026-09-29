@@ -52,6 +52,11 @@ export interface SavePdfOptions {
   fetchImpl?: typeof fetch;
   /** タイムアウト（ms）。既定 30 秒 */
   timeoutMs?: number;
+  /**
+   * 保存するファイル名。未指定なら `pdfFileNameFromUrl(url)`。
+   * 同じ文書の中で最後のパス要素が重なる URL を区別するときは `pdfFileNamesForUrls()` の値を渡す（#73）
+   */
+  fileName?: string;
 }
 
 /**
@@ -65,15 +70,78 @@ export function pdfFileNameFromUrl(url: string): string {
   } catch {
     name = '';
   }
-  name = name.replace(/[\\/\s]+/g, '_');
+  return toPdfFileName(name);
+}
+
+/** ファイル名に使えない文字を `_` に置き換え、拡張子が無ければ `.pdf` を付ける */
+function toPdfFileName(raw: string): string {
+  let name = raw.replace(/[\\/\s]+/g, '_');
   if (!name || name === '.' || name === '..') name = 'download.pdf';
   if (!/\.pdf$/i.test(name)) name = `${name}.pdf`;
   return name;
 }
 
+/** URL のパスを空でない要素に分ける。URL として解釈できなければ空 */
+function pathSegmentsOf(url: string): string[] {
+  try {
+    return new URL(url).pathname.split('/').filter((seg) => seg.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 同じ文書の添付 PDF の URL の一覧から、URL ごとの保存ファイル名を決める（#73）。
+ *
+ * 最後のパス要素が他の URL と重ならなければ `pdfFileNameFromUrl()` と同じ。重なるときは、
+ * 重ならなくなるまで直前のパス要素から順に `_` でつないで前に付ける
+ * （`…/0026003-067/pdf/01.pdf` と `…/0026003-068/pdf/01.pdf` → `0026003-067_pdf_01.pdf` と
+ * `0026003-068_pdf_01.pdf`）。同じ URL が 2 回あっても 1 つの名前。パスが同じでホストだけ違う URL は
+ * 区別しない（同じ文書の添付 PDF は同じホストにあるため）。
+ *
+ * 呼び出し側は、`kind` で絞る前の添付 PDF 全体を渡す。同じ URL のファイル名が絞り方で
+ * 変わると、保存済みのファイルを見つけられず取り直してしまう。
+ */
+export function pdfFileNamesForUrls(urls: ReadonlyArray<string>): Map<string, string> {
+  const unique = Array.from(new Set(urls));
+  const segments = new Map<string, string[]>(unique.map((url) => [url, pathSegmentsOf(url)]));
+  const depth = new Map<string, number>(unique.map((url) => [url, 1]));
+
+  const nameOf = (url: string): string => {
+    const segs = segments.get(url) ?? [];
+    if (segs.length === 0) return pdfFileNameFromUrl(url);
+    const d = depth.get(url) ?? 1;
+    return toPdfFileName(segs.slice(Math.max(0, segs.length - d)).join('_'));
+  };
+
+  for (;;) {
+    const byName = new Map<string, string[]>();
+    for (const url of unique) {
+      const name = nameOf(url);
+      byName.set(name, [...(byName.get(name) ?? []), url]);
+    }
+    let changed = false;
+    for (const group of byName.values()) {
+      if (group.length < 2) continue;
+      for (const url of group) {
+        const segs = segments.get(url) ?? [];
+        const d = depth.get(url) ?? 1;
+        if (d < segs.length) {
+          depth.set(url, d + 1);
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+
+  return new Map<string, string>(unique.map((url) => [url, nameOf(url)]));
+}
+
 /**
  * 1 件の PDF を保存先に置き、絶対パスを返す。
  *
+ * - ファイル名は `options.fileName`、無ければ URL の最後のパス要素（`pdfFileNameFromUrl`）
  * - 同じパスに既にファイルがあれば取得せず、そのまま `cached: true` で返す
  * - 応答が 2xx でない、`Content-Type` が PDF でも `%PDF` で始まりもしない、50MB を超える、
  *   のいずれかは `error` に理由を書いて `path: null` で返す（throw しない）
@@ -81,7 +149,7 @@ export function pdfFileNameFromUrl(url: string): string {
 export async function savePdf(url: string, options: SavePdfOptions): Promise<SavedPdf> {
   const filesDir = options.filesDir ?? defaultFilesDir();
   const dir = resolve(filesDir, safeSegment(options.docType), safeSegment(options.docId));
-  const path = resolve(dir, pdfFileNameFromUrl(url));
+  const path = resolve(dir, options.fileName ?? pdfFileNameFromUrl(url));
 
   if (existsSync(path)) {
     return { url, path, bytes: statSync(path).size, cached: true };
