@@ -15,7 +15,13 @@ import { encode as iconvEncode } from 'iconv-lite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { initSchema } from '../db/schema.js';
-import { getTaxAnswer, handleNtaGetKaiseiTsutatsu, handleNtaInspectPdfMeta } from './handlers.js';
+import {
+  getTaxAnswer,
+  handleNtaGetBunshokaitou,
+  handleNtaGetJimuUnei,
+  handleNtaGetKaiseiTsutatsu,
+  handleNtaInspectPdfMeta,
+} from './handlers.js';
 
 /* -------------------------------------------------------------------------- */
 /* 準備                                                                        */
@@ -173,25 +179,33 @@ describe('nta_get_tax_answer — SPEC-NTA-GET-TAX-ANSWER-011 記事番号は引�
 type AttachedPdfJson = { title: string; url: string; kind?: string };
 type KaiseiJson = { document?: { attachedPdfs: AttachedPdfJson[] } };
 
-/** 添付 PDF 付きの改正通達を 1 件入れる（`kind` を持たない v0.6.0 期の行の形） */
-function seedKaisei(docId: string, pdfs: AttachedPdfJson[]): void {
+/** 添付 PDF 付きの文書を 1 件入れる（`kind` を持たない v0.6.0 期の行の形） */
+function seedDocument(
+  docType: 'kaisei' | 'jimu-unei' | 'bunshokaitou',
+  docId: string,
+  pdfs: AttachedPdfJson[]
+): void {
   withDb((db) => {
     initSchema(db);
     db.prepare(
       `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
-      'kaisei',
+      docType,
       docId,
       'shohi',
-      '消費税法基本通達の一部改正について',
-      'https://x/kaisei/index.htm',
+      `${docType} の題名`,
+      `https://x/${docType}/index.htm`,
       '2026-05-06T00:00:00Z',
       '本文',
       JSON.stringify(pdfs),
       'h1'
     );
   });
+}
+
+function seedKaisei(docId: string, pdfs: AttachedPdfJson[]): void {
+  seedDocument('kaisei', docId, pdfs);
 }
 
 describe('nta_get_kaisei_tsutatsu — SPEC-NTA-GET-KAISEI-TSUTATSU-008 kind の無い添付 PDF は題名から kind を決めて返す', () => {
@@ -261,6 +275,123 @@ describe('nta_get_kaisei_tsutatsu — SPEC-NTA-GET-KAISEI-TSUTATSU-008 kind の�
           .get('kaisei', 'old-003') as { attached_pdfs_json: string }
     );
     expect(JSON.parse(stored.attached_pdfs_json)).toEqual(OLD_ROW_PDFS);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* nta_get_jimu_unei / nta_get_bunshokaitou（判断 3）                          */
+/* -------------------------------------------------------------------------- */
+
+const OLD_ROW_PDFS_NO_KAISEI: AttachedPdfJson[] = [
+  { title: '参考資料', url: 'https://x/doc/pdf/01.pdf' },
+  { title: '別紙1', url: 'https://x/doc/pdf/02.pdf' },
+  { title: 'Q&A', url: 'https://x/doc/pdf/03.pdf' },
+];
+
+describe('nta_get_jimu_unei — SPEC-NTA-GET-JIMU-UNEI-008 kind の無い添付 PDF は題名から kind を決めて返す', () => {
+  it('SPEC-NTA-GET-JIMU-UNEI-008 SPEC-NTA-GET-JIMU-UNEI-007 json では全要素に kind が付き、「別紙 N」は comparison に付け替えない', async () => {
+    seedDocument('jimu-unei', 'ju-old-001', OLD_ROW_PDFS_NO_KAISEI);
+
+    const r = (await handleNtaGetJimuUnei(
+      { docId: 'ju-old-001', format: 'json' },
+      { dbPath }
+    )) as KaiseiJson;
+
+    expect(r.document?.attachedPdfs.map((p) => p.kind)).toEqual(['related', 'attachment', 'qa-pdf']);
+    expect(r.document?.attachedPdfs.map((p) => p.title)).toEqual(
+      OLD_ROW_PDFS_NO_KAISEI.map((p) => p.title)
+    );
+  });
+
+  it('SPEC-NTA-GET-JIMU-UNEI-008 markdown の表と読み方は決めた種別になり、「その他」は無い', async () => {
+    seedDocument('jimu-unei', 'ju-old-002', OLD_ROW_PDFS_NO_KAISEI);
+
+    const md = (await handleNtaGetJimuUnei({ docId: 'ju-old-002' }, { dbPath })) as string;
+
+    expect(md).toContain('## 添付 PDF (3 件)');
+    expect(md).toContain('| 📎 別紙・別表 | 別紙1 |');
+    expect(md).toContain('| ❓ Q&A | Q&A |');
+    expect(md).toContain('| 📚 参考資料 | 参考資料 |');
+    expect(md).not.toContain('その他');
+  });
+
+  it('SPEC-NTA-GET-JIMU-UNEI-008 同じ文書を nta_inspect_pdf_meta で見たときと kind が一致し、DB は書き換えない', async () => {
+    seedDocument('jimu-unei', 'ju-old-003', OLD_ROW_PDFS_NO_KAISEI);
+
+    const got = (await handleNtaGetJimuUnei(
+      { docId: 'ju-old-003', format: 'json' },
+      { dbPath }
+    )) as KaiseiJson;
+    const inspected = (await handleNtaInspectPdfMeta(
+      { docType: 'jimu-unei', docId: 'ju-old-003' },
+      { dbPath }
+    )) as { attachedPdfs: AttachedPdfJson[] };
+
+    const kindByUrl = (pdfs: AttachedPdfJson[]) =>
+      Object.fromEntries(pdfs.map((p) => [p.url, p.kind]));
+    expect(kindByUrl(got.document?.attachedPdfs ?? [])).toEqual(
+      kindByUrl(inspected.attachedPdfs)
+    );
+
+    const stored = withDb(
+      (db) =>
+        db
+          .prepare('SELECT attached_pdfs_json FROM document WHERE doc_type = ? AND doc_id = ?')
+          .get('jimu-unei', 'ju-old-003') as { attached_pdfs_json: string }
+    );
+    expect(JSON.parse(stored.attached_pdfs_json)).toEqual(OLD_ROW_PDFS_NO_KAISEI);
+  });
+});
+
+describe('nta_get_bunshokaitou — SPEC-NTA-GET-BUNSHOKAITOU-008 kind の無い添付 PDF は題名から kind を決めて返す', () => {
+  it('SPEC-NTA-GET-BUNSHOKAITOU-008 SPEC-NTA-GET-BUNSHOKAITOU-006 json では全要素に kind が付き、「別紙 N」は comparison に付け替えない', async () => {
+    seedDocument('bunshokaitou', 'bk-old-001', OLD_ROW_PDFS_NO_KAISEI);
+
+    const r = (await handleNtaGetBunshokaitou(
+      { docId: 'bk-old-001', format: 'json' },
+      { dbPath }
+    )) as KaiseiJson;
+
+    expect(r.document?.attachedPdfs.map((p) => p.kind)).toEqual(['related', 'attachment', 'qa-pdf']);
+  });
+
+  it('SPEC-NTA-GET-BUNSHOKAITOU-008 SPEC-NTA-GET-BUNSHOKAITOU-005 markdown の表と読み方は決めた種別になり、「その他」は無い', async () => {
+    seedDocument('bunshokaitou', 'bk-old-002', OLD_ROW_PDFS_NO_KAISEI);
+
+    const md = (await handleNtaGetBunshokaitou({ docId: 'bk-old-002' }, { dbPath })) as string;
+
+    expect(md).toContain('## 添付 PDF (3 件)');
+    expect(md).toContain('| 📎 別紙・別表 | 別紙1 |');
+    expect(md).toContain('| ❓ Q&A | Q&A |');
+    expect(md).toContain('| 📚 参考資料 | 参考資料 |');
+    expect(md).not.toContain('その他');
+  });
+
+  it('SPEC-NTA-GET-BUNSHOKAITOU-008 同じ文書を nta_inspect_pdf_meta で見たときと kind が一致し、DB は書き換えない', async () => {
+    seedDocument('bunshokaitou', 'bk-old-003', OLD_ROW_PDFS_NO_KAISEI);
+
+    const got = (await handleNtaGetBunshokaitou(
+      { docId: 'bk-old-003', format: 'json' },
+      { dbPath }
+    )) as KaiseiJson;
+    const inspected = (await handleNtaInspectPdfMeta(
+      { docType: 'bunshokaitou', docId: 'bk-old-003' },
+      { dbPath }
+    )) as { attachedPdfs: AttachedPdfJson[] };
+
+    const kindByUrl = (pdfs: AttachedPdfJson[]) =>
+      Object.fromEntries(pdfs.map((p) => [p.url, p.kind]));
+    expect(kindByUrl(got.document?.attachedPdfs ?? [])).toEqual(
+      kindByUrl(inspected.attachedPdfs)
+    );
+
+    const stored = withDb(
+      (db) =>
+        db
+          .prepare('SELECT attached_pdfs_json FROM document WHERE doc_type = ? AND doc_id = ?')
+          .get('bunshokaitou', 'bk-old-003') as { attached_pdfs_json: string }
+    );
+    expect(JSON.parse(stored.attached_pdfs_json)).toEqual(OLD_ROW_PDFS_NO_KAISEI);
   });
 });
 
