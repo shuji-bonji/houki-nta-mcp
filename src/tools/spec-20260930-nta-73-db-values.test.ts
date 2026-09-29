@@ -231,9 +231,7 @@ describe('nta_get_kaisei_tsutatsu — SPEC-NTA-GET-KAISEI-TSUTATSU-008 kind の�
       'unknown',
     ]);
     // 題名と URL は DB のまま
-    expect(r.document?.attachedPdfs.map((p) => p.title)).toEqual(
-      OLD_ROW_PDFS.map((p) => p.title)
-    );
+    expect(r.document?.attachedPdfs.map((p) => p.title)).toEqual(OLD_ROW_PDFS.map((p) => p.title));
   });
 
   it('SPEC-NTA-GET-KAISEI-TSUTATSU-008 SPEC-NTA-GET-KAISEI-TSUTATSU-005 markdown の表と読み方は決めた種別になり、「その他」は unknown のときだけ', async () => {
@@ -264,9 +262,7 @@ describe('nta_get_kaisei_tsutatsu — SPEC-NTA-GET-KAISEI-TSUTATSU-008 kind の�
 
     const kindByUrl = (pdfs: AttachedPdfJson[]) =>
       Object.fromEntries(pdfs.map((p) => [p.url, p.kind]));
-    expect(kindByUrl(got.document?.attachedPdfs ?? [])).toEqual(
-      kindByUrl(inspected.attachedPdfs)
-    );
+    expect(kindByUrl(got.document?.attachedPdfs ?? [])).toEqual(kindByUrl(inspected.attachedPdfs));
 
     const stored = withDb(
       (db) =>
@@ -297,7 +293,11 @@ describe('nta_get_jimu_unei — SPEC-NTA-GET-JIMU-UNEI-008 kind の無い添付 
       { dbPath }
     )) as KaiseiJson;
 
-    expect(r.document?.attachedPdfs.map((p) => p.kind)).toEqual(['related', 'attachment', 'qa-pdf']);
+    expect(r.document?.attachedPdfs.map((p) => p.kind)).toEqual([
+      'related',
+      'attachment',
+      'qa-pdf',
+    ]);
     expect(r.document?.attachedPdfs.map((p) => p.title)).toEqual(
       OLD_ROW_PDFS_NO_KAISEI.map((p) => p.title)
     );
@@ -329,9 +329,7 @@ describe('nta_get_jimu_unei — SPEC-NTA-GET-JIMU-UNEI-008 kind の無い添付 
 
     const kindByUrl = (pdfs: AttachedPdfJson[]) =>
       Object.fromEntries(pdfs.map((p) => [p.url, p.kind]));
-    expect(kindByUrl(got.document?.attachedPdfs ?? [])).toEqual(
-      kindByUrl(inspected.attachedPdfs)
-    );
+    expect(kindByUrl(got.document?.attachedPdfs ?? [])).toEqual(kindByUrl(inspected.attachedPdfs));
 
     const stored = withDb(
       (db) =>
@@ -352,7 +350,11 @@ describe('nta_get_bunshokaitou — SPEC-NTA-GET-BUNSHOKAITOU-008 kind の無い�
       { dbPath }
     )) as KaiseiJson;
 
-    expect(r.document?.attachedPdfs.map((p) => p.kind)).toEqual(['related', 'attachment', 'qa-pdf']);
+    expect(r.document?.attachedPdfs.map((p) => p.kind)).toEqual([
+      'related',
+      'attachment',
+      'qa-pdf',
+    ]);
   });
 
   it('SPEC-NTA-GET-BUNSHOKAITOU-008 SPEC-NTA-GET-BUNSHOKAITOU-005 markdown の表と読み方は決めた種別になり、「その他」は無い', async () => {
@@ -381,9 +383,7 @@ describe('nta_get_bunshokaitou — SPEC-NTA-GET-BUNSHOKAITOU-008 kind の無い�
 
     const kindByUrl = (pdfs: AttachedPdfJson[]) =>
       Object.fromEntries(pdfs.map((p) => [p.url, p.kind]));
-    expect(kindByUrl(got.document?.attachedPdfs ?? [])).toEqual(
-      kindByUrl(inspected.attachedPdfs)
-    );
+    expect(kindByUrl(got.document?.attachedPdfs ?? [])).toEqual(kindByUrl(inspected.attachedPdfs));
 
     const stored = withDb(
       (db) =>
