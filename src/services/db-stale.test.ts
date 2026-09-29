@@ -70,7 +70,7 @@ describe('findStaleSections', () => {
     db.close();
   });
 
-  it('30 日より古い section だけが返る', () => {
+  it('SPEC-NTA-CLI-REFRESH-004 30 日より古い section だけが返る', () => {
     seedSections(db, '消費税法基本通達', '消基通', 'https://x/', [
       { chapter: 1, section: 1, fetchedAt: daysAgoIso(60) }, // 古い
       { chapter: 1, section: 2, fetchedAt: daysAgoIso(45) }, // 古い
@@ -94,14 +94,14 @@ describe('findStaleSections', () => {
     expect(onlyShohi[0].formalName).toBe('消費税法基本通達');
   });
 
-  it('該当が無ければ空配列', () => {
+  it('SPEC-NTA-CLI-REFRESH-004 該当が無ければ空配列', () => {
     seedSections(db, '消費税法基本通達', '消基通', 'https://x/', [
       { chapter: 1, section: 1, fetchedAt: new Date().toISOString() },
     ]);
     expect(findStaleSections(db, 30)).toEqual([]);
   });
 
-  it('古い順（昇順）でソートされる', () => {
+  it('SPEC-NTA-CLI-REFRESH-004 古い順（昇順）でソートされる', () => {
     seedSections(db, '消費税法基本通達', '消基通', 'https://x/', [
       { chapter: 1, section: 2, fetchedAt: daysAgoIso(40) },
       { chapter: 1, section: 1, fetchedAt: daysAgoIso(60) }, // 一番古い

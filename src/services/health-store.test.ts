@@ -46,7 +46,7 @@ describe('health-store', () => {
     };
   }
 
-  describe('defaultBaselinePath', () => {
+  describe('SPEC-NTA-CLI-HEALTH-CHECK-004 defaultBaselinePath', () => {
     it('uses HOUKI_NTA_BASELINE_DIR when set', () => {
       const original = process.env.HOUKI_NTA_BASELINE_DIR;
       process.env.HOUKI_NTA_BASELINE_DIR = '/tmp/custom';
@@ -77,7 +77,7 @@ describe('health-store', () => {
     });
   });
 
-  describe('loadBaseline', () => {
+  describe('SPEC-NTA-CLI-HEALTH-CHECK-005 loadBaseline', () => {
     it('returns empty baseline when file does not exist', () => {
       const baseline = loadBaseline('qa-jirei', pathFor('qa-jirei'));
       expect(baseline.doc_type).toBe('qa-jirei');
@@ -121,7 +121,7 @@ describe('health-store', () => {
     });
   });
 
-  describe('appendBaseline', () => {
+  describe('SPEC-NTA-CLI-HEALTH-CHECK-006 appendBaseline', () => {
     it('creates a new file when none exists', () => {
       const path = pathFor('kaisei');
       expect(existsSync(path)).toBe(false);

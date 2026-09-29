@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: DB
 - 版: current
-- 承認日:
+- 承認日: 2026-09-29（PR #103）
 - 起こした元: v0.21.2 の `src/db/index.ts`、`src/db/schema.ts`、`src/services/bulk-downloader.ts`（`bulk_completed_at` と書き戻し）、`src/db/schema.test.ts`、`src/services/db-writeback.test.ts`、`src/services/bulk-downloader.test.ts`
 - 関連する Issue: houki-nta-mcp #27（全角英字の揃え方。版 4 → 5）、#29（`structured_json`。版 5 → 6）、#30（`orphaned_at`。版 6 → 7）、#45（案内文の行を除く。版 7 → 8・8 → 9）、#54（`bulk_completed_at` と `tsutatsu_toc`。版 9 → 10）
 
@@ -18,14 +18,14 @@
 
 利用者がこの DB に触れる入口は次のとおり。
 
-| 入口 | 必須 | 内容 |
-|---|---|---|
-| 環境変数 `HOUKI_NTA_DB_PATH` | 任意 | DB ファイルのパスをまるごと指定する。ほかの指定より優先する（未決 1） |
-| 環境変数 `XDG_CACHE_HOME` | 任意 | `HOUKI_NTA_DB_PATH` が無いとき、`$XDG_CACHE_HOME/houki-nta-mcp/cache.db` に置く。これも無いときは `~/.cache/houki-nta-mcp/cache.db`（未決 1） |
-| CLI `--db-path=<path>` | 任意 | CLI の処理でだけ、環境変数より優先して DB ファイルの場所を指定する（cli_entry の spec.md） |
-| CLI `--bulk-download*` / `--quickstart` / `--refresh-stale=<日数> --apply` | 任意 | DB に書き込む（取り込みの中身は cli_bulk_download・cli_refresh の spec.md） |
-| ツール `nta_get_tsutatsu` | 任意 | 国税庁サイトから取った節を DB に書き戻す（SPEC-NTA-GET-TSUTATSU-006。書き戻しで DB がどうなるかはこの文書） |
-| ツール `nta_search_*` / `nta_get_*` / `nta_inspect_pdf_meta` | 任意 | 呼び出しごとに DB を開いて引き、閉じる（各ツールの spec.md） |
+| 入口                                                                       | 必須 | 内容                                                                                                                                          |
+| -------------------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 環境変数 `HOUKI_NTA_DB_PATH`                                               | 任意 | DB ファイルのパスをまるごと指定する。ほかの指定より優先する（未決 1）                                                                         |
+| 環境変数 `XDG_CACHE_HOME`                                                  | 任意 | `HOUKI_NTA_DB_PATH` が無いとき、`$XDG_CACHE_HOME/houki-nta-mcp/cache.db` に置く。これも無いときは `~/.cache/houki-nta-mcp/cache.db`（未決 1） |
+| CLI `--db-path=<path>`                                                     | 任意 | CLI の処理でだけ、環境変数より優先して DB ファイルの場所を指定する（cli_entry の spec.md）                                                    |
+| CLI `--bulk-download*` / `--quickstart` / `--refresh-stale=<日数> --apply` | 任意 | DB に書き込む（取り込みの中身は cli_bulk_download・cli_refresh の spec.md）                                                                   |
+| ツール `nta_get_tsutatsu`                                                  | 任意 | 国税庁サイトから取った節を DB に書き戻す（SPEC-NTA-GET-TSUTATSU-006。書き戻しで DB がどうなるかはこの文書）                                   |
+| ツール `nta_search_*` / `nta_get_*` / `nta_inspect_pdf_meta`               | 任意 | 呼び出しごとに DB を開いて引き、閉じる（各ツールの spec.md）                                                                                  |
 
 ## 処理の流れ
 
@@ -53,17 +53,17 @@ flowchart TD
 
 新しい DB を開くと、次のテーブルを作り、`schema_meta` テーブルに `key = 'schema_version'`、`value = '10'` の行を記録する。v0.21.2 のスキーマの版は 10 である。既にテーブルのある DB を開いても、テーブルは残る。
 
-| テーブル | 内容 |
-|---|---|
-| `schema_meta` | スキーマの版を `key` と `value` で持つ |
-| `tsutatsu` | 基本通達 1 つにつき 1 行（`formal_name`・`abbr`・`source_root_url`・`bulk_completed_at`） |
-| `tsutatsu_toc` | 目次ページの解析結果。目次の URL が主キー |
-| `chapter` | 通達の章 |
-| `section` | 通達の節。`fetched_at`・`content_hash`・`last_modified`・`etag` を持つ |
-| `clause` | 通達の条項 1 つにつき 1 行（`clause_number`・`source_url`・`title`・`full_text`・`paragraphs_json`） |
-| `clause_fts` | 条項の条番号・題名・本文の全文検索の索引 |
-| `document` | 改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例 1 件につき 1 行（`doc_type`・`doc_id`・`taxonomy`・`title`・`issued_at`・`source_url`・`fetched_at`・`full_text`・`attached_pdfs_json`・`content_hash`・`last_modified`・`etag`・`structured_json`・`orphaned_at`） |
-| `document_fts` | 文書の題名・本文の全文検索の索引 |
+| テーブル       | 内容                                                                                                                                                                                                                                                                                     |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_meta`  | スキーマの版を `key` と `value` で持つ                                                                                                                                                                                                                                                   |
+| `tsutatsu`     | 基本通達 1 つにつき 1 行（`formal_name`・`abbr`・`source_root_url`・`bulk_completed_at`）                                                                                                                                                                                                |
+| `tsutatsu_toc` | 目次ページの解析結果。目次の URL が主キー                                                                                                                                                                                                                                                |
+| `chapter`      | 通達の章                                                                                                                                                                                                                                                                                 |
+| `section`      | 通達の節。`fetched_at`・`content_hash`・`last_modified`・`etag` を持つ                                                                                                                                                                                                                   |
+| `clause`       | 通達の条項 1 つにつき 1 行（`clause_number`・`source_url`・`title`・`full_text`・`paragraphs_json`）                                                                                                                                                                                     |
+| `clause_fts`   | 条項の条番号・題名・本文の全文検索の索引                                                                                                                                                                                                                                                 |
+| `document`     | 改正通達・事務運営指針・文書回答事例・タックスアンサー・質疑応答事例 1 件につき 1 行（`doc_type`・`doc_id`・`taxonomy`・`title`・`issued_at`・`source_url`・`fetched_at`・`full_text`・`attached_pdfs_json`・`content_hash`・`last_modified`・`etag`・`structured_json`・`orphaned_at`） |
+| `document_fts` | 文書の題名・本文の全文検索の索引                                                                                                                                                                                                                                                         |
 
 ### SPEC-NTA-DB-SCHEMA-002 clause に入れた条項は clause_fts で引ける
 

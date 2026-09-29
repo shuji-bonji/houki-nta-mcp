@@ -23,7 +23,7 @@ describe('writeBackLiveSection', () => {
     db.close();
   });
 
-  it('新規 section を書き込み、getClauseFromDb で取り出せる', () => {
+  it('SPEC-NTA-DB-SCHEMA-016 新規 section を書き込み、getClauseFromDb で取り出せる', () => {
     const written = writeBackLiveSection(db, {
       formalName: '消費税法基本通達',
       abbr: '消基通',
@@ -60,7 +60,7 @@ describe('writeBackLiveSection', () => {
     expect(got!.fetchedAt).toBe('2026-05-02T00:00:00.000Z');
   });
 
-  it('同じ clause を再度書き込むと最新で上書き（重複違反にならない）', () => {
+  it('SPEC-NTA-DB-SCHEMA-017 同じ clause を再度書き込むと最新で上書き（重複違反にならない）', () => {
     const opts = (title: string) => ({
       formalName: '消費税法基本通達',
       abbr: '消基通',
@@ -112,7 +112,7 @@ describe('writeBackLiveSection', () => {
     expect(got!.fullText).toContain('全角チルダ~が');
   });
 
-  it('failure path: 不正な入力で書き込みが失敗しても 0 を返し例外を投げない', () => {
+  it('SPEC-NTA-DB-SCHEMA-018 failure path: 不正な入力で書き込みが失敗しても 0 を返し例外を投げない', () => {
     // tsutatsu/section の挿入は OK だが、clause 投入時に paragraphs_json に
     // 何か壊れた値を入れて失敗を発生させるのは難しいので、ここでは「DB を閉じた状態で呼ぶ」
     db.close();

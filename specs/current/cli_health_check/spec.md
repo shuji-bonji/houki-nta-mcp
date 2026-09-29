@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: CLI
 - 版: current
-- 承認日:
+- 承認日: 2026-09-29（PR #103）
 - 起こした元: v0.21.2 の `src/cli.ts`（`--health-check`・`--check-baseline-drift`・`--strict`）、`src/services/health-check.ts`（`CANARY_TARGETS`）、`src/services/baseline-drift.ts`、`src/services/menu-parser.ts`、`src/services/health-store.ts`（baseline ファイル）、`src/services/health-thresholds.ts`、`src/services/bulk-aggregation.ts`、`src/services/baseline-drift.test.ts`、`src/services/health-store.test.ts`
 - 関連する Issue: なし（Phase 5 Resilience。設計は `docs/RESILIENCE.md`）
 
@@ -15,26 +15,26 @@
 
 ## 入力
 
-| フラグ・環境変数 | 必須 | 内容 |
-|---|---|---|
-| `--health-check` | どちらか 1 つ | 9 件の代表ページを順に取得し、それぞれの解析が通るかを確かめる |
+| フラグ・環境変数         | 必須          | 内容                                                                                                                 |
+| ------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `--health-check`         | どちらか 1 つ | 9 件の代表ページを順に取得し、それぞれの解析が通るかを確かめる                                                       |
 | `--check-baseline-drift` | どちらか 1 つ | menu.htm を取得し、9 件の代表ページの URL が目次にあるか、同じ税目に新しい世代のディレクトリが出ていないかを確かめる |
-| `--strict` | 任意 | 失敗（`--health-check`）または drift（`--check-baseline-drift`）が 1 件以上あれば終了コード 1 で終わる（CI 用） |
-| `HOUKI_NTA_BASELINE_DIR` | 任意 | baseline ファイルの置き場所。無ければ `${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/` |
+| `--strict`               | 任意          | 失敗（`--health-check`）または drift（`--check-baseline-drift`）が 1 件以上あれば終了コード 1 で終わる（CI 用）      |
+| `HOUKI_NTA_BASELINE_DIR` | 任意          | baseline ファイルの置き場所。無ければ `${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/`                                   |
 
 9 件の代表ページ（`doc_type` と URL）は次のとおり。
 
-| `doc_type` | 代表ページ | 解析が通る条件 |
-|---|---|---|
-| `tsutatsu-shohi` | `https://www.nta.go.jp/law/tsutatsu/kihon/shohi/01/04.htm` | 節のページとして読める |
-| `tsutatsu-shotoku` | `https://www.nta.go.jp/law/tsutatsu/kihon/shotoku/02/04.htm` | 同上 |
-| `tsutatsu-hojin` | `https://www.nta.go.jp/law/tsutatsu/kihon/hojin/01/01_03.htm` | 同上 |
-| `tsutatsu-sozoku` | `https://www.nta.go.jp/law/tsutatsu/kihon/sisan/sozoku2/01.htm` | 同上 |
-| `kaisei` | `https://www.nta.go.jp/law/tsutatsu/kihon/shohi/kaisei/kaisei_a.htm` | 索引から個別ページの URL が 1 件以上取れる |
-| `jimu-unei` | `https://www.nta.go.jp/law/jimu-unei/jimu.htm` | 同上 |
-| `bunshokaitou` | `https://www.nta.go.jp/law/bunshokaito/01.htm` | 税目のリンクが 1 件以上取れる |
-| `tax-answer` | `https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6101.htm` | 題名が取れる |
-| `qa-jirei` | `https://www.nta.go.jp/law/shitsugi/shohi/02/19.htm` | 題名が取れる |
+| `doc_type`         | 代表ページ                                                           | 解析が通る条件                             |
+| ------------------ | -------------------------------------------------------------------- | ------------------------------------------ |
+| `tsutatsu-shohi`   | `https://www.nta.go.jp/law/tsutatsu/kihon/shohi/01/04.htm`           | 節のページとして読める                     |
+| `tsutatsu-shotoku` | `https://www.nta.go.jp/law/tsutatsu/kihon/shotoku/02/04.htm`         | 同上                                       |
+| `tsutatsu-hojin`   | `https://www.nta.go.jp/law/tsutatsu/kihon/hojin/01/01_03.htm`        | 同上                                       |
+| `tsutatsu-sozoku`  | `https://www.nta.go.jp/law/tsutatsu/kihon/sisan/sozoku2/01.htm`      | 同上                                       |
+| `kaisei`           | `https://www.nta.go.jp/law/tsutatsu/kihon/shohi/kaisei/kaisei_a.htm` | 索引から個別ページの URL が 1 件以上取れる |
+| `jimu-unei`        | `https://www.nta.go.jp/law/jimu-unei/jimu.htm`                       | 同上                                       |
+| `bunshokaitou`     | `https://www.nta.go.jp/law/bunshokaito/01.htm`                       | 税目のリンクが 1 件以上取れる              |
+| `tax-answer`       | `https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6101.htm`     | 題名が取れる                               |
+| `qa-jirei`         | `https://www.nta.go.jp/law/shitsugi/shohi/02/19.htm`                 | 題名が取れる                               |
 
 ## 処理の流れ
 

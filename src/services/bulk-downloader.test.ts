@@ -149,7 +149,7 @@ describe('bulkDownloadTsutatsu — 消基通 (fixture モック)', () => {
   }, 15_000);
 });
 
-describe('bulkDownloadTsutatsu — bulk download 済みの印（Issue #54）', () => {
+describe('SPEC-NTA-DB-SCHEMA-015 bulkDownloadTsutatsu — bulk download 済みの印（Issue #54）', () => {
   const TOC_URL = 'https://www.nta.go.jp/law/tsutatsu/kihon/shohi/01.htm';
 
   /** 目次と 01/04.htm だけを返し、ほかは 404 にする */

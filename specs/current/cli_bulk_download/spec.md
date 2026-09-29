@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: CLI
 - 版: current
-- 承認日:
+- 承認日: 2026-09-29（PR #103）
 - 起こした元: v0.21.2 の `src/cli.ts`、`src/constants.ts`（`TSUTATSU_URL_ROOTS`・`QA_TOPICS`・`TAX_ANSWER_FOLDER_MAP`・`BUNSHO_MAIN_TAXONOMIES`・`BUNSHO_TAXONOMY_GROUPS`）、`src/services/bulk-downloader.ts`、`src/services/kaisei-bulk-downloader.ts`、`src/services/jimu-unei-bulk-downloader.ts`、`src/services/bunshokaitou-bulk-downloader.ts`、`src/services/tax-answer-bulk-downloader.ts`、`src/services/qa-bulk-downloader.ts`、`src/services/index-status.ts`、`src/cli.test.ts`
 - 関連する Issue: houki-nta-mcp #23（投入していない種別の検索は `DOC_NOT_FOUND`）、#25（税目フラグの値の検査）、#30（索引から消えた文書の印）、#35（`--quickstart`）、#54（`bulk_completed_at`）
 
@@ -15,23 +15,23 @@
 
 ## 入力
 
-| フラグ | 必須 | 内容 |
-|---|---|---|
-| `--quickstart` | どれか 1 つ | `--tsutatsu` の通達 1 つ（既定: 消費税法基本通達）だけを投入する。中身は `--bulk-download` と同じで、前後に所要時間と次の一手を出す |
-| `--bulk-download` | どれか 1 つ | `--tsutatsu` の通達 1 つを投入する |
-| `--bulk-download-all` | どれか 1 つ | 基本通達 4 種（消費税法基本通達・所得税基本通達・法人税基本通達・相続税法基本通達）を順に投入する |
-| `--bulk-download-kaisei` | どれか 1 つ | 4 通達分の改正通達を投入する |
-| `--bulk-download-jimu-unei` | どれか 1 つ | 事務運営指針を投入する |
-| `--bulk-download-bunshokaitou` | どれか 1 つ | 文書回答事例を投入する |
-| `--bulk-download-tax-answer` | どれか 1 つ | タックスアンサーを投入する |
-| `--bulk-download-qa` | どれか 1 つ | 質疑応答事例を投入する |
-| `--bulk-download-everything` | どれか 1 つ | 通達本体（4 種）→ 改正通達 → 事務運営指針 → 文書回答事例 → タックスアンサー → 質疑応答事例 の 6 種別を順に投入する |
-| `--tsutatsu=<正式名>` | 任意 | `--quickstart` / `--bulk-download` の通達。既定は `消費税法基本通達`。投入できるのは基本通達 4 種の正式名（未決 3） |
-| `--bunsho-taxonomy=<csv>` | 任意 | 文書回答事例の税目の絞り込み。値は `shotoku` / `gensen` / `joto-sanrin` / `sozoku` / `zoyo` / `hyoka` / `hojin` / `shohi` / `shozei` / `sonota`。国税局の別表記 `souzoku` / `gensenshotoku` / `joto_sanrin` も受け付ける |
-| `--tax-answer-taxonomy=<csv>` | 任意 | タックスアンサーの税目の絞り込み。値は `shotoku` / `gensen` / `joto` / `sozoku` / `hojin` / `shohi` / `inshi` / `osirase` |
-| `--qa-topic=<csv>` | 任意 | 質疑応答事例の税目の絞り込み。値は `shotoku` / `gensen` / `joto` / `sozoku` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei` |
-| `--refresh` | 任意 | 条件付き取得を使わずに全部取り直す（cli_refresh） |
-| `--db-path=<path>` | 任意 | 投入先の DB ファイル（cli_entry） |
+| フラグ                         | 必須        | 内容                                                                                                                                                                                                                     |
+| ------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--quickstart`                 | どれか 1 つ | `--tsutatsu` の通達 1 つ（既定: 消費税法基本通達）だけを投入する。中身は `--bulk-download` と同じで、前後に所要時間と次の一手を出す                                                                                      |
+| `--bulk-download`              | どれか 1 つ | `--tsutatsu` の通達 1 つを投入する                                                                                                                                                                                       |
+| `--bulk-download-all`          | どれか 1 つ | 基本通達 4 種（消費税法基本通達・所得税基本通達・法人税基本通達・相続税法基本通達）を順に投入する                                                                                                                        |
+| `--bulk-download-kaisei`       | どれか 1 つ | 4 通達分の改正通達を投入する                                                                                                                                                                                             |
+| `--bulk-download-jimu-unei`    | どれか 1 つ | 事務運営指針を投入する                                                                                                                                                                                                   |
+| `--bulk-download-bunshokaitou` | どれか 1 つ | 文書回答事例を投入する                                                                                                                                                                                                   |
+| `--bulk-download-tax-answer`   | どれか 1 つ | タックスアンサーを投入する                                                                                                                                                                                               |
+| `--bulk-download-qa`           | どれか 1 つ | 質疑応答事例を投入する                                                                                                                                                                                                   |
+| `--bulk-download-everything`   | どれか 1 つ | 通達本体（4 種）→ 改正通達 → 事務運営指針 → 文書回答事例 → タックスアンサー → 質疑応答事例 の 6 種別を順に投入する                                                                                                       |
+| `--tsutatsu=<正式名>`          | 任意        | `--quickstart` / `--bulk-download` の通達。既定は `消費税法基本通達`。投入できるのは基本通達 4 種の正式名（未決 3）                                                                                                      |
+| `--bunsho-taxonomy=<csv>`      | 任意        | 文書回答事例の税目の絞り込み。値は `shotoku` / `gensen` / `joto-sanrin` / `sozoku` / `zoyo` / `hyoka` / `hojin` / `shohi` / `shozei` / `sonota`。国税局の別表記 `souzoku` / `gensenshotoku` / `joto_sanrin` も受け付ける |
+| `--tax-answer-taxonomy=<csv>`  | 任意        | タックスアンサーの税目の絞り込み。値は `shotoku` / `gensen` / `joto` / `sozoku` / `hojin` / `shohi` / `inshi` / `osirase`                                                                                                |
+| `--qa-topic=<csv>`             | 任意        | 質疑応答事例の税目の絞り込み。値は `shotoku` / `gensen` / `joto` / `sozoku` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei`                                                                                            |
+| `--refresh`                    | 任意        | 条件付き取得を使わずに全部取り直す（cli_refresh）                                                                                                                                                                        |
+| `--db-path=<path>`             | 任意        | 投入先の DB ファイル（cli_entry）                                                                                                                                                                                        |
 
 ## 処理の流れ
 

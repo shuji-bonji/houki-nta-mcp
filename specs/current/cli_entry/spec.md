@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: CLI
 - 版: current
-- 承認日:
+- 承認日: 2026-09-29（PR #103）
 - 起こした元: v0.21.2 の `src/index.ts`、`src/cli.ts`（引数の読み方・`--help`・`--version`・処理の振り分け）、`src/config.ts`、`src/db/index.ts`（`--db-path` の既定）、`src/cli.test.ts`
 - 関連する Issue: houki-nta-mcp #25（税目フラグの値の検査。cli_bulk_download に書く）、#35（`--quickstart` と使い方の並び）
 
@@ -18,17 +18,17 @@
 
 フラグはすべて `--名前` または `--名前=値` の形で、値は `=` で続ける（`--db-path /path` のように空白で分けた形は受け付けない）。フラグの並び順は問わない。
 
-| フラグ | 必須 | 内容 |
-|---|---|---|
-| （なし） | 任意 | MCP サーバーとして起動する |
-| `--help` / `-h` | 任意 | 使い方を標準出力に出して終わる |
-| `--version` / `-v` | 任意 | 版を標準出力に出して終わる |
-| `--db-path=<path>` | 任意 | CLI の処理で使う DB ファイルの場所。既定は環境変数 `HOUKI_NTA_DB_PATH`、無ければ `${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db` |
-| `--quickstart` | 任意 | 通達 1 つを投入する（cli_bulk_download） |
-| `--bulk-download` / `--bulk-download-all` / `--bulk-download-kaisei` / `--bulk-download-jimu-unei` / `--bulk-download-bunshokaitou` / `--bulk-download-tax-answer` / `--bulk-download-qa` / `--bulk-download-everything` | 任意 | 種別ごとの投入（cli_bulk_download） |
-| `--tsutatsu=<正式名>` / `--bunsho-taxonomy=<csv>` / `--tax-answer-taxonomy=<csv>` / `--qa-topic=<csv>` | 任意 | 投入の対象の絞り込み（cli_bulk_download） |
-| `--refresh` / `--refresh-stale=<日数>` / `--apply` | 任意 | 取り直しと古い節の列挙・再取得（cli_refresh） |
-| `--health-check` / `--check-baseline-drift` / `--strict` | 任意 | 国税庁サイトの代表ページの確認（cli_health_check） |
+| フラグ                                                                                                                                                                                                                   | 必須 | 内容                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| （なし）                                                                                                                                                                                                                 | 任意 | MCP サーバーとして起動する                                                                                                            |
+| `--help` / `-h`                                                                                                                                                                                                          | 任意 | 使い方を標準出力に出して終わる                                                                                                        |
+| `--version` / `-v`                                                                                                                                                                                                       | 任意 | 版を標準出力に出して終わる                                                                                                            |
+| `--db-path=<path>`                                                                                                                                                                                                       | 任意 | CLI の処理で使う DB ファイルの場所。既定は環境変数 `HOUKI_NTA_DB_PATH`、無ければ `${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db` |
+| `--quickstart`                                                                                                                                                                                                           | 任意 | 通達 1 つを投入する（cli_bulk_download）                                                                                              |
+| `--bulk-download` / `--bulk-download-all` / `--bulk-download-kaisei` / `--bulk-download-jimu-unei` / `--bulk-download-bunshokaitou` / `--bulk-download-tax-answer` / `--bulk-download-qa` / `--bulk-download-everything` | 任意 | 種別ごとの投入（cli_bulk_download）                                                                                                   |
+| `--tsutatsu=<正式名>` / `--bunsho-taxonomy=<csv>` / `--tax-answer-taxonomy=<csv>` / `--qa-topic=<csv>`                                                                                                                   | 任意 | 投入の対象の絞り込み（cli_bulk_download）                                                                                             |
+| `--refresh` / `--refresh-stale=<日数>` / `--apply`                                                                                                                                                                       | 任意 | 取り直しと古い節の列挙・再取得（cli_refresh）                                                                                         |
+| `--health-check` / `--check-baseline-drift` / `--strict`                                                                                                                                                                 | 任意 | 国税庁サイトの代表ページの確認（cli_health_check）                                                                                    |
 
 ## 処理の流れ
 

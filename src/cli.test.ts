@@ -52,7 +52,7 @@ import { bulkDownloadQa } from './services/qa-bulk-downloader.js';
 import { bulkDownloadTaxAnswer } from './services/tax-answer-bulk-downloader.js';
 
 describe('parseArgs', () => {
-  it('既定値', () => {
+  it('SPEC-NTA-CLI-ENTRY-001 既定値', () => {
     const a = parseArgs([]);
     expect(a.bulkDownload).toBe(false);
     expect(a.bulkDownloadAll).toBe(false);
@@ -63,30 +63,30 @@ describe('parseArgs', () => {
     expect(a.version).toBe(false);
   });
 
-  it('--bulk-download-all', () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-001 --bulk-download-all', () => {
     const a = parseArgs(['--bulk-download-all']);
     expect(a.bulkDownloadAll).toBe(true);
     expect(a.bulkDownload).toBe(false);
   });
 
-  it('--refresh-stale=30 で staleDays が 30 になる', () => {
+  it('SPEC-NTA-CLI-REFRESH-004 --refresh-stale=30 で staleDays が 30 になる', () => {
     const a = parseArgs(['--refresh-stale=30']);
     expect(a.staleDays).toBe(30);
     expect(a.refreshStale).toBe(false); // dry-run（未 --apply）
   });
 
-  it('--refresh-stale=30 --apply で再 DL モード', () => {
+  it('SPEC-NTA-CLI-REFRESH-005 --refresh-stale=30 --apply で再 DL モード', () => {
     const a = parseArgs(['--refresh-stale=30', '--apply']);
     expect(a.staleDays).toBe(30);
     expect(a.refreshStale).toBe(true);
   });
 
-  it('不正な --refresh-stale 値は undefined のまま', () => {
+  it('SPEC-NTA-CLI-REFRESH-006 不正な --refresh-stale 値は undefined のまま', () => {
     expect(parseArgs(['--refresh-stale=abc']).staleDays).toBeUndefined();
     expect(parseArgs(['--refresh-stale=-5']).staleDays).toBeUndefined();
   });
 
-  it('--db-path / --tsutatsu の併用', () => {
+  it('SPEC-NTA-CLI-ENTRY-004 SPEC-NTA-CLI-BULK-DOWNLOAD-002 --db-path / --tsutatsu の併用', () => {
     const a = parseArgs([
       '--bulk-download',
       '--tsutatsu=所得税基本通達',
@@ -97,7 +97,7 @@ describe('parseArgs', () => {
     expect(a.dbPath).toBe('/tmp/cache.db');
   });
 
-  it('--help / --version', () => {
+  it('SPEC-NTA-CLI-ENTRY-002 SPEC-NTA-CLI-ENTRY-003 --help / --version', () => {
     expect(parseArgs(['--help']).help).toBe(true);
     expect(parseArgs(['-h']).help).toBe(true);
     expect(parseArgs(['--version']).version).toBe(true);
@@ -112,12 +112,12 @@ describe('--refresh → forceReload (v0.10.2)', () => {
     vi.mocked(bulkDownloadTsutatsu).mockClear();
   });
 
-  it('parseArgs: --refresh で refresh が true', () => {
+  it('SPEC-NTA-CLI-REFRESH-001 parseArgs: --refresh で refresh が true', () => {
     expect(parseArgs([]).refresh).toBe(false);
     expect(parseArgs(['--refresh']).refresh).toBe(true);
   });
 
-  it('--bulk-download --refresh は forceReload: true で bulkDownloadTsutatsu を呼ぶ', async () => {
+  it('SPEC-NTA-CLI-REFRESH-001 --bulk-download --refresh は forceReload: true で bulkDownloadTsutatsu を呼ぶ', async () => {
     const handled = await runCliIfRequested(['--bulk-download', '--refresh', '--db-path=:memory:']);
     expect(handled).toBe(true);
     expect(bulkDownloadTsutatsu).toHaveBeenCalledTimes(1);
@@ -127,12 +127,12 @@ describe('--refresh → forceReload (v0.10.2)', () => {
     });
   });
 
-  it('--bulk-download だけなら forceReload: false (差分更新)', async () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-002 --bulk-download だけなら forceReload: false (差分更新)', async () => {
     await runCliIfRequested(['--bulk-download', '--db-path=:memory:']);
     expect(vi.mocked(bulkDownloadTsutatsu).mock.calls[0][1]).toMatchObject({ forceReload: false });
   });
 
-  it('--bulk-download-all --refresh も各通達に forceReload: true を渡す', async () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-001 SPEC-NTA-CLI-REFRESH-001 --bulk-download-all --refresh も各通達に forceReload: true を渡す', async () => {
     await runCliIfRequested(['--bulk-download-all', '--refresh', '--db-path=:memory:']);
     const calls = vi.mocked(bulkDownloadTsutatsu).mock.calls;
     expect(calls.length).toBeGreaterThanOrEqual(4);
@@ -167,14 +167,14 @@ describe('--refresh → forceReload: 通達以外の 5 種別 (v0.10.4)', () => 
   });
 
   for (const [flag, fn] of cases) {
-    it(`${flag} --refresh は forceReload: true を渡す`, async () => {
+    it(`SPEC-NTA-CLI-REFRESH-002 ${flag} --refresh は forceReload: true を渡す`, async () => {
       await runCliIfRequested([flag, '--refresh', '--db-path=:memory:']);
       const calls = vi.mocked(fn).mock.calls;
       expect(calls.length).toBeGreaterThanOrEqual(1);
       for (const c of calls) expect(c[1]).toMatchObject({ forceReload: true });
     });
 
-    it(`${flag} だけなら forceReload: false (差分更新)`, async () => {
+    it(`SPEC-NTA-CLI-BULK-DOWNLOAD-003 ${flag} だけなら forceReload: false (差分更新)`, async () => {
       await runCliIfRequested([flag, '--db-path=:memory:']);
       const calls = vi.mocked(fn).mock.calls;
       expect(calls.length).toBeGreaterThanOrEqual(1);
@@ -182,7 +182,7 @@ describe('--refresh → forceReload: 通達以外の 5 種別 (v0.10.4)', () => 
     });
   }
 
-  it('--bulk-download-everything --refresh は 6 種別すべてに forceReload: true を渡す', async () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-004 SPEC-NTA-CLI-REFRESH-003 --bulk-download-everything --refresh は 6 種別すべてに forceReload: true を渡す', async () => {
     await runCliIfRequested(['--bulk-download-everything', '--refresh', '--db-path=:memory:']);
     for (const fn of [bulkDownloadTsutatsu, ...cases.map(([, f]) => f)]) {
       const calls = vi.mocked(fn).mock.calls;
@@ -215,19 +215,19 @@ describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
     process.exitCode = undefined;
   });
 
-  it('正しい税目はこれまでどおり渡る', () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-008 正しい税目はこれまでどおり渡る', () => {
     const a = parseArgs(['--bunsho-taxonomy=shotoku,hojin']);
     expect(a.bunshoTaxonomies).toEqual(['shotoku', 'hojin']);
     expect(a.invalidTaxonomyValues).toEqual([]);
   });
 
-  it('--bunsho-taxonomy の国税局の別表記は本庁の表記に直す', () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-009 --bunsho-taxonomy の国税局の別表記は本庁の表記に直す', () => {
     const a = parseArgs(['--bunsho-taxonomy=souzoku,gensenshotoku,joto_sanrin']);
     expect(a.bunshoTaxonomies).toEqual(['sozoku', 'gensen', 'joto-sanrin']);
     expect(a.invalidTaxonomyValues).toEqual([]);
   });
 
-  it('--bunsho-taxonomy に一覧に無い値を渡すと invalidTaxonomyValues に入る', () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-008 --bunsho-taxonomy に一覧に無い値を渡すと invalidTaxonomyValues に入る', () => {
     const a = parseArgs(['--bunsho-taxonomy=zzz']);
     expect(a.bunshoTaxonomies).toEqual([]);
     expect(a.invalidTaxonomyValues).toHaveLength(1);
@@ -236,7 +236,7 @@ describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
     expect(a.invalidTaxonomyValues[0].aliases).toContain('souzoku');
   });
 
-  it('--tax-answer-taxonomy と --qa-topic も検証する', () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-008 --tax-answer-taxonomy と --qa-topic も検証する', () => {
     const a = parseArgs(['--tax-answer-taxonomy=shohi,zzz', '--qa-topic=shohi,ZZZ']);
     expect(a.taxAnswerTaxonomies).toEqual(['shohi']);
     expect(a.qaTopics).toEqual(['shohi']);
@@ -246,14 +246,14 @@ describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
     ]);
   });
 
-  it('質疑応答事例の税目は --qa-topic の一覧で判定する（文書回答事例の税目は通さない）', () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-008 質疑応答事例の税目は --qa-topic の一覧で判定する（文書回答事例の税目は通さない）', () => {
     // zoyo は文書回答事例にはあるが、質疑応答事例には無い
     const a = parseArgs(['--qa-topic=zoyo']);
     expect(a.qaTopics).toEqual([]);
     expect(a.invalidTaxonomyValues).toHaveLength(1);
   });
 
-  it('一覧に無い値があると、投入せずに exit code 1 で終わる', async () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-010 一覧に無い値があると、投入せずに exit code 1 で終わる', async () => {
     const handled = await runCliIfRequested([
       '--bulk-download-bunshokaitou',
       '--bunsho-taxonomy=zzz',
@@ -266,13 +266,13 @@ describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
     expect(written.join('')).toContain('shotoku');
   });
 
-  it('複数指定で 1 つだけ誤っていても投入しない', async () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-010 複数指定で 1 つだけ誤っていても投入しない', async () => {
     await runCliIfRequested(['--bulk-download-qa', '--qa-topic=shohi,zzz', '--db-path=:memory:']);
     expect(process.exitCode).toBe(1);
     expect(bulkDownloadQa).not.toHaveBeenCalled();
   });
 
-  it('--help は一覧に無い値があっても使える値を表示する', async () => {
+  it('SPEC-NTA-CLI-ENTRY-005 SPEC-NTA-CLI-ENTRY-002 --help は一覧に無い値があっても使える値を表示する', async () => {
     const handled = await runCliIfRequested(['--help', '--qa-topic=zzz']);
     expect(handled).toBe(true);
     expect(process.exitCode).toBeUndefined();
@@ -284,7 +284,7 @@ describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
     expect(help).toContain('--bunsho-taxonomy の値: shotoku, gensen, joto-sanrin');
   });
 
-  it('formatInvalidTaxonomyValues は 1 件につき 1 行', () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-010 formatInvalidTaxonomyValues は 1 件につき 1 行', () => {
     const text = formatInvalidTaxonomyValues([
       { flag: '--qa-topic', value: 'zzz', allowed: ['shohi'], aliases: [] },
       { flag: '--bunsho-taxonomy', value: 'yyy', allowed: ['sozoku'], aliases: ['souzoku'] },
@@ -321,12 +321,12 @@ describe('--quickstart: まず数分で試す入口 (Issue #35)', () => {
     stderrSpy.mockRestore();
   });
 
-  it('parseArgs: 既定は false、--quickstart で true', () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-006 parseArgs: 既定は false、--quickstart で true', () => {
     expect(parseArgs([]).quickstart).toBe(false);
     expect(parseArgs(['--quickstart']).quickstart).toBe(true);
   });
 
-  it('--quickstart は消費税法基本通達 1 本だけを差分更新で投入する', async () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-006 --quickstart は消費税法基本通達 1 本だけを差分更新で投入する', async () => {
     const handled = await runCliIfRequested(['--quickstart', '--db-path=:memory:']);
     expect(handled).toBe(true);
     expect(bulkDownloadTsutatsu).toHaveBeenCalledTimes(1);
@@ -336,7 +336,7 @@ describe('--quickstart: まず数分で試す入口 (Issue #35)', () => {
     });
   });
 
-  it('--quickstart --tsutatsu=<正式名> で別の通達 1 本にできる', async () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-006 --quickstart --tsutatsu=<正式名> で別の通達 1 本にできる', async () => {
     await runCliIfRequested(['--quickstart', '--tsutatsu=所得税基本通達', '--db-path=:memory:']);
     expect(bulkDownloadTsutatsu).toHaveBeenCalledTimes(1);
     expect(vi.mocked(bulkDownloadTsutatsu).mock.calls[0][1]).toMatchObject({
@@ -344,7 +344,7 @@ describe('--quickstart: まず数分で試す入口 (Issue #35)', () => {
     });
   });
 
-  it('--quickstart は実行前と完了後に、所要時間と次の一手を stderr に出す', async () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-007 --quickstart は実行前と完了後に、所要時間と次の一手を stderr に出す', async () => {
     await runCliIfRequested(['--quickstart', '--db-path=:memory:']);
     const out = stderrWritten.join('');
     expect(out).toContain('約 3〜5 分');
@@ -352,7 +352,7 @@ describe('--quickstart: まず数分で試す入口 (Issue #35)', () => {
     expect(out).toContain('--bulk-download-everything');
   });
 
-  it('formatBulkEstimates: 6 種別と合計 約 100 分、--quickstart への案内を含む', () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-005 formatBulkEstimates: 6 種別と合計 約 100 分、--quickstart への案内を含む', () => {
     const text = formatBulkEstimates();
     expect(text).toContain('合計 約 100 分');
     expect(text).toContain('--quickstart');
@@ -368,13 +368,13 @@ describe('--quickstart: まず数分で試す入口 (Issue #35)', () => {
     }
   });
 
-  it('--bulk-download-everything は開始時に目安表を出す', async () => {
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-005 --bulk-download-everything は開始時に目安表を出す', async () => {
     await runCliIfRequested(['--bulk-download-everything', '--db-path=:memory:']);
     const out = stderrWritten.join('');
     expect(out).toContain('合計 約 100 分');
   });
 
-  it('--help に「まず試す」と --quickstart がある', async () => {
+  it('SPEC-NTA-CLI-ENTRY-002 --help に「まず試す」と --quickstart がある', async () => {
     await runCliIfRequested(['--help']);
     const out = stdoutWritten.join('');
     expect(out).toContain('まず試す');

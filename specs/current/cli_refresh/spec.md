@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: CLI
 - 版: current
-- 承認日:
+- 承認日: 2026-09-29（PR #103）
 - 起こした元: v0.21.2 の `src/cli.ts`（`--refresh`・`--refresh-stale`・`--apply`）、`src/services/bulk-downloader.ts`（節ごとの条件付き取得）、`src/services/document-conditional-fetch.ts`、`src/services/nta-scraper.ts`（`If-Modified-Since` / `If-None-Match`）、`src/services/db-search.ts`（古い節の列挙）、`src/cli.test.ts`、`src/services/db-stale.test.ts`
 - 関連する Issue: なし（v0.10.2 で `--refresh` が通達の投入に、v0.10.4 で文書系 5 種別の投入にも効くようになった）
 
@@ -15,12 +15,12 @@
 
 ## 入力
 
-| フラグ | 必須 | 内容 |
-|---|---|---|
-| `--refresh` | 任意 | `--quickstart` / `--bulk-download*` と組み合わせる。条件付き取得を使わず、対象をすべて国税庁サイトから取り直す |
-| `--refresh-stale=<日数>` | どちらか 1 つ | 取得日時が `<日数>` 日より古い通達の節を列挙する（DB は変えない）。`<日数>` は 0 以上の整数 |
-| `--apply` | 任意 | `--refresh-stale=<日数>` と組み合わせる。列挙した節を含む通達を取り直す |
-| `--db-path=<path>` | 任意 | 対象の DB ファイル（cli_entry） |
+| フラグ                   | 必須          | 内容                                                                                                           |
+| ------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `--refresh`              | 任意          | `--quickstart` / `--bulk-download*` と組み合わせる。条件付き取得を使わず、対象をすべて国税庁サイトから取り直す |
+| `--refresh-stale=<日数>` | どちらか 1 つ | 取得日時が `<日数>` 日より古い通達の節を列挙する（DB は変えない）。`<日数>` は 0 以上の整数                    |
+| `--apply`                | 任意          | `--refresh-stale=<日数>` と組み合わせる。列挙した節を含む通達を取り直す                                        |
+| `--db-path=<path>`       | 任意          | 対象の DB ファイル（cli_entry）                                                                                |
 
 ## 処理の流れ
 

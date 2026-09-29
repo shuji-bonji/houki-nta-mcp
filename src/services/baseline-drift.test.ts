@@ -144,7 +144,7 @@ describe('classifyDrift', () => {
     ),
   ];
 
-  it('現役本体 (shohi/01/04.htm) は ok 判定', () => {
+  it('SPEC-NTA-CLI-HEALTH-CHECK-001 現役本体 (shohi/01/04.htm) は ok 判定', () => {
     const r = classifyDrift({
       doc_type: 'tsutatsu-shohi',
       label: '消基通',
@@ -154,7 +154,7 @@ describe('classifyDrift', () => {
     expect(r.status).toBe('ok');
   });
 
-  it('現役の sozoku2 (sisan/sozoku2/01.htm) は ok 判定', () => {
+  it('SPEC-NTA-CLI-HEALTH-CHECK-001 現役の sozoku2 (sisan/sozoku2/01.htm) は ok 判定', () => {
     const r = classifyDrift({
       doc_type: 'tsutatsu-sozoku',
       label: '相基通',
@@ -164,7 +164,7 @@ describe('classifyDrift', () => {
     expect(r.status).toBe('ok');
   });
 
-  it('旧 sozoku (sisan/sozoku/01.htm) は missing + newer=sozoku2 を返す', () => {
+  it('SPEC-NTA-CLI-HEALTH-CHECK-002 旧 sozoku (sisan/sozoku/01.htm) は missing + newer=sozoku2 を返す', () => {
     const r = classifyDrift({
       doc_type: 'tsutatsu-sozoku-old',
       label: '相基通 (旧)',
@@ -175,7 +175,7 @@ describe('classifyDrift', () => {
     expect(r.newerGenerations).toEqual(['sozoku2']);
   });
 
-  it('旧 hyoka (sisan/hyoka/01.htm) は missing + newer=hyoka_new を返す', () => {
+  it('SPEC-NTA-CLI-HEALTH-CHECK-002 旧 hyoka (sisan/hyoka/01.htm) は missing + newer=hyoka_new を返す', () => {
     const r = classifyDrift({
       doc_type: 'tsutatsu-hyoka-old',
       label: '財産評価 (旧)',
@@ -186,7 +186,7 @@ describe('classifyDrift', () => {
     expect(r.newerGenerations).toEqual(['hyoka_new']);
   });
 
-  it('存在しない税目は missing (newer 候補なし)', () => {
+  it('SPEC-NTA-CLI-HEALTH-CHECK-002 存在しない税目は missing (newer 候補なし)', () => {
     const r = classifyDrift({
       doc_type: 'tsutatsu-bogus',
       label: '存在しない通達',
@@ -197,7 +197,7 @@ describe('classifyDrift', () => {
     expect(r.newerGenerations).toBeUndefined();
   });
 
-  it('改正履歴 (shohi/kaisei/...) も taxKey 一致で ok 判定', () => {
+  it('SPEC-NTA-CLI-HEALTH-CHECK-001 改正履歴 (shohi/kaisei/...) も taxKey 一致で ok 判定', () => {
     const r = classifyDrift({
       doc_type: 'kaisei',
       label: '改正通達 索引（消基通）',
@@ -207,7 +207,7 @@ describe('classifyDrift', () => {
     expect(r.status).toBe('ok');
   });
 
-  it('kihon/ 配下でない baseline は対象外 (ok)', () => {
+  it('SPEC-NTA-CLI-HEALTH-CHECK-001 kihon/ 配下でない baseline は対象外 (ok)', () => {
     const r = classifyDrift({
       doc_type: 'qa-jirei',
       label: '質疑応答事例',
@@ -218,7 +218,7 @@ describe('classifyDrift', () => {
     expect(r.message).toContain('drift 検知対象外');
   });
 
-  it('現役だが新世代併存 → generation-drift (将来 sisan/sozoku2 が menu に出続けたまま sisan/sozoku3 が出た場合)', () => {
+  it('SPEC-NTA-CLI-HEALTH-CHECK-003 現役だが新世代併存 → generation-drift (将来 sisan/sozoku2 が menu に出続けたまま sisan/sozoku3 が出た場合)', () => {
     const future: MenuEntry[] = [
       ...menuEntries,
       entry('https://www.nta.go.jp/law/tsutatsu/kihon/sisan/sozoku3/01.htm', [
@@ -251,7 +251,7 @@ describe('detectBaselineDrift (menuHtml 直接渡し)', () => {
     </body></html>
   `;
 
-  it('menuHtml を直接渡せば fetch なしで動作する', async () => {
+  it('SPEC-NTA-CLI-HEALTH-CHECK-001 SPEC-NTA-CLI-HEALTH-CHECK-002 menuHtml を直接渡せば fetch なしで動作する', async () => {
     const result = await detectBaselineDrift({
       menuHtml: SAMPLE_MENU,
       menuUrl: 'https://www.nta.go.jp/law/tsutatsu/menu.htm',

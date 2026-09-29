@@ -14,7 +14,7 @@ describe('initSchema', () => {
     db.close();
   });
 
-  it('全テーブル + FTS5 + trigger を作成し、schema_version を記録する', () => {
+  it('SPEC-NTA-DB-SCHEMA-001 全テーブル + FTS5 + trigger を作成し、schema_version を記録する', () => {
     initSchema(db);
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
 
@@ -31,7 +31,7 @@ describe('initSchema', () => {
     expect(tables).toContain('schema_meta');
   });
 
-  it('clause INSERT で FTS5 が trigger 経由で自動更新される', () => {
+  it('SPEC-NTA-DB-SCHEMA-002 clause INSERT で FTS5 が trigger 経由で自動更新される', () => {
     initSchema(db);
     db.prepare(`INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?)`).run(
       '消費税法基本通達',
@@ -59,7 +59,7 @@ describe('initSchema', () => {
     expect((hits[0] as { clause_number: string }).clause_number).toBe('1-4-1');
   });
 
-  it('clause UPDATE で FTS5 が更新される', () => {
+  it('SPEC-NTA-DB-SCHEMA-003 clause UPDATE で FTS5 が更新される', () => {
     initSchema(db);
     db.prepare(`INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?)`).run(
       '消費税法基本通達',
@@ -82,7 +82,7 @@ describe('initSchema', () => {
     expect(hits).toHaveLength(1);
   });
 
-  it('clause→URL lookup が UNIQUE INDEX で機能する', () => {
+  it('SPEC-NTA-DB-SCHEMA-004 clause→URL lookup が UNIQUE INDEX で機能する', () => {
     initSchema(db);
     db.prepare(`INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?)`).run(
       '消費税法基本通達',
@@ -117,7 +117,7 @@ describe('initSchema — Phase 6-2 (v0.9.0): last_modified / etag カラム', ()
     db.close();
   });
 
-  it('section に last_modified / etag カラムが追加されている', () => {
+  it('SPEC-NTA-DB-SCHEMA-005 section に last_modified / etag カラムが追加されている', () => {
     initSchema(db);
     const cols = (db.prepare(`PRAGMA table_info(section)`).all() as Array<{ name: string }>).map(
       (r) => r.name
@@ -127,7 +127,7 @@ describe('initSchema — Phase 6-2 (v0.9.0): last_modified / etag カラム', ()
     expect(cols).toContain('content_hash'); // v2 から残置
   });
 
-  it('document に last_modified / etag カラムが追加されている', () => {
+  it('SPEC-NTA-DB-SCHEMA-005 document に last_modified / etag カラムが追加されている', () => {
     initSchema(db);
     const cols = (db.prepare(`PRAGMA table_info(document)`).all() as Array<{ name: string }>).map(
       (r) => r.name
@@ -136,7 +136,7 @@ describe('initSchema — Phase 6-2 (v0.9.0): last_modified / etag カラム', ()
     expect(cols).toContain('etag');
   });
 
-  it('v3 → v4 マイグレーションで既存データを保ったままカラム追加できる', () => {
+  it('SPEC-NTA-DB-SCHEMA-006 v3 → v4 マイグレーションで既存データを保ったままカラム追加できる', () => {
     // v3 シミュレーション: section に last_modified / etag が無い状態を作る
     db.exec(`
       CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -223,7 +223,7 @@ describe('clearAllData', () => {
   });
 });
 
-describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入れ直す', () => {
+describe('SPEC-NTA-DB-SCHEMA-007 initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入れ直す', () => {
   let db: DatabaseT.Database;
 
   /** v5 のスキーマに全角英字入りの行を入れ、schema_version だけ v4 に戻した DB を作る */
@@ -297,7 +297,7 @@ describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入�
     expect(JSON.parse(row.paragraphs_json)).toEqual([{ indent: 0, text: 'e-Taxで提出する' }]);
   });
 
-  it('半角のキーワードで FTS5 が引けるようになる', () => {
+  it('SPEC-NTA-DB-SCHEMA-008 半角のキーワードで FTS5 が引けるようになる', () => {
     const hits = db
       .prepare('SELECT clause_number FROM clause_fts WHERE clause_fts MATCH ?')
       .all('NISA');
@@ -310,7 +310,7 @@ describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入�
     expect(docHits[0].title).toBe('NISA制度');
   });
 
-  it('section は題名が半角になり、content_hash が未計算に戻る', () => {
+  it('SPEC-NTA-DB-SCHEMA-009 section は題名が半角になり、content_hash が未計算に戻る', () => {
     const row = db.prepare('SELECT title, content_hash FROM section').get() as {
       title: string;
       content_hash: string | null;
@@ -319,7 +319,7 @@ describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入�
     expect(row.content_hash).toBeNull();
   });
 
-  it('document は題名・本文が半角になり、content_hash が計算し直される', () => {
+  it('SPEC-NTA-DB-SCHEMA-009 document は題名・本文が半角になり、content_hash が計算し直される', () => {
     const row = db.prepare('SELECT title, full_text, content_hash FROM document').get() as {
       title: string;
       full_text: string;
@@ -349,7 +349,7 @@ describe('initSchema — v4 → v5 (Issue #27): 共通実装の正規化で入�
   });
 });
 
-describe('initSchema — v5 → v6 (Issue #29): document に structured_json を足す', () => {
+describe('SPEC-NTA-DB-SCHEMA-010 initSchema — v5 → v6 (Issue #29): document に structured_json を足す', () => {
   let db: DatabaseT.Database;
 
   /** v6 のスキーマから structured_json 列を落とし、schema_version を v5 に戻した DB を作る */
@@ -415,7 +415,7 @@ describe('initSchema — v5 → v6 (Issue #29): document に structured_json を
   });
 });
 
-describe('initSchema — v6 → v7 (Issue #30): document に orphaned_at を足す', () => {
+describe('SPEC-NTA-DB-SCHEMA-011 initSchema — v6 → v7 (Issue #30): document に orphaned_at を足す', () => {
   let db: DatabaseT.Database;
 
   /** v7 のスキーマから orphaned_at 列を落とし、schema_version を v6 に戻した DB を作る */
@@ -465,7 +465,7 @@ describe('initSchema — v6 → v7 (Issue #30): document に orphaned_at を足�
   });
 });
 
-describe('initSchema — v7 → v8 (Issue #45): 文書回答事例の本文から案内文の行を除く', () => {
+describe('SPEC-NTA-DB-SCHEMA-012 initSchema — v7 → v8 (Issue #45): 文書回答事例の本文から案内文の行を除く', () => {
   let db: DatabaseT.Database;
 
   const hojoText = '回答内容: 貴見のとおり\n【別紙】\n照会の趣旨\n以上';
@@ -595,7 +595,7 @@ describe('initSchema — v7 → v8 (Issue #45): 文書回答事例の本文か�
   });
 });
 
-describe('initSchema — v8 → v9 (Issue #45 の続き): 改正通達・事務運営指針の本文からも案内文を除く', () => {
+describe('SPEC-NTA-DB-SCHEMA-013 initSchema — v8 → v9 (Issue #45 の続き): 改正通達・事務運営指針の本文からも案内文を除く', () => {
   let db: DatabaseT.Database;
 
   const body =
@@ -704,7 +704,7 @@ describe('initSchema — v8 → v9 (Issue #45 の続き): 改正通達・事務�
   });
 });
 
-describe('initSchema — v9 → v10 (Issue #54): bulk download 済みの印と目次の保存', () => {
+describe('SPEC-NTA-DB-SCHEMA-014 initSchema — v9 → v10 (Issue #54): bulk download 済みの印と目次の保存', () => {
   let db: DatabaseT.Database;
 
   /**
