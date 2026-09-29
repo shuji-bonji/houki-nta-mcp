@@ -88,9 +88,9 @@ flowchart TD
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **`--version` が出す文と、`--help` / `--version` の終了コード。** `--version` は版の数字だけ（例: `0.21.2`）を 1 行出し、パッケージ名を付けない（houki-egov-mcp は `<パッケージ名> v<版>`）。`--help` / `--version` は終了コードを設定せず 0 で終わる。文の形はテストが無く、family で揃えるかは人が決める。終了コードは受入テストを書いてから ID を振る。
-2. **知らないフラグと、`=` の無いフラグを黙って無視し、MCP サーバーを起動する。** `--bulk-downlod`（打ち間違い）、`--db-path /path`（空白で分けた形）、`--refresh-stale=abc`（数でない日数）のように、どのフラグにも当たらない引数は読み飛ばす。ほかに処理を選ぶフラグが無ければ、ターミナルで MCP サーバーが起動して待ち続ける。`--db-path=<path>` だけを渡したときも同じで、MCP サーバーはそのパスを使わない（MCP サーバーの DB は環境変数 `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` だけで決まる）。houki-egov-mcp は知らないフラグを `exit 2` にする（SPEC-EGOV-CLI-ENTRY-004）。エラーにするかは人が決める。
+1. **`--version` が出す文と、`--help` / `--version` の終了コード。** → houki-nta-mcp #ISSUE-01
+2. **知らないフラグと、`=` の無いフラグを黙って無視し、MCP サーバーを起動する。** → houki-nta-mcp #ISSUE-01
 3. **処理を選ぶフラグを複数渡したときの優先順。** 処理の流れの図の順（`--quickstart` が最初、`--check-baseline-drift` が最後）で 1 つだけを行う。`--refresh-stale` は `--bulk-download-all` / `--bulk-download` より先で、`--health-check` は投入のどれよりも後である。テストが無い。ID を振るのは受入テストを書いてから。
 4. **MCP サーバーの終わり方。** 起動すると標準エラー出力に `[server] <パッケージ名> v<版> started …` を JSON のログとして出す。SIGINT / SIGTERM を受けると標準入出力の接続を閉じる。起動の途中で想定外の例外が起きると `fatal error` のログを出して `exit 1`。どれもテストが無い（houki-egov-mcp の SPEC-EGOV-CLI-ENTRY-006・007 に当たる）。ID を振るのは受入テストを書いてから。
-5. **使い方に載っていない環境変数。** `HOUKI_NTA_BASELINE_DIR`（cli_health_check）と `HOUKI_NTA_FILES_DIR`（`nta_inspect_pdf_meta` の保存先）は使い方の「環境変数」に無い。載せるかは人が決める（案内と実際の動きの食い違いとして houki-nta-mcp #70 と同じ種類）。
+5. **使い方に載っていない環境変数。** → houki-nta-mcp #ISSUE-03
 6. **`--db-path` の既定の決め方。** `HOUKI_NTA_DB_PATH` → `$XDG_CACHE_HOME/houki-nta-mcp/cache.db` → `~/.cache/houki-nta-mcp/cache.db` の順で、テストが無い。db_schema の未決 1 と同じ。
