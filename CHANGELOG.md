@@ -7,9 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.21.3] - 2026-09-30
+
+**patch リリース** — DB に入れる値と保存するファイル名の扱いの不具合 3 件を直した（#73）。応答が一見正しく見えるまま、DB の行か保存したファイルが求めたものと違う状態になっていた。DB のスキーマは変えていない（版 10 のまま）。
+
+### Fixed
+
+- **`nta_get_tax_answer` の記事番号をページの見出しから読んでいた**（#73、SPEC-NTA-GET-TAX-ANSWER-011、008 の本文も変更）: 見出しが `No.<番号> <題名>` の形でないページでは `taxAnswer.no` が空文字になり、国税庁サイトから取った記事を DB に書き戻す行の文書 ID も空文字、税目も無しになっていた。記事番号は引数の `no`（前後の空白を除いたもの）で決めるように変えた。DB から返すときも、行に記録された番号が空なら `no` で埋める。見出しが `No.<番号> <題名>` の形のページ（2026-09-30 に確かめた範囲では国税庁サイトのすべてのタックスアンサー）では応答は変わらない
+- **`nta_get_kaisei_tsutatsu` が `kind` の無い添付 PDF に `kind` を補わなかった**（#73、SPEC-NTA-GET-KAISEI-TSUTATSU-008、005・006 の本文も変更）: v0.6.0 までに入れた行の添付 PDF は `kind` を持たず、json では `kind` が無いまま、markdown では「その他」の行になっていた。`nta_inspect_pdf_meta` と同じく題名から `kind` を決めて返す。「別紙 N」の付け替え（#44）は決めた `kind` に対して行う。DB は書き換えない
+- **`nta_inspect_pdf_meta` の保存ファイル名を URL の最後のパス要素だけで決めていた**（#73、SPEC-NTA-INSPECT-PDF-META-018、010 の本文も変更）: 同じ文書の添付 PDF に最後のパス要素が同じで途中のディレクトリが違う URL（`…/0026003-067/pdf/01.pdf` と `…/0026003-068/pdf/01.pdf` など）があると、2 つ目を取得せずに 1 つ目のファイルを `cached: true` で返していた。ファイル名は `kind` で絞る前の添付 PDF 全体から決め、最後のパス要素が重なる PDF は重ならなくなるまで前のパス要素を `_` でつないで付ける（`0026003-067_pdf_01.pdf`）。重ならない PDF のファイル名と、既に保存したファイルはそのまま
+
 ### Changed
 
 - **`@shuji-bonji/houki-abbreviations` の依存を `^0.4.1` から `^0.6.1` に上げた**: 0.x の `^` は minor を跨がないため、0.4.1 のまま取り込んでいた。このサーバーが使う関数（`resolveAbbreviation` / `normalizeJpText` / `normalizeSearchQuery` / `listBySourceMcpHint` / `judgeStaleness` / `STALENESS_THRESHOLDS`）の結果は 0.4.1 と 0.6.1 で同じで、実行されるコードは変えていない。houki-hub `docs/notes/2026-09-29-plan-spec-issues.md` の段階 0
+
+### Tests
+
+- 仕様の差分 `20260930-nta-73-db-values` の受入テスト（`src/tools/spec-20260930-nta-73-db-values.test.ts`）を足した。足した仕様 ID は 3 件
 
 ## [0.21.2] - 2026-09-29
 
