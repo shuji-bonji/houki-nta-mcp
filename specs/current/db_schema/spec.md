@@ -168,10 +168,10 @@ SPEC-NTA-DB-SCHEMA-007 の入れ直しで、`section.content_hash` は NULL（�
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
 1. **DB の置き場所と環境変数。** `HOUKI_NTA_DB_PATH` があればそのパス、無ければ `$XDG_CACHE_HOME/houki-nta-mcp/cache.db`、どちらも無ければ `~/.cache/houki-nta-mcp/cache.db`。置き場所のディレクトリが無ければ途中のディレクトリも含めて作る。`XDG_CACHE_HOME` が空文字のときは無いときと同じに扱う。どれもテストが無い（houki-egov-mcp の SPEC-EGOV-DB-SCHEMA-012〜015 に当たる）。ID を振るのは受入テストを書いてから。
-2. **版 3 より前、または 10 より大きい版の DB を開くと、全テーブルを消して作り直す。** 版 1・2 の DB（v0.3.0 より前）と、新しい版の houki-nta-mcp で作った DB を古い版で開いたときは、取り込んだ中身がすべて消える。後者は、MCP クライアントが古い版のサーバーを起動しただけで起きる。テストが無い。消さずに止めるか、今のままかは人が決める（houki-egov-mcp #60 と同じ問題）。
+2. **版 3 より前、または 10 より大きい版の DB を開くと、全テーブルを消して作り直す。** → houki-nta-mcp #107
 3. **DB は WAL で開き、外部キーの制約を有効にする。** `PRAGMA journal_mode = WAL`・`PRAGMA foreign_keys = ON`。`tsutatsu` の行を消すと、その `chapter`・`section`・`clause` も消える（`ON DELETE CASCADE`）。テストが無い。ID を振るのは受入テストを書いてから。
-4. **全データを消す機能がテストにだけある。** `clearAllData`（`document`・`clause`・`section`・`chapter`・`tsutatsu_toc`・`tsutatsu` を空にし、索引を作り直す）はテストからしか呼ばれず、CLI にもツールにも出口が無い。`src/db/index.ts` の説明には環境変数 `HOUKI_NTA_REFRESH=1` で起動時に DB を消すと書いてあるが、その環境変数を読む実装は無い。説明を直すか、出口を作るかは人が決める。
+4. **全データを消す機能がテストにだけある。** → houki-nta-mcp #107
 5. **MCP サーバーは呼び出しごとに DB を開いて閉じ、そのたびにスキーマの移行が走りうる。** 取り込み中に検索を呼んだときの読み取りの扱い（houki-egov-mcp の SPEC-EGOV-DB-SCHEMA-023 に当たる）と、古い版の DB を初めて開くのが MCP サーバーの呼び出しだったときの移行の時間は、テストも文書も無い。ID を振るのは受入テストを書いてから。
-6. **`document` の `doc_type` と `taxonomy` の値の範囲。** `doc_type` は `kaisei` / `jimu-unei` / `bunshokaitou` / `tax-answer` / `qa-jirei` の 5 つを想定しているが、列に制約は無く、どの値でも入る。`(doc_type, doc_id)` の一意制約だけがある。値の範囲を仕様にするかは人が決める。
+6. **`document` の `doc_type` と `taxonomy` の値の範囲。** → houki-nta-mcp #112
 7. **書き戻しの `bulk_completed_at`。** 書き戻し（SPEC-NTA-DB-SCHEMA-016）は `bulk_completed_at` を書かないとコードから読めるが、テストは版 9 → 10 の移行（SPEC-NTA-DB-SCHEMA-014）でしか確かめていない。ID を振るのは受入テストを書いてから。
 8. **`tsutatsu_toc` の使い方。** 目次の URL を鍵に、`nta_get_tsutatsu` が候補ページを決めるために使い回す。使い回す期間は無く、条項が見つからないときにだけ条件付き取得で取り直す（SPEC-NTA-GET-TSUTATSU-014）。表ができること以外（行の中身・取り直し）はこの文書ではテストと結び付けていない。ID を振るのは受入テストを書いてから。
