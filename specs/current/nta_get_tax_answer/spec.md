@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`getTaxAnswer`）、`src/tools/definitions.ts`、`src/services/tax-answer-render.ts`、`src/services/tax-answer-parser.ts`、`src/services/index-status.ts`、`src/tools/handlers.test.ts`、`src/tools/get-db-first.test.ts`
 - 関連する Issue: houki-nta-mcp #29（DB を先に引く）、#30（索引から消えた文書の印）
 
@@ -97,7 +97,7 @@ SPEC-NTA-GET-TAX-ANSWER-005 で取得した記事は DB に入る。同じ番号
 
 | フィールド                                    | 内容                                                                                                |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `taxAnswer.no`                                | 記事番号（ページの見出しから読んだもの）。例: `"1120"`                                              |
+| `taxAnswer.no`                                | 記事番号。引数の `no`（前後の空白を除いたもの。SPEC-NTA-GET-TAX-ANSWER-011）。例: `"1120"`          |
 | `taxAnswer.title`                             | 題名。例: `"医療費を支払ったとき（医療費控除）"`                                                    |
 | `taxAnswer.effectiveDate`                     | ページに書かれた法令時点。例: `"令和7年4月1日現在法令等"`。無いときは付かない                       |
 | `taxAnswer.taxCategory`                       | 対象税目。例: `"消費税"`。無いときは付かない                                                        |
@@ -105,7 +105,6 @@ SPEC-NTA-GET-TAX-ANSWER-005 で取得した記事は DB に入る。同じ番号
 | `taxAnswer.sourceUrl` / `taxAnswer.fetchedAt` | 出典 URL と取得日時                                                                                 |
 | `source`                                      | `db` または `live`                                                                                  |
 | `legal_status`                                | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と注                    |
-
 ### SPEC-NTA-GET-TAX-ANSWER-009 国税庁の索引から消えた記事に印を付ける
 
 DB から返す記事（SPEC-NTA-GET-TAX-ANSWER-004）が国税庁の索引から外れている（bulk download で外れたことを確認した日時が付いている）ときは、応答に印を付ける。索引にある記事と、この呼び出しで国税庁サイトから取った記事には何も付けない。
@@ -120,6 +119,15 @@ DB から返す記事（SPEC-NTA-GET-TAX-ANSWER-004）が国税庁の索引か�
 
 DB にその記事の行があっても、節の構造（見出しと段落を分けたもの）を持たない行（v0.16.0 より前に DB に入れた行）や、構造の記録が読めない行は、DB から返さず、DB に無いとき（SPEC-NTA-GET-TAX-ANSWER-005）と同じく国税庁サイトから取る。応答の `source` は `live` になり、取った記事は SPEC-NTA-GET-TAX-ANSWER-006 のとおり DB に書き戻す。次の呼び出しからは DB から返す（`source: "db"`）。
 
+### SPEC-NTA-GET-TAX-ANSWER-011 記事番号は引数の no で決め、応答と DB の行に空の番号を入れない
+
+記事番号は、ページの見出しではなく引数の `no`（前後の空白を除いたもの）で決める。ページの見出しが `No.<番号> <題名>` の形でなくても、次のとおりになる。
+
+- json の `taxAnswer.no` と markdown の見出し `# No.<番号> <題名>` の番号は `no`。題名は見出しの文字列のまま
+- 国税庁サイトから取った記事を DB に書き戻す行（SPEC-NTA-GET-TAX-ANSWER-006）の文書 ID は `no`、税目は `no` の先頭の桁で決めた税目フォルダ。文書 ID が空の行は作らない。次の呼び出しは DB から返す（`source: "db"`）
+- DB から返すとき（SPEC-NTA-GET-TAX-ANSWER-004）、行に記録された番号が空でも `taxAnswer.no` は `no`
+
+例: 見出しが `消費税の基本的なしくみ`（`No.` が無い）のページを `no: "6101"` で取ると、`taxAnswer.no` は `"6101"`、`taxAnswer.title` は `"消費税の基本的なしくみ"`、DB の行の文書 ID は `6101`、税目は `shohi`。同じ番号をもう一度求めると `source` は `db` で `taxAnswer.no` は `"6101"`。
 ## できないこと
 
 - 記事を題名やキーワードから探すこと（探すのは `nta_search_tax_answer`）
@@ -139,4 +147,3 @@ DB にその記事の行があっても、節の構造（見出しと段落を�
 2. **全角の数字を受け付けない。** → houki-nta-mcp #66
 3. **番号の桁数と先頭の `0` を確かめない。** → houki-nta-mcp #66
 4. **未対応の番号帯のエラー文に古い版が書かれている。** → houki-nta-mcp #70
-9. **`taxAnswer.no` は引数ではなくページの見出しから読む。** → houki-nta-mcp #73

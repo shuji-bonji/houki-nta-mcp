@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaGetBunshokaitou`、`explainDocIdNotFound`、`renderDocumentMarkdown`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/index-status.ts`、`src/services/pdf-meta.ts`、`src/constants.ts`、`src/errors.ts`、`src/tools/get-doc-not-found.test.ts`
 - 関連する Issue: houki-nta-mcp #2（文書回答事例の `legal_status` の文言）、#23（文書系の bulk download の案内）、#30（索引から消えた文書の印）
 
@@ -90,7 +90,7 @@ DB から返す文書回答事例が国税庁の索引から外れている（bu
 - 国税庁の索引から消えた文書では、索引の状態の行と注記（SPEC-NTA-GET-BUNSHOKAITOU-004）
 - 宛先・発出者が DB にある文書では `## 宛先・発出者` の節。各行を `> ` で引用する
 - `## 本文` の節と本文
-- 添付 PDF がある文書では `## 添付 PDF (<件数> 件)` の節（下のとおり）
+- 添付 PDF がある文書では `## 添付 PDF (<件数> 件)` の節（下のとおり。種別は SPEC-NTA-GET-BUNSHOKAITOU-008 で補った後のもの）
 - 最後に `---` と、`*文書回答事例は照会者・国税庁双方の合意に基づく個別事案回答であり、一般的な法的拘束力はない（実務判断は通達・法令本文に基づく必要あり）*` の注
 
 添付 PDF がある文書では、`## 本文` の後に `## 添付 PDF (<件数> 件)` の節を置く。節の中身は次のとおり。
@@ -98,7 +98,6 @@ DB から返す文書回答事例が国税庁の索引から外れている（bu
 - PDF の本文はこのサーバーが読まないことと、pdf-reader-mcp の `read_url` か、`nta_inspect_pdf_meta` を `save: true` で呼んで `extract_tables` に渡す読み方の案内（`>` の引用）
 - 種別・タイトル・サイズ・読み方・URL の表。行は種別の順（新旧対照表・別紙・Q&A・参考資料・通知・その他）で、同じ種別の中は DB に入っている順
 - `### 読み方` の節。表に現れた種別ごとに 1 行ずつ、その種別の PDF の読み方（`nta_inspect_pdf_meta` の `layout_note` と同じ文。SPEC-NTA-INSPECT-PDF-META-005）
-
 ### SPEC-NTA-GET-BUNSHOKAITOU-006 json の応答
 
 `format` を `json` にしたとき、応答は次のフィールドを持つ。
@@ -110,10 +109,9 @@ DB から返す文書回答事例が国税庁の索引から外れている（bu
 | `document.issuedAt` / `document.issuer` | 発出日と宛先・発出者。DB にあるときだけ付く |
 | `document.sourceUrl` / `document.fetchedAt` | 出典 URL と DB に入れた日時 |
 | `document.fullText` | 本文 |
-| `document.attachedPdfs` | 添付 PDF の配列。要素は `title`・`url`・`sizeKb`・`kind`。添付が無ければ空の配列 |
+| `document.attachedPdfs` | 添付 PDF の配列。要素は `title`・`url`・`sizeKb`・`kind`。`kind` は全要素に付く（DB に無ければ SPEC-NTA-GET-BUNSHOKAITOU-008 で題名から決める）。添付が無ければ空の配列 |
 | `legal_status` | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と、個別事案への回答で一般的な法的拘束力はない旨の `note` |
 | `source` | `db` |
-
 ### SPEC-NTA-GET-BUNSHOKAITOU-007 `available_doc_ids` は発出日の新しい順で、発出日の無い文書は後ろに置く
 
 SPEC-NTA-GET-BUNSHOKAITOU-003 の `available_doc_ids` は、次の順で最大 30 件である。
@@ -124,6 +122,11 @@ SPEC-NTA-GET-BUNSHOKAITOU-003 の `available_doc_ids` は、次の順で最大 3
 
 例: 発出日が `2026-05-01` の `souzoku-X`、`2026-04-01` の `A`、発出日の無い `B` がある DB では、`available_doc_ids` の `docId` は `souzoku-X`・`A`・`B` の順になり、`B` の `issuedAt` は `null`。DB に 31 件以上あっても 30 件までしか入らない。
 
+### SPEC-NTA-GET-BUNSHOKAITOU-008 kind の無い添付 PDF は題名から kind を決めて返す
+
+DB に入っている添付 PDF に `kind` が無い（v0.6.0 期に投入した文書）ときは、題名から `kind` を決めて応答に入れる。判定は `nta_inspect_pdf_meta` の SPEC-NTA-INSPECT-PDF-META-003 と同じ（「新旧対照表」「新旧対応表」「対比表」は `comparison`、「Q&A」「質疑応答」「FAQ」は `qa-pdf`、「別紙」「別表」「様式」「付録」「添付資料」は `attachment`、「通知」「お知らせ」「連絡」は `notice`、「参考」「参考資料」「関連資料」は `related`、どれにも当たらなければ `unknown`）。改正通達の「別紙 N」を `comparison` に付け替える扱い（SPEC-NTA-GET-KAISEI-TSUTATSU-007）は nta_get_bunshokaitou では行わない（`docType` が `kaisei` でないため）。json の `document.attachedPdfs` の全要素に `kind` が付き、markdown の表と `### 読み方` では決めた種別の行になる（「その他」になるのは `unknown` のときだけ）。DB の内容は書き換えない。
+
+例: `kind` の無い「参考資料」「別紙1」「Q&A」を持つ文書回答事例を `json` で取ると、`document.attachedPdfs` の `kind` は順に `related`・`attachment`・`qa-pdf`。markdown の表には「別紙」「Q&A」「参考資料」の行があり、「その他」の行は無い。同じ文書を `nta_inspect_pdf_meta` で見たときと `kind` が一致する。
 ## できないこと
 
 - DB に無い文書を国税庁サイトから取ること（docId から個別ページの URL を組み立てるには税目フォルダの世代差を解く必要があるため。取り込むのは `--bulk-download-bunshokaitou`）。応答に `source: "live"` が現れることはない

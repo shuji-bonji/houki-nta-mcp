@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-get-responses` は 2026-09-27（PR #89）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaInspectPdfMeta`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/pdf-meta.ts`、`src/services/pdf-files.ts`、`src/constants.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #36（読み方の事実と `save: true`）、#44（改正通達の「別紙 N」を新旧対照表として扱う）、#1（docType 別の `legal_status`）
 
@@ -21,7 +21,7 @@
 | `kind`    | 任意 | 返す PDF の種別を 1 つに絞る。`comparison`（新旧対照表）/ `attachment`（別紙・別表）/ `qa-pdf`（Q&A）/ `related`（参考資料）/ `notice`（通知・連絡）/ `unknown`（判定できなかったもの）。省くと全件 |
 | `save`    | 任意 | `true` のとき、返す PDF をサーバー側の保存先に取得し、`saved[]` に絶対パスを返す。既定は `false`                                                                                                    |
 
-保存先は、環境変数 `HOUKI_NTA_FILES_DIR` があればその下、無ければ `XDG_CACHE_HOME`（無ければ `~/.cache`）の下の `houki-nta-mcp/files/`。その中に `<docType>/<docId>/<URL の最後のパス要素>` の形で置く。
+保存先は、環境変数 `HOUKI_NTA_FILES_DIR` があればその下、無ければ `XDG_CACHE_HOME`（無ければ `~/.cache`）の下の `houki-nta-mcp/files/`。その中に `<docType>/<docId>/<ファイル名>` の形で置く。ファイル名は URL の最後のパス要素で、同じ文書の中で重なるときは前のパス要素を付けて区別する（SPEC-NTA-INSPECT-PDF-META-010・018）。
 
 ## 処理の流れ
 
@@ -139,10 +139,9 @@ DB に入っている PDF に `kind` が無い（v0.6.0 期に投入した文書
 
 ### SPEC-NTA-INSPECT-PDF-META-010 save: true で PDF を保存し、saved[] に絶対パスを返す
 
-`save: true` のとき、`attachedPdfs` に入る各 PDF を国税庁サイトから取得して保存先に置き、`saved[]` を返す。`saved[]` の要素は `attachedPdfs` と同じ順で、`url`（`attachedPdfs[].url` と同じ値）・`path`（保存したファイルの絶対パス）・`bytes`（ファイルの大きさ）・`cached`（今回取得しなかったとき `true`）を持つ。保存先のパスは `<保存先>/<docType>/<docId>/<URL の最後のパス要素>`。`save` を渡さないときは `saved` を付けない。
+`save: true` のとき、`attachedPdfs` に入る各 PDF を国税庁サイトから取得して保存先に置き、`saved[]` を返す。`saved[]` の要素は `attachedPdfs` と同じ順で、`url`（`attachedPdfs[].url` と同じ値）・`path`（保存したファイルの絶対パス）・`bytes`（ファイルの大きさ）・`cached`（今回取得しなかったとき `true`）を持つ。保存先のパスは `<保存先>/<docType>/<docId>/<ファイル名>`。ファイル名は、その文書の添付 PDF の中で URL の最後のパス要素が他と重ならなければ最後のパス要素（拡張子が無ければ `.pdf` を付ける）、重なるときは SPEC-NTA-INSPECT-PDF-META-018 のとおり前のパス要素を付けたもの。`save` を渡さないときは `saved` を付けない。
 
 例: `docType: "kaisei"`、`docId: "sample-003"`、URL が `https://…/a.pdf` の PDF は `<保存先>/kaisei/sample-003/a.pdf` に置かれ、`saved[]` に `{ url: "https://…/a.pdf", path: "<そのパス>", bytes: <大きさ>, cached: false }` が入る。
-
 ### SPEC-NTA-INSPECT-PDF-META-011 保存に失敗した PDF は saved[] に error 付きで残す
 
 取得の応答が 2xx でない PDF は、`saved[]` から落とさず `path: null`・`bytes: null`・`cached: false`・`error`（例: `HTTP 404`）で残す。他の PDF の保存は続ける。1 件でも失敗があれば `note` に `<件数> 件の PDF を保存できませんでした（saved[].error を参照）。その PDF は URL のまま読んでください` と書く。失敗した PDF の `next_actions` は保存していないときと同じ（`pdf-reader-mcp:read_url`）になる。
@@ -191,6 +190,11 @@ SPEC-NTA-INSPECT-PDF-META-011 の HTTP の失敗のほかに、次の場合も P
 
 DB にある文書の添付 PDF の記録が JSON として読めないときは、エラーにせず、添付 PDF が無い文書と同じ応答を返す。`attachedPdfs` は `[]` で、`next_actions` は付かない。`docType`・`docId`・`title`・`sourceUrl`・`legal_status` は付く。
 
+### SPEC-NTA-INSPECT-PDF-META-018 同じ文書の中で最後のパス要素が同じ URL は、前のパス要素を付けて区別する
+
+保存するファイル名は、その文書の添付 PDF 全体（`kind` で絞る前）の URL を並べて決める。URL の最後のパス要素が他の PDF と同じときは、その PDF どうしが区別できるようになるまで、直前のパス要素から順に `_` でつないで前に付ける。他と重ならない PDF のファイル名は最後のパス要素のまま（SPEC-NTA-INSPECT-PDF-META-010）。同じ URL は、`kind` で絞っても絞らなくても同じファイル名になる。区別した PDF はそれぞれ取得して別のファイルに置き、`saved[]` の `path` はその PDF 自身のファイルを指す。
+
+例: 添付 PDF の URL が `https://www.nta.go.jp/law/tsutatsu/kihon/shohi/kaisei/0026003-067/pdf/01.pdf` と `https://www.nta.go.jp/law/tsutatsu/kihon/shohi/kaisei/0026003-068/pdf/01.pdf` と `https://www.nta.go.jp/law/tsutatsu/kihon/shohi/kaisei/0026003-067/pdf/02.pdf` の文書を `save: true` で呼ぶと、ファイル名は順に `0026003-067_pdf_01.pdf`・`0026003-068_pdf_01.pdf`・`02.pdf` になる（`pdf_01.pdf` ではまだ重なるので、もう 1 つ前の要素を付ける）。3 件とも取得され、`cached` は `false`。`kind` で絞って 2 件目だけを保存する呼び出しでも、ファイル名は `0026003-068_pdf_01.pdf` のまま。
 ## できないこと
 
 - PDF の本文を読むこと・要約すること（読むのは pdf-reader-mcp などの PDF 読み取りツール。このツールは一覧・種別・読み方・保存だけ）
@@ -208,4 +212,3 @@ DB にある文書の添付 PDF の記録が JSON として読めないときは
 
 1. **索引から消えた文書の印が付かない。** → houki-nta-mcp #71
 5. **`save: true` で絞った結果が 0 件のとき `saved` を付けない。** → houki-nta-mcp #71
-6. **保存ファイル名は URL の最後のパス要素だけで決める。** → houki-nta-mcp #73

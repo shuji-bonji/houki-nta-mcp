@@ -3,7 +3,7 @@
 - 対象: `specs/current/nta_get_tax_answer/spec.md`、`specs/current/nta_get_kaisei_tsutatsu/spec.md`、`specs/current/nta_inspect_pdf_meta/spec.md`、`specs/current/nta_get_jimu_unei/spec.md`、`specs/current/nta_get_bunshokaitou/spec.md`
 - 実装の変更: 要
 - 承認日: 2026-09-30（PR #104）
-- 状態: 草案
+- 状態: 取り込み済み。実装は v0.21.3、`specs/current/` への取り込みは 2026-09-30（JST、v0.21.3 の後の取り込みコミット）
 - 起こした日: 2026-09-30（JST）
 - 起こした役: Spec Steward
 - 関連: houki-nta-mcp #73（DB に入れる値と保存するファイル名の扱い）、#29（取得ツールの DB の使い方）、#36（`save: true`）、#44（「別紙 N」を新旧対照表として扱う）、#74（未決を Issue に移した仕様 PR）
