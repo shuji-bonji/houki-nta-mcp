@@ -13,6 +13,7 @@ import {
   BUNSHOKAITOU_LEGAL_STATUS,
   bunshoMainTaxonomy,
   expandBunshoTaxonomy,
+  JIMU_UNEI_LEGAL_STATUS,
   LEGAL_STATUS_BY_DOCTYPE,
   NTA_GENERAL_INFO_LEGAL_STATUS,
   NTA_HINT,
@@ -424,7 +425,7 @@ export async function getTsutatsu(
         'TSUTATSU_NOT_FOUND',
         `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`,
         {
-          hint: `先に \`houki-nta-mcp --bulk-download --tsutatsu="${resolved.formal}"\` を実行して DB に投入してください（Phase 2d 以降は他通達も bulk DL 経由で対応）。`,
+          hint: `先に \`houki-nta-mcp --bulk-download --tsutatsu="${resolved.formal}"\` を実行して DB に投入してください。`,
           next_actions: [NEXT_ACTIONS.bulkDownload(resolved.formal)],
           supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
           resolved,
@@ -1838,7 +1839,7 @@ export async function handleNtaGetJimuUnei(
       return {
         document: documentJson(doc),
         ...indexMarkFields(doc.orphanedAt),
-        legal_status: TSUTATSU_LEGAL_STATUS,
+        legal_status: JIMU_UNEI_LEGAL_STATUS,
         source: 'db' as const,
       };
     }

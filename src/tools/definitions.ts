@@ -436,7 +436,7 @@ export const resolveAbbreviationTool = {
         type: 'string',
         minLength: 1,
         description:
-          '略称。例: "消基通", "所基通", "電帳法"。全角の英数字・ダッシュ類・全角スペースは半角に揃えてから引く',
+          '略称。例: "消基通", "所基通", "法基通"。全角の英数字・ダッシュ類・全角スペースは半角に揃えてから引く',
       },
     },
     required: ['abbr'],

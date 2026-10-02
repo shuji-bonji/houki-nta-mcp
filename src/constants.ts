@@ -96,6 +96,18 @@ export const TSUTATSU_LEGAL_STATUS = {
 } as const;
 
 /**
+ * `nta_get_jimu_unei` の json の `legal_status`。拘束力は `TSUTATSU_LEGAL_STATUS` と同じで、`note` は
+ * markdown の注（`*通達・事務運営指針は行政内部文書であり、…*`）と同じ語で事務運営指針を名指しする
+ * （v0.23.0、差分 20261003-t5-docs-mismatch の「実装 PR で直す文書」3、houki-nta-mcp #70）
+ */
+export const JIMU_UNEI_LEGAL_STATUS = {
+  binds_citizens: false,
+  binds_courts: false,
+  binds_tax_office: true,
+  note: '通達・事務運営指針は行政内部文書であり、納税者・裁判所には直接的拘束力なし。ただし税務署員は職務として守る義務あり（最高裁 昭和43.12.24）',
+} as const;
+
+/**
  * 基本通達 4 種が解釈の対象にしている法律・政令・省令（Issue #20）。
  *
  * 通達は国民・裁判所を拘束しない（`TSUTATSU_LEGAL_STATUS`）ので、根拠は法律の条文で

@@ -384,7 +384,7 @@ houki-nta-mcp --bulk-download-bunshokaitou # 文書回答事例
 houki-nta-mcp --bulk-download-tax-answer   # タックスアンサー
 houki-nta-mcp --bulk-download-qa           # 質疑応答事例
 
-# 30 日以上古い節を再取得（差分更新）
+# 30 日より古い節を再取得（差分更新）
 houki-nta-mcp --refresh-stale=30 --apply
 
 # 9 種別の代表 URL を canary 検証（HP 構造変更検知）
@@ -634,9 +634,9 @@ v0.10.0 以降、`tools/call` の応答は次の 3 経路でも同じ形式に�
 
 | 経路 | `code` | 内容 |
 |------|--------|------|
-| ツール名が `tools/list` にない | `UNKNOWN_TOOL` | `hint` に利用可能なツール名一覧 |
+| ツール名が `tools/list` にない | `UNKNOWN_TOOL` | `retryable: false`。`error` は `存在しないツールです: <ツール名>`、`hint` に利用可能なツール名一覧 |
 | 引数が `tools/list` の `inputSchema` に合わない（型・必須・enum・範囲・空文字・inputSchema に無い引数。v0.14.0 から未知の引数、v0.22.0 から範囲と空文字もエラー） | `INVALID_ARGUMENT` | `detail.issues[]` に違反 1 件ごとの `path`（引数名）と `message`（日本語の 1 文）。handler は呼ばれません |
-| handler が例外を投げた | `INTERNAL_ERROR` | `retryable: true`、`detail.cause` に例外メッセージ |
+| handler が例外を投げた | `INTERNAL_ERROR` | `retryable: false`（不具合の報告を求めます。`next_actions` は付きません）、`detail.cause` に例外メッセージ |
 
 handler が `LawServiceError`（上の JSON 形式）を返した場合も `isError: true` が付きます。
 
