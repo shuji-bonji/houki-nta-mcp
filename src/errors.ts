@@ -171,6 +171,15 @@ export const NEXT_ACTIONS = {
       : { command: 'houki-nta-mcp --bulk-download' },
   }),
   /**
+   * v0.23.0（T5、SPEC-NTA-SEARCH-TSUTATSU-003）: 基本通達 4 種をまとめて投入する `--bulk-download-all` を案内する。
+   * `nta_search_tsutatsu` の DB が空のときに使う。1 つの通達を案内する `bulkDownload(target)` とは分けている
+   */
+  bulkDownloadAll: (): NextAction => ({
+    action: 'cli_bulk_download',
+    reason: 'ローカル DB に未投入のため bulk download が必要',
+    example: { command: 'houki-nta-mcp --bulk-download-all' },
+  }),
+  /**
    * Issue #23 (v0.13.0): 文書系（質疑応答事例・タックスアンサー・改正通達・事務運営指針・文書回答事例）の
    * bulk download を案内する。`bulkDownload()` は基本通達用（`--bulk-download --tsutatsu=…`）なので分けている。
    *

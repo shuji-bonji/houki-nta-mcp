@@ -262,10 +262,12 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
   const db = openDb(options.dbPath);
   try {
     if (!hasAnyClause(db)) {
+      // v0.23.0（T5）: このツールは基本通達 4 種をまとめて検索するので、説明文と freshness.warning と同じく
+      // --bulk-download-all を案内する（SPEC-NTA-SEARCH-TSUTATSU-003）
       return makeError('TSUTATSU_NOT_FOUND', 'ローカル DB に検索対象がありません', {
-        hint: '初回は `houki-nta-mcp --bulk-download` を実行して通達一式をローカル DB に投入してください（消費税法基本通達: 約 100 秒）',
+        hint: '初回は `houki-nta-mcp --bulk-download-all` を実行して、基本通達 4 種をローカル DB に投入してください。1 つの通達だけを先に入れるときは `houki-nta-mcp --bulk-download --tsutatsu=<正式名>` でも投入できます',
         tool: 'nta_search_tsutatsu',
-        next_actions: [NEXT_ACTIONS.bulkDownload()],
+        next_actions: [NEXT_ACTIONS.bulkDownloadAll()],
       });
     }
 
@@ -483,6 +485,8 @@ function renderLiveResult(
     case 'parse_error':
       return makeError('INTERNAL_ERROR', `通達ページのパースに失敗: ${live.error.message}`, {
         url: live.url,
+        // v0.23.0（T5）: ページの構造の変更かパーサの不具合で、時間をおいても結果は変わらない（SPEC-NTA-COMMON-ERRORS-009）
+        retryable: false,
         hint: 'パーサのバグまたは国税庁ページの構造変更の可能性。報告してください',
         detail: { url: live.url, cause: live.error.message },
       });
@@ -1068,6 +1072,8 @@ export async function getQa(
     if (err instanceof TsutatsuParseError) {
       return makeError('INTERNAL_ERROR', `質疑応答事例ページのパースに失敗: ${err.message}`, {
         url,
+        // v0.23.0（T5）: ページの構造の変更かパーサの不具合で、時間をおいても結果は変わらない（SPEC-NTA-COMMON-ERRORS-009）
+        retryable: false,
         hint: 'パーサのバグまたは国税庁ページの構造変更の可能性。報告してください',
         detail: { url, cause: err.message },
       });
@@ -1297,6 +1303,15 @@ export async function handleNtaSearchTaxAnswer(
       ...(freshness ? { freshness } : {}),
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
+      // v0.23.0（T5）: 先頭の記事の本文を読む案内。docId は 4 桁の記事番号で、no にそのまま渡せる
+      // （SPEC-NTA-SEARCH-TAX-ANSWER-006）
+      next_actions: [
+        {
+          action: 'nta_get_tax_answer',
+          reason: '記事の本文を読めます',
+          example: { no: hits[0].docId },
+        },
+      ],
     };
   } catch (err) {
     const unreadable = unreadableFetchedAt(
@@ -1399,6 +1414,8 @@ export async function getTaxAnswer(
     if (err instanceof TsutatsuParseError) {
       return makeError('INTERNAL_ERROR', `タックスアンサーページのパースに失敗: ${err.message}`, {
         url,
+        // v0.23.0（T5）: ページの構造の変更かパーサの不具合で、時間をおいても結果は変わらない（SPEC-NTA-COMMON-ERRORS-009）
+        retryable: false,
         hint: 'パーサのバグまたは国税庁ページの構造変更の可能性。報告してください',
         detail: { url, cause: err.message },
       });
@@ -1533,11 +1550,32 @@ export async function handleResolveAbbreviation(args: ResolveAbbreviationArgs) {
     abbr: args.abbr,
     resolved: result,
     in_scope: isInScope,
-    ...(isInScope
-      ? {}
-      : {
-          hint: `このエントリは ${result.source_mcp_hint} の管轄です。${result.source_mcp_hint}-mcp で取得してください。`,
-        }),
+    ...(isInScope ? {} : describeOutOfScope(result.source_mcp_hint ?? 'unknown')),
+  };
+}
+
+/** houki-hub family にある MCP サーバーの `source_mcp_hint`（houki-nta 自身を除く） */
+const FAMILY_MCP_HINTS: ReadonlySet<string> = new Set(['houki-egov']);
+
+/**
+ * `resolve_abbreviation` で管轄外のエントリに付ける `hint` と `next_actions` を作る（SPEC-NTA-RESOLVE-ABBREVIATION-003）。
+ *
+ * - family にある管轄（houki-egov）: その MCP で取得する案内と、`nta_get_tsutatsu` の `OUT_OF_SCOPE` と同じ `delegate_to_mcp`
+ * - family にまだ無い管轄: 対応する MCP サーバーがまだ無い旨だけを書き、`next_actions` は付けない。
+ *   `<source_mcp_hint>-mcp` の形で、まだ無いサーバーの名前を案内しない（v0.23.0 の T5。v0.22.0 までは組み立てていた）
+ */
+export function describeOutOfScope(sourceMcpHint: string): {
+  hint: string;
+  next_actions?: NextAction[];
+} {
+  if (FAMILY_MCP_HINTS.has(sourceMcpHint)) {
+    return {
+      hint: `このエントリは ${sourceMcpHint} の管轄です。${sourceMcpHint}-mcp で取得してください。`,
+      next_actions: [NEXT_ACTIONS.delegateTo(sourceMcpHint)],
+    };
+  }
+  return {
+    hint: `このエントリは ${sourceMcpHint} の管轄ですが、対応する MCP サーバーはまだありません。`,
   };
 }
 

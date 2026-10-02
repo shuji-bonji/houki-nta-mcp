@@ -11,7 +11,7 @@
 
 import { Server } from '@modelcontextprotocol/server';
 import { PACKAGE_INFO } from './config.js';
-import { isLawServiceError, makeError, NEXT_ACTIONS } from './errors.js';
+import { isLawServiceError, makeError } from './errors.js';
 import { tools } from './tools/definitions.js';
 import { toolHandlers } from './tools/handlers.js';
 import { logger } from './utils/logger.js';
@@ -47,8 +47,10 @@ export function createServer(): Server {
     try {
       const handler = toolHandlers[name];
       if (!handler) {
-        const err = makeError('UNKNOWN_TOOL', `Unknown tool: ${name}`, {
+        // v0.23.0（T5）: houki-egov-mcp と同じ日本語の文と retryable: false（SPEC-NTA-COMMON-ERRORS-002）
+        const err = makeError('UNKNOWN_TOOL', `存在しないツールです: ${name}`, {
           hint: `利用可能なツール: ${Object.keys(toolHandlers).join(', ')}`,
+          retryable: false,
           next_actions: [
             {
               action: 'list_tools',
@@ -81,11 +83,12 @@ export function createServer(): Server {
       };
     } catch (error) {
       // 想定外の例外（バグ等）。INTERNAL_ERROR として LLM 可読形に変換。
+      // v0.23.0（T5）: 同じ呼び出しをやり直しても結果は変わらないので retryable: false にし、
+      // 再試行の案内（retry_later）は付けない（SPEC-NTA-COMMON-ERRORS-006、houki-egov-mcp と同じ）
       const cause = error instanceof Error ? error.message : String(error);
       const err = makeError('INTERNAL_ERROR', `内部エラーが発生しました: ${cause}`, {
         hint: 'バグの可能性があります。再現手順を添えて GitHub issue でご報告ください',
-        retryable: true,
-        next_actions: [NEXT_ACTIONS.retryLater()],
+        retryable: false,
         detail: { cause },
         tool: name,
       });
