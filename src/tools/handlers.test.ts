@@ -911,9 +911,17 @@ function utf8HtmlResponse(fixtureName: string): Response {
 }
 
 describe('getTaxAnswer — 引数バリデーション', () => {
-  it('SPEC-NTA-GET-TAX-ANSWER-001 数字以外の番号はエラー', async () => {
-    const r = (await getTaxAnswer({ no: 'abc' })) as { error?: string };
-    expect(r.error).toContain('数字');
+  it('SPEC-NTA-GET-TAX-ANSWER-001 数字以外の番号はエラー（v0.22.0 から detail.issues の message に「半角の数字 4 桁」）', async () => {
+    const r = (await getTaxAnswer({ no: 'abc' })) as {
+      code?: string;
+      error?: string;
+      detail?: { issues?: Array<{ path: string; message: string }> };
+    };
+    expect(r.code).toBe('INVALID_ARGUMENT');
+    expect(r.error).toBe('no の形が受け付ける形ではありません: abc');
+    expect(r.detail?.issues).toEqual([
+      { path: 'no', message: '半角の数字 4 桁で指定してください' },
+    ]);
   });
 
   it('SPEC-NTA-GET-TAX-ANSWER-002 8xxx 番台（未対応）はエラー + hint', async () => {

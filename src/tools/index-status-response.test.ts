@@ -26,7 +26,7 @@ beforeEach(() => {
      VALUES ('jimu-unei', ?, 'shotoku', ?, ?, '2026-09-07T00:00:00Z', ?, '[]', ?, ?)`
   );
   insert.run(
-    'A',
+    'shotoku/a',
     '現行の事務運営指針',
     'https://example.com/a.htm',
     '源泉徴収の事務運営について',
@@ -34,7 +34,7 @@ beforeEach(() => {
     null
   );
   insert.run(
-    'B',
+    'shotoku/b',
     '消えた事務運営指針',
     'https://example.com/b.htm',
     '源泉徴収の事務運営について',
@@ -55,13 +55,13 @@ describe('nta_search_jimu_unei — 索引から消えた文書の扱い', () => 
       search_notes?: string[];
     };
 
-    expect(r.results.map((x) => x.docId).sort()).toEqual(['A', 'B']);
+    expect(r.results.map((x) => x.docId).sort()).toEqual(['shotoku/a', 'shotoku/b']);
 
-    const current = r.results.find((x) => x.docId === 'A');
+    const current = r.results.find((x) => x.docId === 'shotoku/a');
     expect(current?.index_status).toBeUndefined();
     expect(current?.orphaned_at).toBeUndefined();
 
-    const removed = r.results.find((x) => x.docId === 'B');
+    const removed = r.results.find((x) => x.docId === 'shotoku/b');
     expect(removed?.index_status).toBe('removed_from_index');
     expect(removed?.orphaned_at).toBe(ORPHANED_AT);
 
@@ -69,23 +69,24 @@ describe('nta_search_jimu_unei — 索引から消えた文書の扱い', () => 
   });
 });
 
-describe('SPEC-NTA-GET-JIMU-UNEI-004 nta_get_jimu_unei — 索引から消えた文書の扱い', () => {
+// docId は SPEC-NTA-GET-JIMU-UNEI-010 の形（税目/フォルダー名）で書く（v0.22.0 から形の合わない docId は DB を引かない）
+describe('SPEC-NTA-GET-JIMU-UNEI-004 SPEC-NTA-GET-JIMU-UNEI-010 nta_get_jimu_unei — 索引から消えた文書の扱い', () => {
   it('format=json に index_status / orphaned_at / notice が付く', async () => {
-    const r = (await handleNtaGetJimuUnei({ docId: 'B', format: 'json' }, { dbPath })) as {
+    const r = (await handleNtaGetJimuUnei({ docId: 'shotoku/b', format: 'json' }, { dbPath })) as {
       document: { docId: string; orphanedAt?: string };
       index_status?: string;
       orphaned_at?: string;
       notice?: string;
     };
 
-    expect(r.document.docId).toBe('B');
+    expect(r.document.docId).toBe('shotoku/b');
     expect(r.index_status).toBe('removed_from_index');
     expect(r.orphaned_at).toBe(ORPHANED_AT);
     expect(r.notice).toContain('索引から外れています');
   });
 
   it('索引にある文書には何も付かない', async () => {
-    const r = (await handleNtaGetJimuUnei({ docId: 'A', format: 'json' }, { dbPath })) as {
+    const r = (await handleNtaGetJimuUnei({ docId: 'shotoku/a', format: 'json' }, { dbPath })) as {
       index_status?: string;
       notice?: string;
     };
@@ -94,7 +95,7 @@ describe('SPEC-NTA-GET-JIMU-UNEI-004 nta_get_jimu_unei — 索引から消えた
   });
 
   it('format=markdown には索引の状態の行が入る', async () => {
-    const r = (await handleNtaGetJimuUnei({ docId: 'B' }, { dbPath })) as string;
+    const r = (await handleNtaGetJimuUnei({ docId: 'shotoku/b' }, { dbPath })) as string;
     expect(typeof r).toBe('string');
     expect(r).toContain('索引の状態');
     expect(r).toContain('removed_from_index');

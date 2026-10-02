@@ -52,6 +52,17 @@ function seed(dbPath: string, docs: Array<[docType: string, docId: string, title
 
 type Getter = (docId: string, dbPath: string) => Promise<unknown>;
 
+/**
+ * DB に無い docId。v0.22.0 から docId の形を DB を引く前に確かめる
+ * （SPEC-NTA-GET-KAISEI-TSUTATSU-010・SPEC-NTA-GET-JIMU-UNEI-010・SPEC-NTA-GET-BUNSHOKAITOU-010）ので、
+ * 種別ごとに受け付ける形で書く
+ */
+function missingDocId(docType: string): string {
+  if (docType === 'kaisei') return '0025004-999';
+  if (docType === 'jimu-unei') return 'shotoku/shinkoku/999999';
+  return 'shotoku/999999';
+}
+
 const cases: ReadonlyArray<
   [
     tool: string,
@@ -93,13 +104,14 @@ const cases: ReadonlyArray<
 ];
 
 describe('取得系: その種別の文書が DB に 1 件も無いときは投入を案内する', () => {
-  for (const [tool, , code, flag, , label, call] of cases) {
-    it(`SPEC-NTA-GET-KAISEI-TSUTATSU-001 SPEC-NTA-GET-JIMU-UNEI-001 SPEC-NTA-GET-BUNSHOKAITOU-002 ${tool}: code=${code}、next_actions に ${flag}、hint に DB のパス`, async () => {
-      const r = (await call('0025004-999', ':memory:')) as NotFoundResponse;
+  for (const [tool, docType, code, flag, , label, call] of cases) {
+    it(`SPEC-NTA-GET-KAISEI-TSUTATSU-001 SPEC-NTA-GET-JIMU-UNEI-001 SPEC-NTA-GET-BUNSHOKAITOU-002 SPEC-NTA-GET-KAISEI-TSUTATSU-010 SPEC-NTA-GET-JIMU-UNEI-010 SPEC-NTA-GET-BUNSHOKAITOU-010 ${tool}: code=${code}、next_actions に ${flag}、hint に DB のパス`, async () => {
+      const missing = missingDocId(docType);
+      const r = (await call(missing, ':memory:')) as NotFoundResponse;
       expect(r.code).toBe(code);
       expect(r.tool).toBe(tool);
       expect(r.error).toBe(
-        `ローカル DB に${label}が 1 件も無いため、docId="0025004-999" を取得できません`
+        `ローカル DB に${label}が 1 件も無いため、docId="${missing}" を取得できません`
       );
       expect(r.hint).toContain(':memory:');
       expect(r.hint).toContain('HOUKI_NTA_DB_PATH');
@@ -133,11 +145,12 @@ describe('取得系: 文書がある DB で docId が無いときは「見つか
   });
 
   for (const [tool, docType, code, flag, searchTool, label, call] of cases) {
-    it(`SPEC-NTA-GET-KAISEI-TSUTATSU-002 SPEC-NTA-GET-JIMU-UNEI-002 SPEC-NTA-GET-BUNSHOKAITOU-003 ${tool}: 「見つかりません」、available_doc_ids、next_actions に ${searchTool}`, async () => {
-      const r = (await call('no-such-doc', dbPath)) as NotFoundResponse;
+    it(`SPEC-NTA-GET-KAISEI-TSUTATSU-002 SPEC-NTA-GET-JIMU-UNEI-002 SPEC-NTA-GET-BUNSHOKAITOU-003 SPEC-NTA-GET-KAISEI-TSUTATSU-010 SPEC-NTA-GET-JIMU-UNEI-010 SPEC-NTA-GET-BUNSHOKAITOU-010 ${tool}: 「見つかりません」、available_doc_ids、next_actions に ${searchTool}`, async () => {
+      const missing = missingDocId(docType);
+      const r = (await call(missing, dbPath)) as NotFoundResponse;
       expect(r.code).toBe(code);
       expect(r.tool).toBe(tool);
-      expect(r.error).toBe(`${label} docId="no-such-doc" は見つかりません`);
+      expect(r.error).toBe(`${label} docId="${missing}" は見つかりません`);
       expect(r.error).not.toContain('未投入');
       expect(r.hint).toContain(`DB の${label} 1 件に、この docId はありません`);
       expect(r.hint).toContain(searchTool);
@@ -151,8 +164,8 @@ describe('取得系: 文書がある DB で docId が無いときは「見つか
       expect(docType).toBeTruthy();
     });
 
-    it(`SPEC-NTA-GET-KAISEI-TSUTATSU-001 SPEC-NTA-GET-JIMU-UNEI-001 SPEC-NTA-GET-BUNSHOKAITOU-002 ${tool}: 別の種別の文書しか無い DB では投入を案内する`, async () => {
-      const r = (await call('no-such-doc', otherTypeOnlyPath)) as NotFoundResponse;
+    it(`SPEC-NTA-GET-KAISEI-TSUTATSU-001 SPEC-NTA-GET-JIMU-UNEI-001 SPEC-NTA-GET-BUNSHOKAITOU-002 SPEC-NTA-GET-KAISEI-TSUTATSU-010 SPEC-NTA-GET-JIMU-UNEI-010 SPEC-NTA-GET-BUNSHOKAITOU-010 ${tool}: 別の種別の文書しか無い DB では投入を案内する`, async () => {
+      const r = (await call(missingDocId(docType), otherTypeOnlyPath)) as NotFoundResponse;
       expect(r.code).toBe(code);
       expect(r.next_actions?.[0]?.action).toBe('cli_bulk_download');
       expect(r.next_actions?.[0]?.example?.command).toBe(`houki-nta-mcp ${flag}`);

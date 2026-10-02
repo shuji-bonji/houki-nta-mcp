@@ -257,7 +257,7 @@ describe('nta_get_bunshokaitou', () => {
     seedDocuments(dbPath, [
       {
         docType: 'bunshokaitou',
-        docId: 'full-001',
+        docId: 'shotoku/full-001',
         title: '文書回答事例の題名',
         issuedAt: '2026-05-01',
         issuer: '東京国税局審理課長\n照会者 株式会社例',
@@ -267,7 +267,7 @@ describe('nta_get_bunshokaitou', () => {
       },
       {
         docType: 'bunshokaitou',
-        docId: 'plain-001',
+        docId: 'shotoku/plain-001',
         taxonomy: null,
         title: '添付の無い文書回答事例',
         fullText: '添付の無い本文。',
@@ -278,9 +278,12 @@ describe('nta_get_bunshokaitou', () => {
 
   it('SPEC-NTA-GET-BUNSHOKAITOU-005 markdown（既定）は見出し・種別などの行・宛先・本文・添付 PDF・末尾の注の順に並ぶ', async () => {
     seedBunshokaitou();
-    const md = (await handleNtaGetBunshokaitou({ docId: 'full-001' }, { dbPath })) as string;
+    const md = (await handleNtaGetBunshokaitou(
+      { docId: 'shotoku/full-001' },
+      { dbPath }
+    )) as string;
     const explicit = (await handleNtaGetBunshokaitou(
-      { docId: 'full-001', format: 'markdown' },
+      { docId: 'shotoku/full-001', format: 'markdown' },
       { dbPath }
     )) as string;
 
@@ -292,7 +295,7 @@ describe('nta_get_bunshokaitou', () => {
       '- **種別**: 文書回答事例',
       '- **発出日**: 2026-05-01',
       '- **税目**: ',
-      '- **docId**: `full-001`',
+      '- **docId**: `shotoku/full-001`',
       '- **出典**: https://www.nta.go.jp/about/organization/tokyo/bunshokaito/x/full-001.htm',
       `- **取得**: ${FETCHED_AT}`,
       '## 宛先・発出者',
@@ -316,7 +319,10 @@ describe('nta_get_bunshokaitou', () => {
 
   it('SPEC-NTA-GET-BUNSHOKAITOU-005 markdown: 発出日・税目・宛先・添付が DB に無ければその行と節を出さない', async () => {
     seedBunshokaitou();
-    const md = (await handleNtaGetBunshokaitou({ docId: 'plain-001' }, { dbPath })) as string;
+    const md = (await handleNtaGetBunshokaitou(
+      { docId: 'shotoku/plain-001' },
+      { dbPath }
+    )) as string;
 
     expect(md).toContain('# 添付の無い文書回答事例');
     expect(md).toContain('- **種別**: 文書回答事例');
@@ -324,12 +330,15 @@ describe('nta_get_bunshokaitou', () => {
     expect(md).not.toContain('- **税目**');
     expect(md).not.toContain('## 宛先・発出者');
     expect(md).not.toContain('## 添付 PDF');
-    expectInOrder(md, ['- **docId**: `plain-001`', '## 本文', '添付の無い本文。', '---']);
+    expectInOrder(md, ['- **docId**: `shotoku/plain-001`', '## 本文', '添付の無い本文。', '---']);
   });
 
   it('SPEC-NTA-GET-BUNSHOKAITOU-005 markdown の添付 PDF の節: 案内の引用・種別の順の表・表に出た種別ごとの読み方', async () => {
     seedBunshokaitou();
-    const md = (await handleNtaGetBunshokaitou({ docId: 'full-001' }, { dbPath })) as string;
+    const md = (await handleNtaGetBunshokaitou(
+      { docId: 'shotoku/full-001' },
+      { dbPath }
+    )) as string;
     const sec = pdfSection(md);
 
     // 案内（> の引用）: pdf-reader-mcp の read_url か、nta_inspect_pdf_meta を save: true で呼んで extract_tables
@@ -368,12 +377,15 @@ describe('nta_get_bunshokaitou', () => {
     seedDocuments(dbPath, [
       {
         docType: 'bunshokaitou',
-        docId: 'one-kind',
+        docId: 'shotoku/one-kind',
         title: '参考資料だけの事例',
         pdfs: [{ title: '参考資料', url: 'https://x/rel.pdf', kind: 'related' }],
       },
     ]);
-    const md = (await handleNtaGetBunshokaitou({ docId: 'one-kind' }, { dbPath })) as string;
+    const md = (await handleNtaGetBunshokaitou(
+      { docId: 'shotoku/one-kind' },
+      { dbPath }
+    )) as string;
     expect(md).toContain('## 添付 PDF (1 件)');
     const notes = await layoutNotes(join(dir, 'probe.db'));
     const reading = readingSection(md);
@@ -385,13 +397,13 @@ describe('nta_get_bunshokaitou', () => {
   it('SPEC-NTA-GET-BUNSHOKAITOU-006 json は document の各フィールド・legal_status（拘束力なし）・source=db を持つ', async () => {
     seedBunshokaitou();
     const r = (await handleNtaGetBunshokaitou(
-      { docId: 'full-001', format: 'json' },
+      { docId: 'shotoku/full-001', format: 'json' },
       { dbPath }
     )) as DocumentJson;
 
     expect(r.code).toBeUndefined();
     expect(r.document.docType).toBe('bunshokaitou');
-    expect(r.document.docId).toBe('full-001');
+    expect(r.document.docId).toBe('shotoku/full-001');
     expect(r.document.taxonomy).toBe('shohi');
     expect(r.document.title).toBe('文書回答事例の題名');
     expect(r.document.issuedAt).toBe('2026-05-01');
@@ -416,7 +428,7 @@ describe('nta_get_bunshokaitou', () => {
   it('SPEC-NTA-GET-BUNSHOKAITOU-006 json: 発出日・宛先が無ければ付かず、添付が無ければ attachedPdfs は空の配列', async () => {
     seedBunshokaitou();
     const r = (await handleNtaGetBunshokaitou(
-      { docId: 'plain-001', format: 'json' },
+      { docId: 'shotoku/plain-001', format: 'json' },
       { dbPath }
     )) as DocumentJson;
 
@@ -433,7 +445,7 @@ describe('nta_get_bunshokaitou', () => {
       { docType: 'bunshokaitou', docId: 'A', title: '4 月の事例', issuedAt: '2026-04-01' },
       { docType: 'bunshokaitou', docId: 'souzoku-X', title: '5 月の事例', issuedAt: '2026-05-01' },
     ]);
-    const r = (await handleNtaGetBunshokaitou({ docId: 'no-such-doc' }, { dbPath })) as {
+    const r = (await handleNtaGetBunshokaitou({ docId: 'shotoku/no-such-doc' }, { dbPath })) as {
       code?: string;
       available_doc_ids?: Array<{ docId: string; title: string; issuedAt: string | null }>;
     };
@@ -456,7 +468,7 @@ describe('nta_get_bunshokaitou', () => {
     rows.push({ docType: 'bunshokaitou', docId: 'z-none', title: '発出日なし' });
     seedDocuments(dbPath, rows);
 
-    const r = (await handleNtaGetBunshokaitou({ docId: 'no-such-doc' }, { dbPath })) as {
+    const r = (await handleNtaGetBunshokaitou({ docId: 'shotoku/no-such-doc' }, { dbPath })) as {
       available_doc_ids?: Array<{ docId: string }>;
     };
     const ids = r.available_doc_ids?.map((d) => d.docId) ?? [];
@@ -482,7 +494,7 @@ describe('nta_get_jimu_unei', () => {
     seedDocuments(dbPath, [
       {
         docType: 'jimu-unei',
-        docId: 'jimu-001',
+        docId: 'shotoku/jimu-001',
         taxonomy: 'shotoku',
         title: '事務運営指針の題名',
         issuedAt: '2025-06-30',
@@ -493,7 +505,7 @@ describe('nta_get_jimu_unei', () => {
       },
       {
         docType: 'jimu-unei',
-        docId: 'jimu-plain',
+        docId: 'shotoku/jimu-plain',
         taxonomy: null,
         title: '添付の無い事務運営指針',
         fullText: '添付の無い本文。',
@@ -505,13 +517,13 @@ describe('nta_get_jimu_unei', () => {
   it('SPEC-NTA-GET-JIMU-UNEI-005 json は document の各フィールド・legal_status（税務署員を拘束）・source=db を持つ', async () => {
     seedJimuUnei();
     const r = (await handleNtaGetJimuUnei(
-      { docId: 'jimu-001', format: 'json' },
+      { docId: 'shotoku/jimu-001', format: 'json' },
       { dbPath }
     )) as DocumentJson;
 
     expect(r.code).toBeUndefined();
     expect(r.document.docType).toBe('jimu-unei');
-    expect(r.document.docId).toBe('jimu-001');
+    expect(r.document.docId).toBe('shotoku/jimu-001');
     expect(r.document.taxonomy).toBe('shotoku');
     expect(r.document.title).toBe('事務運営指針の題名');
     expect(r.document.issuedAt).toBe('2025-06-30');
@@ -531,7 +543,7 @@ describe('nta_get_jimu_unei', () => {
   it('SPEC-NTA-GET-JIMU-UNEI-005 json: 発出日・宛先が DB に無ければ付かない', async () => {
     seedJimuUnei();
     const r = (await handleNtaGetJimuUnei(
-      { docId: 'jimu-plain', format: 'json' },
+      { docId: 'shotoku/jimu-plain', format: 'json' },
       { dbPath }
     )) as DocumentJson;
     expect(r.document.issuedAt ?? undefined).toBeUndefined();
@@ -541,9 +553,9 @@ describe('nta_get_jimu_unei', () => {
 
   it('SPEC-NTA-GET-JIMU-UNEI-006 markdown（既定）は見出し・種別などの行・宛先・本文・添付 PDF・末尾の注の順に並ぶ', async () => {
     seedJimuUnei();
-    const md = (await handleNtaGetJimuUnei({ docId: 'jimu-001' }, { dbPath })) as string;
+    const md = (await handleNtaGetJimuUnei({ docId: 'shotoku/jimu-001' }, { dbPath })) as string;
     const explicit = (await handleNtaGetJimuUnei(
-      { docId: 'jimu-001', format: 'markdown' },
+      { docId: 'shotoku/jimu-001', format: 'markdown' },
       { dbPath }
     )) as string;
 
@@ -555,7 +567,7 @@ describe('nta_get_jimu_unei', () => {
       '- **種別**: 事務運営指針',
       '- **発出日**: 2025-06-30',
       '- **税目**: ',
-      '- **docId**: `jimu-001`',
+      '- **docId**: `shotoku/jimu-001`',
       '- **出典**: https://www.nta.go.jp/law/jimu-unei/shotoku/jimu-001.htm',
       `- **取得**: ${FETCHED_AT}`,
       '## 宛先・発出者',
@@ -578,25 +590,25 @@ describe('nta_get_jimu_unei', () => {
 
   it('SPEC-NTA-GET-JIMU-UNEI-006 markdown: 発出日・税目・宛先・添付が DB に無ければその行と節を出さない', async () => {
     seedJimuUnei();
-    const md = (await handleNtaGetJimuUnei({ docId: 'jimu-plain' }, { dbPath })) as string;
+    const md = (await handleNtaGetJimuUnei({ docId: 'shotoku/jimu-plain' }, { dbPath })) as string;
     expect(md).toContain('- **種別**: 事務運営指針');
     expect(md).not.toContain('- **発出日**');
     expect(md).not.toContain('- **税目**');
     expect(md).not.toContain('## 宛先・発出者');
     expect(md).not.toContain('## 添付 PDF');
-    expectInOrder(md, ['- **docId**: `jimu-plain`', '## 本文', '添付の無い本文。', '---']);
+    expectInOrder(md, ['- **docId**: `shotoku/jimu-plain`', '## 本文', '添付の無い本文。', '---']);
   });
 
   it('SPEC-NTA-GET-JIMU-UNEI-007 json の document.attachedPdfs は DB の添付 PDF をそのまま入れ、無ければ空の配列', async () => {
     seedJimuUnei();
     const r = (await handleNtaGetJimuUnei(
-      { docId: 'jimu-001', format: 'json' },
+      { docId: 'shotoku/jimu-001', format: 'json' },
       { dbPath }
     )) as DocumentJson;
     expect(r.document.attachedPdfs).toEqual(PDFS);
 
     const plain = (await handleNtaGetJimuUnei(
-      { docId: 'jimu-plain', format: 'json' },
+      { docId: 'shotoku/jimu-plain', format: 'json' },
       { dbPath }
     )) as DocumentJson;
     expect(plain.document.attachedPdfs).toEqual([]);
@@ -604,7 +616,7 @@ describe('nta_get_jimu_unei', () => {
 
   it('SPEC-NTA-GET-JIMU-UNEI-007 markdown の添付 PDF の節: 案内の引用・種別の順の表・表に出た種別ごとの読み方', async () => {
     seedJimuUnei();
-    const md = (await handleNtaGetJimuUnei({ docId: 'jimu-001' }, { dbPath })) as string;
+    const md = (await handleNtaGetJimuUnei({ docId: 'shotoku/jimu-001' }, { dbPath })) as string;
     const sec = pdfSection(md);
     expectInOrder(md, ['## 本文', '## 添付 PDF (3 件)']);
 

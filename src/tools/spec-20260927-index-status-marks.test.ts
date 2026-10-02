@@ -136,7 +136,10 @@ function expectNoticeContent(notice: string | undefined): void {
   expect(notice).toContain('404');
 }
 
-/** nta_get_jimu_unei（SPEC-NTA-GET-JIMU-UNEI-004）が返す注記。同じ文であることを比べるために使う */
+/**
+ * nta_get_jimu_unei（SPEC-NTA-GET-JIMU-UNEI-004）が返す注記。同じ文であることを比べるために使う。
+ * docId は SPEC-NTA-GET-JIMU-UNEI-010 の形（税目/フォルダー名）で書く（v0.22.0 から形の合わない docId は DB を引かない）
+ */
 async function jimuUneiNotice(): Promise<string | undefined> {
   const jdir = mkdtempSync(join(tmpdir(), 'houki-nta-spec-jimu-'));
   const jdbPath = join(jdir, 'cache.db');
@@ -145,11 +148,11 @@ async function jimuUneiNotice(): Promise<string | undefined> {
     initSchema(db);
     db.prepare(
       `INSERT INTO document(doc_type, doc_id, taxonomy, title, source_url, fetched_at, full_text, attached_pdfs_json, content_hash, orphaned_at)
-       VALUES ('jimu-unei', 'J', 'shotoku', '消えた事務運営指針', 'https://example.com/j.htm', '2026-09-07T00:00:00Z', '本文', '[]', 'hash-j', ?)`
+       VALUES ('jimu-unei', 'shotoku/j', 'shotoku', '消えた事務運営指針', 'https://example.com/j.htm', '2026-09-07T00:00:00Z', '本文', '[]', 'hash-j', ?)`
     ).run(ORPHANED_AT);
     db.close();
     const r = (await handleNtaGetJimuUnei(
-      { docId: 'J', format: 'json' },
+      { docId: 'shotoku/j', format: 'json' },
       { dbPath: jdbPath }
     )) as MarkedJson;
     return r.notice;

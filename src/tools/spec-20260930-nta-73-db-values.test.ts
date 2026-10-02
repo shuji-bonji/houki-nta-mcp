@@ -288,12 +288,13 @@ const OLD_ROW_PDFS_NO_KAISEI: AttachedPdfJson[] = [
   { title: 'Q&A', url: 'https://x/doc/pdf/03.pdf' },
 ];
 
-describe('nta_get_jimu_unei — SPEC-NTA-GET-JIMU-UNEI-008 kind の無い添付 PDF は題名から kind を決めて返す', () => {
+// docId は SPEC-NTA-GET-JIMU-UNEI-010・SPEC-NTA-GET-BUNSHOKAITOU-010 の形（税目/フォルダー名）で書く
+describe('nta_get_jimu_unei — SPEC-NTA-GET-JIMU-UNEI-008 SPEC-NTA-GET-JIMU-UNEI-010 kind の無い添付 PDF は題名から kind を決めて返す', () => {
   it('SPEC-NTA-GET-JIMU-UNEI-008 SPEC-NTA-GET-JIMU-UNEI-007 json では全要素に kind が付き、「別紙 N」は comparison に付け替えない', async () => {
-    seedDocument('jimu-unei', 'ju-old-001', OLD_ROW_PDFS_NO_KAISEI);
+    seedDocument('jimu-unei', 'shotoku/ju-old-001', OLD_ROW_PDFS_NO_KAISEI);
 
     const r = (await handleNtaGetJimuUnei(
-      { docId: 'ju-old-001', format: 'json' },
+      { docId: 'shotoku/ju-old-001', format: 'json' },
       { dbPath }
     )) as KaiseiJson;
 
@@ -308,9 +309,9 @@ describe('nta_get_jimu_unei — SPEC-NTA-GET-JIMU-UNEI-008 kind の無い添付 
   });
 
   it('SPEC-NTA-GET-JIMU-UNEI-008 markdown の表と読み方は決めた種別になり、「その他」は無い', async () => {
-    seedDocument('jimu-unei', 'ju-old-002', OLD_ROW_PDFS_NO_KAISEI);
+    seedDocument('jimu-unei', 'shotoku/ju-old-002', OLD_ROW_PDFS_NO_KAISEI);
 
-    const md = (await handleNtaGetJimuUnei({ docId: 'ju-old-002' }, { dbPath })) as string;
+    const md = (await handleNtaGetJimuUnei({ docId: 'shotoku/ju-old-002' }, { dbPath })) as string;
 
     expect(md).toContain('## 添付 PDF (3 件)');
     expect(md).toContain('| 📎 別紙・別表 | 別紙1 |');
@@ -320,14 +321,14 @@ describe('nta_get_jimu_unei — SPEC-NTA-GET-JIMU-UNEI-008 kind の無い添付 
   });
 
   it('SPEC-NTA-GET-JIMU-UNEI-008 同じ文書を nta_inspect_pdf_meta で見たときと kind が一致し、DB は書き換えない', async () => {
-    seedDocument('jimu-unei', 'ju-old-003', OLD_ROW_PDFS_NO_KAISEI);
+    seedDocument('jimu-unei', 'shotoku/ju-old-003', OLD_ROW_PDFS_NO_KAISEI);
 
     const got = (await handleNtaGetJimuUnei(
-      { docId: 'ju-old-003', format: 'json' },
+      { docId: 'shotoku/ju-old-003', format: 'json' },
       { dbPath }
     )) as KaiseiJson;
     const inspected = (await handleNtaInspectPdfMeta(
-      { docType: 'jimu-unei', docId: 'ju-old-003' },
+      { docType: 'jimu-unei', docId: 'shotoku/ju-old-003' },
       { dbPath }
     )) as { attachedPdfs: AttachedPdfJson[] };
 
@@ -339,18 +340,18 @@ describe('nta_get_jimu_unei — SPEC-NTA-GET-JIMU-UNEI-008 kind の無い添付 
       (db) =>
         db
           .prepare('SELECT attached_pdfs_json FROM document WHERE doc_type = ? AND doc_id = ?')
-          .get('jimu-unei', 'ju-old-003') as { attached_pdfs_json: string }
+          .get('jimu-unei', 'shotoku/ju-old-003') as { attached_pdfs_json: string }
     );
     expect(JSON.parse(stored.attached_pdfs_json)).toEqual(OLD_ROW_PDFS_NO_KAISEI);
   });
 });
 
-describe('nta_get_bunshokaitou — SPEC-NTA-GET-BUNSHOKAITOU-008 kind の無い添付 PDF は題名から kind を決めて返す', () => {
+describe('nta_get_bunshokaitou — SPEC-NTA-GET-BUNSHOKAITOU-008 SPEC-NTA-GET-BUNSHOKAITOU-010 kind の無い添付 PDF は題名から kind を決めて返す', () => {
   it('SPEC-NTA-GET-BUNSHOKAITOU-008 SPEC-NTA-GET-BUNSHOKAITOU-006 json では全要素に kind が付き、「別紙 N」は comparison に付け替えない', async () => {
-    seedDocument('bunshokaitou', 'bk-old-001', OLD_ROW_PDFS_NO_KAISEI);
+    seedDocument('bunshokaitou', 'shotoku/bk-old-001', OLD_ROW_PDFS_NO_KAISEI);
 
     const r = (await handleNtaGetBunshokaitou(
-      { docId: 'bk-old-001', format: 'json' },
+      { docId: 'shotoku/bk-old-001', format: 'json' },
       { dbPath }
     )) as KaiseiJson;
 
@@ -362,9 +363,12 @@ describe('nta_get_bunshokaitou — SPEC-NTA-GET-BUNSHOKAITOU-008 kind の無い�
   });
 
   it('SPEC-NTA-GET-BUNSHOKAITOU-008 SPEC-NTA-GET-BUNSHOKAITOU-005 markdown の表と読み方は決めた種別になり、「その他」は無い', async () => {
-    seedDocument('bunshokaitou', 'bk-old-002', OLD_ROW_PDFS_NO_KAISEI);
+    seedDocument('bunshokaitou', 'shotoku/bk-old-002', OLD_ROW_PDFS_NO_KAISEI);
 
-    const md = (await handleNtaGetBunshokaitou({ docId: 'bk-old-002' }, { dbPath })) as string;
+    const md = (await handleNtaGetBunshokaitou(
+      { docId: 'shotoku/bk-old-002' },
+      { dbPath }
+    )) as string;
 
     expect(md).toContain('## 添付 PDF (3 件)');
     expect(md).toContain('| 📎 別紙・別表 | 別紙1 |');
@@ -374,14 +378,14 @@ describe('nta_get_bunshokaitou — SPEC-NTA-GET-BUNSHOKAITOU-008 kind の無い�
   });
 
   it('SPEC-NTA-GET-BUNSHOKAITOU-008 同じ文書を nta_inspect_pdf_meta で見たときと kind が一致し、DB は書き換えない', async () => {
-    seedDocument('bunshokaitou', 'bk-old-003', OLD_ROW_PDFS_NO_KAISEI);
+    seedDocument('bunshokaitou', 'shotoku/bk-old-003', OLD_ROW_PDFS_NO_KAISEI);
 
     const got = (await handleNtaGetBunshokaitou(
-      { docId: 'bk-old-003', format: 'json' },
+      { docId: 'shotoku/bk-old-003', format: 'json' },
       { dbPath }
     )) as KaiseiJson;
     const inspected = (await handleNtaInspectPdfMeta(
-      { docType: 'bunshokaitou', docId: 'bk-old-003' },
+      { docType: 'bunshokaitou', docId: 'shotoku/bk-old-003' },
       { dbPath }
     )) as { attachedPdfs: AttachedPdfJson[] };
 
@@ -393,7 +397,7 @@ describe('nta_get_bunshokaitou — SPEC-NTA-GET-BUNSHOKAITOU-008 kind の無い�
       (db) =>
         db
           .prepare('SELECT attached_pdfs_json FROM document WHERE doc_type = ? AND doc_id = ?')
-          .get('bunshokaitou', 'bk-old-003') as { attached_pdfs_json: string }
+          .get('bunshokaitou', 'shotoku/bk-old-003') as { attached_pdfs_json: string }
     );
     expect(JSON.parse(stored.attached_pdfs_json)).toEqual(OLD_ROW_PDFS_NO_KAISEI);
   });

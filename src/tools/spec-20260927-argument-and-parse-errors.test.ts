@@ -10,7 +10,8 @@
  *     nta_search_jimu_unei・nta_search_kaisei_tsutatsu の応答としての 003・004（・007・008）
  *
  * 引数の検査は tools/call の受け口（toolHandlers）を通して確かめる。違反は 1 回の呼び出しに 1 つだけ入れる
- * （2 つ以上のときの detail.issues は houki-nta-mcp #79 で未決）。
+ * （2 つ以上のときの detail.issues は v0.22.0 の SPEC-NTA-COMMON-ERRORS-010 で決めた。spec-20261001-t1-argument-guards.test.ts）。
+ * hint の括弧の中は v0.22.0 から「型・必須・enum・範囲・形式・未知の引数」（SPEC-NTA-COMMON-ERRORS-007 の MODIFIED）。
  * 国税庁サイトは fetchImpl（009）またはグローバルの fetch の差し替え（008）で代える。
  */
 
@@ -80,7 +81,7 @@ function expectInputSchemaGuidance(body: ErrorBody, tool: string): void {
   const expectedProblem = issue?.path ? `${issue.path}: ${issue.message}` : `${issue?.message}`;
   expect(body.error).toBe(`${INVALID_ARGUMENT_PREFIX}${expectedProblem}`);
   expect(body.hint).toBe(
-    `tools/list の ${tool} の inputSchema を確認してください (型・必須・enum・未知の引数)`
+    `tools/list の ${tool} の inputSchema を確認してください (型・必須・enum・範囲・形式・未知の引数)`
   );
   expect(body.next_actions).toEqual([
     { action: 'list_tools', reason: 'inputSchema で引数の型と必須項目を確認できます' },
@@ -138,23 +139,18 @@ describe('SPEC-NTA-COMMON-ERRORS-007 inputSchema の検査で返す INVALID_ARGU
     expect(body.code).toBe('INVALID_ARGUMENT');
     expect(body.error).toBe(`${INVALID_ARGUMENT_PREFIX}foo: ${UNKNOWN_ARGUMENT_MESSAGE}`);
     expect(body.hint).toBe(
-      'tools/list の nta_search_jimu_unei の inputSchema を確認してください (型・必須・enum・未知の引数)'
+      'tools/list の nta_search_jimu_unei の inputSchema を確認してください (型・必須・enum・範囲・形式・未知の引数)'
     );
     expect(body.next_actions).toEqual([
       { action: 'list_tools', reason: 'inputSchema で引数の型と必須項目を確認できます' },
     ]);
   });
 
-  it('SPEC-NTA-COMMON-ERRORS-007 nta_get_jimu_unei に {} を渡すと、detail.issues[0].path は空文字で、error は接頭辞の後に message だけが続く', async () => {
+  it('SPEC-NTA-COMMON-ERRORS-007 SPEC-NTA-COMMON-ERRORS-010 SPEC-NTA-COMMON-ERRORS-011 nta_get_jimu_unei に {} を渡すと、detail.issues は [{ path: "docId", message: "必須の引数です" }] で、error は「docId: 必須の引数です」（v0.21.3 は path が空文字だった）', async () => {
     const body = await call('nta_get_jimu_unei', {});
     expect(body.code).toBe('INVALID_ARGUMENT');
-    const issue = body.detail?.issues?.[0];
-    expect(issue?.path).toBe('');
-    expect(issue?.message).toBeTruthy();
-    expect(body.error?.startsWith(INVALID_ARGUMENT_PREFIX)).toBe(true);
-    expect(body.error).toBe(`${INVALID_ARGUMENT_PREFIX}${issue?.message}`);
-    // 必須の引数が無いことを表す文が続く（検査の部品の文なので、引数名が入っていることだけ見る）
-    expect(body.error?.slice(INVALID_ARGUMENT_PREFIX.length)).toContain('docId');
+    expect(body.detail?.issues).toEqual([{ path: 'docId', message: '必須の引数です' }]);
+    expect(body.error).toBe(`${INVALID_ARGUMENT_PREFIX}docId: 必須の引数です`);
   });
 
   it('SPEC-NTA-COMMON-ERRORS-007 14 ツールとも、inputSchema に無い引数を 1 つ渡すと error・hint・next_actions が同じ形で返る', async () => {
@@ -338,8 +334,8 @@ describe('SPEC-NTA-COMMON-ERRORS-009 国税庁のページの解析に失敗し�
 /* -------------------------------------------------------------------------- */
 
 describe('既存の仕様 ID で受ける項目 — 各ツールの応答として', () => {
-  it('SPEC-NTA-COMMON-ERRORS-003 nta_get_jimu_unei の応答: {}（docId が無い）は INVALID_ARGUMENT', async () => {
-    expectInvalidArgument(await call('nta_get_jimu_unei', {}), 'nta_get_jimu_unei', '');
+  it('SPEC-NTA-COMMON-ERRORS-003 SPEC-NTA-COMMON-ERRORS-010 nta_get_jimu_unei の応答: {}（docId が無い）は INVALID_ARGUMENT で path は docId', async () => {
+    expectInvalidArgument(await call('nta_get_jimu_unei', {}), 'nta_get_jimu_unei', 'docId');
   });
 
   it('SPEC-NTA-COMMON-ERRORS-004 nta_get_jimu_unei の応答: { docId: "x", foo: 1 } は INVALID_ARGUMENT で path は foo', async () => {
