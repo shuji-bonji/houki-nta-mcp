@@ -18,7 +18,7 @@ import { REMOVED_FROM_INDEX, REMOVED_FROM_INDEX_NOTICE } from './index-status.js
  */
 export type DocumentSource = 'db' | 'live';
 
-const SOURCE_LABEL: Record<DocumentSource, string> = {
+export const SOURCE_LABEL: Record<DocumentSource, string> = {
   db: 'ローカル DB（bulk download で取り込んだもの）',
   live: '国税庁サイト（この呼び出しで取得）',
 };

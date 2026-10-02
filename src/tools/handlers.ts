@@ -34,7 +34,7 @@ import {
   NEXT_ACTIONS,
   type NextAction,
 } from '../errors.js';
-import type { ClauseRow } from '../services/db-search.js';
+import type { ClauseRow, DocumentSearchHit } from '../services/db-search.js';
 import {
   countDocuments,
   describeExpansionNotes,
@@ -54,6 +54,7 @@ import {
   UnreadableFetchedAtError,
 } from '../services/freshness.js';
 import {
+  indexMarkFields,
   indexStatusFields,
   REMOVED_FROM_INDEX,
   REMOVED_FROM_INDEX_NOTICE,
@@ -76,6 +77,7 @@ import {
   type DocumentSource,
   renderQaMarkdown,
   renderTaxAnswerMarkdown,
+  SOURCE_LABEL,
 } from '../services/tax-answer-render.js';
 import { normalizeClauseNumber, normalizeJpText } from '../services/text-normalize.js';
 import {
@@ -87,7 +89,12 @@ import {
 } from '../services/tsutatsu-live.js';
 import { TsutatsuParseError } from '../services/tsutatsu-parser.js';
 import { describeImageNotes, renderClauseMarkdown } from '../services/tsutatsu-render.js';
-import type { DocType, StoredQaStructure, StoredTaxAnswerStructure } from '../types/document.js';
+import type {
+  DocType,
+  NtaDocument,
+  StoredQaStructure,
+  StoredTaxAnswerStructure,
+} from '../types/document.js';
 import type {
   GetQaArgs,
   GetTaxAnswerArgs,
@@ -222,6 +229,12 @@ function guardDocId(form: DocIdForm, docId: string): LawServiceError | { docId: 
   return { docId: value };
 }
 
+/**
+ * `nta_get_tsutatsu` の `ARTICLE_NOT_FOUND` で返す `available_clauses` の上限。
+ * DB の経路（SPEC-NTA-GET-TSUTATSU-005）と国税庁サイトの経路（010、v0.23.0 の T4）で同じ件数にする
+ */
+const AVAILABLE_CLAUSES_LIMIT = 50;
+
 // NOT_IMPLEMENTED は v0.5.0-alpha.1 で全 search 系ハンドラが本実装になり、未使用に。
 // 将来また「未実装スタブ」を作る際は復活させる。
 
@@ -263,17 +276,23 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
     // Issue #21: 通称を 0 件のため法令名に広げたときも明示する
     const searchNotes = [...describeSearchNotes(keyword), ...describeExpansionNotes(expansion)];
 
+    // Phase 5 Resilience: section テーブルから freshness を取得（4 通達横断、tsutatsu 絞り込みなし）
+    const freshness = summarizeFreshnessFromSection(db, undefined, '`--bulk-download-all`');
+
     if (hits.length === 0) {
+      // v0.23.0（T4）: 文書系 5 ツールの 0 件と同じく count・freshness・legal_status を付ける
+      // （SPEC-NTA-SEARCH-TSUTATSU-005・010）。base_laws_by_tsutatsu と next_actions は hits から作るので付けない
       return {
         keyword,
+        count: 0,
         hits: [],
         message: `"${keyword}" にマッチする clause はありません`,
+        ...(freshness ? { freshness } : {}),
         ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
+        legal_status: TSUTATSU_LEGAL_STATUS,
       };
     }
 
-    // Phase 5 Resilience: section テーブルから freshness を取得（4 通達横断、tsutatsu 絞り込みなし）
-    const freshness = summarizeFreshnessFromSection(db, undefined, '`--bulk-download-all`');
     return {
       keyword,
       count: hits.length,
@@ -392,7 +411,7 @@ export async function getTsutatsu(
         `clause "${args.clause}" は DB 内の "${resolved.formal}" に見つかりません`,
         {
           hint: '別の clause 番号を試すか、`--bulk-download` で再取得してください（最新の改正反映用）',
-          available_clauses: listAvailableClauses(db, resolved.formal, 50),
+          available_clauses: listAvailableClauses(db, resolved.formal, AVAILABLE_CLAUSES_LIMIT),
         }
       );
     }
@@ -492,7 +511,8 @@ function renderLiveResult(
       return makeError('ARTICLE_NOT_FOUND', message, {
         url: live.searchedUrls[0],
         hint: hints.join('。'),
-        available_clauses: live.availableClauses,
+        // v0.23.0（T4）: DB の経路と同じく最大 50 件にする（SPEC-NTA-GET-TSUTATSU-010）
+        available_clauses: live.availableClauses.slice(0, AVAILABLE_CLAUSES_LIMIT),
         searched_urls: live.searchedUrls,
         next_actions: [
           NEXT_ACTIONS.searchTsutatsu(args.clause ?? ''),
@@ -835,6 +855,50 @@ function describeIndexStatusNotes(
   return notes.length > 0 ? { search_notes: notes } : {};
 }
 
+/** 発出日（`issuedAt`）を DB の値で返す種別。質疑応答事例とタックスアンサーは発出日を持たない */
+const DOC_TYPES_WITH_ISSUED_AT: ReadonlySet<DocType> = new Set([
+  'kaisei',
+  'jimu-unei',
+  'bunshokaitou',
+]);
+
+/**
+ * 文書系 5 ツールの `results[]` の要素を作る（SPEC-NTA-SEARCH-RULES-015）。キーは種別によらず同じで、
+ * 値の無いフィールドは `null` にする（v0.23.0 の T4）。
+ *
+ * - `issuedAt`: 改正通達・事務運営指針・文書回答事例は DB の発出日。質疑応答事例とタックスアンサーは常に `null`
+ * - `basisDate`: タックスアンサーは DB の `issued_at`（bulk download が「法令時点」から読んだ日付）。ほかは常に `null`
+ */
+function docSearchResult(h: DocumentSearchHit) {
+  return {
+    docType: h.docType,
+    docId: h.docId,
+    taxonomy: h.taxonomy,
+    title: h.title,
+    issuedAt: DOC_TYPES_WITH_ISSUED_AT.has(h.docType) ? (h.issuedAt ?? null) : null,
+    basisDate: h.docType === 'tax-answer' ? (h.issuedAt ?? null) : null,
+    sourceUrl: h.sourceUrl,
+    snippet: h.snippet,
+    ...(h.score !== undefined ? { score: h.score } : {}),
+    ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
+    ...indexStatusFields(h.orphanedAt),
+  };
+}
+
+/**
+ * 改正通達・事務運営指針・文書回答事例の json の `document`。値の無いフィールドを `null` にする
+ * （v0.23.0 の T4。SPEC-NTA-GET-KAISEI-TSUTATSU-006・SPEC-NTA-GET-JIMU-UNEI-005・SPEC-NTA-GET-BUNSHOKAITOU-006）
+ */
+function documentJson(doc: NtaDocument) {
+  return {
+    ...doc,
+    taxonomy: doc.taxonomy ?? null,
+    issuedAt: doc.issuedAt ?? null,
+    issuer: doc.issuer ?? null,
+    orphanedAt: doc.orphanedAt ?? null,
+  };
+}
+
 function withFreshness(freshness: FreshnessRange | undefined): { freshness?: FreshnessRange } {
   return freshness ? { freshness } : {};
 }
@@ -895,17 +959,7 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
     );
     return {
       keyword: args.keyword,
-      results: hits.map((h) => ({
-        docType: h.docType,
-        docId: h.docId,
-        taxonomy: h.taxonomy,
-        title: h.title,
-        sourceUrl: h.sourceUrl,
-        snippet: h.snippet,
-        ...(h.score !== undefined ? { score: h.score } : {}),
-        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
-        ...indexStatusFields(h.orphanedAt),
-      })),
+      results: hits.map(docSearchResult),
       ...(freshness ? { freshness } : {}),
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
@@ -1135,10 +1189,10 @@ function qaResponse(
     const { related_laws, related_tsutatsu } = parseRelatedReferences(qa.relatedLaws);
     const next_actions = relatedNextActions(related_laws, related_tsutatsu);
     return {
-      qa,
+      // v0.23.0（T4）: 注記の無い事例でも notice / basisDate のキーを null で置く（SPEC-NTA-GET-QA-008）
+      qa: { ...qa, notice: qa.notice ?? null, basisDate: qa.basisDate ?? null },
       source,
-      ...indexStatusFields(orphanedAt),
-      ...(orphanedAt ? { notice: REMOVED_FROM_INDEX_NOTICE } : {}),
+      ...indexMarkFields(orphanedAt),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       ...(related_laws.length > 0 ? { related_laws } : {}),
       ...(related_tsutatsu.length > 0 ? { related_tsutatsu } : {}),
@@ -1239,17 +1293,7 @@ export async function handleNtaSearchTaxAnswer(
     );
     return {
       keyword: args.keyword,
-      results: hits.map((h) => ({
-        docType: h.docType,
-        docId: h.docId,
-        taxonomy: h.taxonomy,
-        title: h.title,
-        sourceUrl: h.sourceUrl,
-        snippet: h.snippet,
-        ...(h.score !== undefined ? { score: h.score } : {}),
-        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
-        ...indexStatusFields(h.orphanedAt),
-      })),
+      results: hits.map(docSearchResult),
       ...(freshness ? { freshness } : {}),
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
@@ -1435,10 +1479,21 @@ function taxAnswerResponse(
 ) {
   if (format === 'json') {
     return {
-      taxAnswer,
+      // v0.23.0（T4）: 値の無いフィールドを null で置き、法令時点から読んだ basisDate を足す（SPEC-NTA-GET-TAX-ANSWER-008）。
+      // basisDate は bulk download が document.issued_at に入れる値と同じ読み方（parseEffectiveDate）で、
+      // DB の経路でも国税庁サイトの経路でも同じ値になる
+      taxAnswer: {
+        no: taxAnswer.no,
+        title: taxAnswer.title,
+        effectiveDate: taxAnswer.effectiveDate ?? null,
+        basisDate: parseEffectiveDate(taxAnswer.effectiveDate) ?? null,
+        taxCategory: taxAnswer.taxCategory ?? null,
+        sections: taxAnswer.sections,
+        sourceUrl: taxAnswer.sourceUrl,
+        fetchedAt: taxAnswer.fetchedAt,
+      },
       source,
-      ...indexStatusFields(orphanedAt),
-      ...(orphanedAt ? { notice: REMOVED_FROM_INDEX_NOTICE } : {}),
+      ...indexMarkFields(orphanedAt),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   }
@@ -1556,18 +1611,7 @@ export async function handleNtaSearchKaiseiTsutatsu(
     );
     return {
       keyword: args.keyword,
-      results: hits.map((h) => ({
-        docType: h.docType,
-        docId: h.docId,
-        taxonomy: h.taxonomy,
-        title: h.title,
-        issuedAt: h.issuedAt,
-        sourceUrl: h.sourceUrl,
-        snippet: h.snippet,
-        ...(h.score !== undefined ? { score: h.score } : {}),
-        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
-        ...indexStatusFields(h.orphanedAt),
-      })),
+      results: hits.map(docSearchResult),
       ...(freshness ? { freshness } : {}),
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: TSUTATSU_LEGAL_STATUS,
@@ -1610,9 +1654,8 @@ export async function handleNtaGetKaiseiTsutatsu(
 
     if (args.format === 'json') {
       return {
-        document: doc,
-        ...indexStatusFields(doc.orphanedAt),
-        ...(doc.orphanedAt ? { notice: REMOVED_FROM_INDEX_NOTICE } : {}),
+        document: documentJson(doc),
+        ...indexMarkFields(doc.orphanedAt),
         legal_status: TSUTATSU_LEGAL_STATUS,
         source: 'db' as const,
       };
@@ -1625,7 +1668,7 @@ export async function handleNtaGetKaiseiTsutatsu(
 }
 
 /** 改正通達の Markdown レンダラ。本文 + 添付 PDF を kind ラベル付き表で列挙 */
-function renderKaiseiMarkdown(doc: import('../types/document.js').NtaDocument): string {
+function renderKaiseiMarkdown(doc: NtaDocument): string {
   const lines: string[] = [];
   lines.push(`# ${doc.title}`);
   lines.push('');
@@ -1634,6 +1677,8 @@ function renderKaiseiMarkdown(doc: import('../types/document.js').NtaDocument): 
   lines.push(`- **docId**: \`${doc.docId}\``);
   lines.push(`- **出典**: ${doc.sourceUrl}`);
   lines.push(`- **取得**: ${doc.fetchedAt}`);
+  // v0.23.0（T4）: nta_get_qa / nta_get_tax_answer の「取得元」に合わせる。DB だけを引くので値は常に DB
+  lines.push(`- **取得元**: ${SOURCE_LABEL.db}`);
   if (doc.orphanedAt) {
     lines.push(`- **索引の状態**: ${REMOVED_FROM_INDEX}（${doc.orphanedAt} に確認）`);
     lines.push('');
@@ -1715,18 +1760,7 @@ export async function handleNtaSearchJimuUnei(
     );
     return {
       keyword: args.keyword,
-      results: hits.map((h) => ({
-        docType: h.docType,
-        docId: h.docId,
-        taxonomy: h.taxonomy,
-        title: h.title,
-        issuedAt: h.issuedAt,
-        sourceUrl: h.sourceUrl,
-        snippet: h.snippet,
-        ...(h.score !== undefined ? { score: h.score } : {}),
-        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
-        ...indexStatusFields(h.orphanedAt),
-      })),
+      results: hits.map(docSearchResult),
       ...(freshness ? { freshness } : {}),
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: TSUTATSU_LEGAL_STATUS,
@@ -1764,9 +1798,8 @@ export async function handleNtaGetJimuUnei(
     const doc = { ...stored, attachedPdfs: fillMissingKinds(stored.attachedPdfs) };
     if (args.format === 'json') {
       return {
-        document: doc,
-        ...indexStatusFields(doc.orphanedAt),
-        ...(doc.orphanedAt ? { notice: REMOVED_FROM_INDEX_NOTICE } : {}),
+        document: documentJson(doc),
+        ...indexMarkFields(doc.orphanedAt),
         legal_status: TSUTATSU_LEGAL_STATUS,
         source: 'db' as const,
       };
@@ -1783,7 +1816,7 @@ export async function handleNtaGetJimuUnei(
  * `kind` でドキュメント種別の和名を表示する（タイトル下のメタに含まれる）。
  */
 function renderDocumentMarkdown(
-  doc: import('../types/document.js').NtaDocument,
+  doc: NtaDocument,
   kind: '改正通達' | '事務運営指針' | '文書回答事例'
 ): string {
   const lines: string[] = [];
@@ -1795,6 +1828,8 @@ function renderDocumentMarkdown(
   lines.push(`- **docId**: \`${doc.docId}\``);
   lines.push(`- **出典**: ${doc.sourceUrl}`);
   lines.push(`- **取得**: ${doc.fetchedAt}`);
+  // v0.23.0（T4）: nta_get_qa / nta_get_tax_answer の「取得元」に合わせる。DB だけを引くので値は常に DB
+  lines.push(`- **取得元**: ${SOURCE_LABEL.db}`);
   if (doc.orphanedAt) {
     lines.push(`- **索引の状態**: ${REMOVED_FROM_INDEX}（${doc.orphanedAt} に確認）`);
     lines.push('');
@@ -1891,18 +1926,7 @@ export async function handleNtaSearchBunshokaitou(
     );
     return {
       keyword: args.keyword,
-      results: hits.map((h) => ({
-        docType: h.docType,
-        docId: h.docId,
-        taxonomy: h.taxonomy,
-        title: h.title,
-        issuedAt: h.issuedAt,
-        sourceUrl: h.sourceUrl,
-        snippet: h.snippet,
-        ...(h.score !== undefined ? { score: h.score } : {}),
-        ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
-        ...indexStatusFields(h.orphanedAt),
-      })),
+      results: hits.map(docSearchResult),
       ...(freshness ? { freshness } : {}),
       ...describeIndexStatusNotes(hits, searchNotes),
       // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
@@ -1941,9 +1965,8 @@ export async function handleNtaGetBunshokaitou(
     const doc = { ...stored, attachedPdfs: fillMissingKinds(stored.attachedPdfs) };
     if (args.format === 'json') {
       return {
-        document: doc,
-        ...indexStatusFields(doc.orphanedAt),
-        ...(doc.orphanedAt ? { notice: REMOVED_FROM_INDEX_NOTICE } : {}),
+        document: documentJson(doc),
+        ...indexMarkFields(doc.orphanedAt),
         // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
         legal_status: BUNSHOKAITOU_LEGAL_STATUS,
         source: 'db' as const,
@@ -2020,8 +2043,9 @@ export async function handleNtaInspectPdfMeta(
     // v0.19.0: save: true のときだけ PDF を取得して保存する。失敗した PDF も saved[] に error 付きで残す
     // #73: ファイル名は kind で絞る前の添付 PDF 全体から決める。同じ文書の中で URL の最後のパス要素が
     // 重なる PDF（別のディレクトリの 01.pdf など）を、1 つ目のファイルを cached: true で返さず区別する
+    // v0.23.0（T4）: save: true なら保存する PDF が 0 件でも saved: [] を返す（SPEC-NTA-INSPECT-PDF-META-010）
     let saved: SavedPdf[] | undefined;
-    if (args.save && filtered.length > 0) {
+    if (args.save) {
       const fileNames = pdfFileNamesForUrls(described.map((p) => p.url));
       saved = [];
       for (const pdf of filtered) {
@@ -2073,6 +2097,8 @@ export async function handleNtaInspectPdfMeta(
       sourceUrl: doc.sourceUrl,
       attachedPdfs: filtered,
       ...(saved ? { saved } : {}),
+      // v0.23.0（T4）: 取得ツールの json と同じ索引の印（索引にあれば 3 つとも null。SPEC-NTA-INSPECT-PDF-META-002）
+      ...indexMarkFields(doc.orphanedAt),
       ...(next_actions.length > 0 ? { next_actions } : {}),
       ...(noteParts.length > 0 ? { note: noteParts.join('。') } : {}),
       // v0.9.1: docType 別の legal_status を返す (Issue #1)

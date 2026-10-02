@@ -137,14 +137,31 @@ export function countOrphanedDocuments(db: DatabaseT.Database, docType: DocType)
 }
 
 /**
- * 応答に載せる索引の状態を作る。索引にある文書には何も付けない。
+ * 応答に載せる索引の状態を作る。索引にある文書では、どちらも `null` にする（キーは無くさない）。
+ *
+ * v0.23.0（T4、SPEC-NTA-SEARCH-RULES-011）までは、索引にある文書には何も付けなかった。
  */
 export function indexStatusFields(orphanedAt: string | null | undefined): {
-  index_status?: typeof REMOVED_FROM_INDEX;
-  orphaned_at?: string;
+  index_status: typeof REMOVED_FROM_INDEX | null;
+  orphaned_at: string | null;
 } {
-  if (!orphanedAt) return {};
+  if (!orphanedAt) return { index_status: null, orphaned_at: null };
   return { index_status: REMOVED_FROM_INDEX, orphaned_at: orphanedAt };
+}
+
+/**
+ * 取得ツールの json と `nta_inspect_pdf_meta` に載せる索引の印（`index_status` / `orphaned_at` / `notice`）を作る。
+ * 索引にある文書と、国税庁サイトから取った文書では 3 つとも `null` にする（T4、SPEC-NTA-GET-*-004 など）
+ */
+export function indexMarkFields(orphanedAt: string | null | undefined): {
+  index_status: typeof REMOVED_FROM_INDEX | null;
+  orphaned_at: string | null;
+  notice: string | null;
+} {
+  return {
+    ...indexStatusFields(orphanedAt),
+    notice: orphanedAt ? REMOVED_FROM_INDEX_NOTICE : null,
+  };
 }
 
 /**
