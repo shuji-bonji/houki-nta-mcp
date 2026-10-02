@@ -156,6 +156,8 @@ flowchart TB
 | `nta_get_jimu_unei` | 引く | `DOC_NOT_FOUND` を返す | — | 付かない |
 | `nta_get_bunshokaitou` | 引く | `DOC_NOT_FOUND` を返す | — | 付かない |
 
+`nta_get_qa` と `nta_get_tax_answer` は、国税庁サイトにそのページが無い（HTTP 404・410、または `/error/404.htm` への転送）と、番号の誤りとして `DOC_NOT_FOUND`（`retryable: false`）を返し、`next_actions` で検索ツールを案内します。v0.21.x までは `SOURCE_API_ERROR`（`retryable: true`）でした。
+
 改正通達・事務運営指針・文書回答事例の 3 つは、docId から個別ページの URL を組み立てるのに税目フォルダの世代差（`sozoku` / `sozoku2` など）を解く必要があるため、国税庁サイトへは取りに行きません。エラーには `--bulk-download-*` の案内が付きます。
 
 `nta_get_qa` と `nta_get_tax_answer` が DB から返せるのは、**`structured_json` を持つ行**だけです。この列は v0.16.0 で増えたので、v0.15.x までに投入した行は持っていません。持っていない行は国税庁サイトから取得して書き戻すので、1 度引けば次からは DB から返ります。`--bulk-download-qa` / `--bulk-download-tax-answer` を実行しても埋まります（この 2 種別では、構造を持たない行は条件付き GET を使わずに取り直します）。
@@ -633,7 +635,7 @@ v0.10.0 以降、`tools/call` の応答は次の 3 経路でも同じ形式に�
 | 経路 | `code` | 内容 |
 |------|--------|------|
 | ツール名が `tools/list` にない | `UNKNOWN_TOOL` | `hint` に利用可能なツール名一覧 |
-| 引数が `tools/list` の `inputSchema` に合わない（型・必須・enum・inputSchema に無い引数。v0.14.0 から未知の引数もエラー） | `INVALID_ARGUMENT` | `detail.issues[]` に `path` と `message`。handler は呼ばれません |
+| 引数が `tools/list` の `inputSchema` に合わない（型・必須・enum・範囲・空文字・inputSchema に無い引数。v0.14.0 から未知の引数、v0.22.0 から範囲と空文字もエラー） | `INVALID_ARGUMENT` | `detail.issues[]` に違反 1 件ごとの `path`（引数名）と `message`（日本語の 1 文）。handler は呼ばれません |
 | handler が例外を投げた | `INTERNAL_ERROR` | `retryable: true`、`detail.cause` に例外メッセージ |
 
 handler が `LawServiceError`（上の JSON 形式）を返した場合も `isError: true` が付きます。
@@ -641,7 +643,7 @@ handler が `LawServiceError`（上の JSON 形式）を返した場合も `isEr
 ```json
 {
   "error": "改正通達 docId=\"0025004-999\" は見つかりません",
-  "code": "TSUTATSU_NOT_FOUND",
+  "code": "DOC_NOT_FOUND",
   "hint": "DB の改正通達 118 件に、この docId はありません。available_doc_ids（新しい順に 30 件）から選ぶか、nta_search_kaisei_tsutatsu で検索して docId を確かめてください。DB を投入した後に国税庁が公開した文書は、`houki-nta-mcp --bulk-download-kaisei` をもう一度実行すると取り込めます",
   "available_doc_ids": [
     { "docId": "0026003-067", "title": "消費税法基本通達の一部改正について（法令解釈通達）", "issuedAt": "2026-04-01" }
@@ -656,9 +658,29 @@ handler が `LawServiceError`（上の JSON 形式）を返した場合も `isEr
 }
 ```
 
+### 引数の検査（v0.22.0）
+
+v0.22.0 から、引数の誤りは DB や国税庁サイトを引く前に `INVALID_ARGUMENT` で返します。v0.21.x までは、範囲の外の値を丸めたり、空のキーワードを「該当なし」として返したりしていました。
+
+| 引数 | 検査 | 例 |
+| --- | --- | --- |
+| 検索ツールの `limit` | 1 以上 50 以下の整数。丸めません | `limit: 100` は「50 以下で指定してください」 |
+| 必須の文字列（`keyword`・`abbr`・`name`・`docId`・`category`・`id`・`no`） | 空文字と、空白（全角スペース・タブ・改行を含む）だけの値は受け付けません | `keyword: "　"` は「keyword が空です」 |
+| 文書の識別子（文書系 3 ツールの `docId`、`nta_get_qa` の `category` / `id`、`nta_get_tax_answer` の `no`） | 受け付ける形かを確かめます。全角の数字・ダッシュ類は半角に揃えてから確かめます | `no: "６１０１"` は `"6101"` と同じ。`no: "61"` は「半角の数字 4 桁で指定してください」 |
+
+文書の識別子の形は次のとおりです。形は合っていても DB に無い値は、`DOC_NOT_FOUND` と `available_doc_ids` で案内します。
+
+| ツール | `docId` の形 | 例 |
+| --- | --- | --- |
+| `nta_get_kaisei_tsutatsu` | 英小文字・数字・`-` だけの 1 つの要素 | `0026003-067`、`240401`、`tougou` |
+| `nta_get_jimu_unei` | `税目/…/フォルダー名`（2 つ以上の要素。2 つ目以降は `_` も使えます） | `shotoku/shinkoku/170331`、`sozoku/170111_1` |
+| `nta_get_bunshokaitou` | `税目/フォルダー名` か `局/税目/フォルダー名` | `shotoku/250416`、`tokyo/shotoku/260218` |
+
+`nta_get_qa` の `category` と `id` は 1 桁か 2 桁の数字、`nta_get_tax_answer` の `no` は 4 桁の数字です。略称（`abbr`・`name`、検索キーワードの略称の展開）も、全角の英数字・ダッシュ類・全角スペースを半角に揃えてから辞書を引くので、`ＰＬ法` は `PL法` と同じ結果になります。
+
 ### docId が見つからないとき（v0.14.1）
 
-取得系の `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` は、指定された docId が DB に無いとき、理由を 2 つに分けて返します。
+取得系の `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` は、指定された docId が DB に無いとき、理由を 2 つに分けて返します。どちらも `code` は `DOC_NOT_FOUND` です（v0.21.x までは、改正通達と事務運営指針が `TSUTATSU_NOT_FOUND` でした）。
 
 | DB の状態 | 応答 |
 | --- | --- |

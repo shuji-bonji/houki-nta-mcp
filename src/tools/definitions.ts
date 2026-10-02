@@ -117,7 +117,7 @@ export const ntaSearchQaTool = {
 export const ntaGetQaTool = {
   name: 'nta_get_qa',
   description:
-    '国税庁の質疑応答事例 1 件を取得する。URL 形式: /law/shitsugi/{topic}/{category}/{id}.htm。format=json では【関係法令通達】を法令（related_laws）と通達（related_tsutatsu）に分け、next_actions で houki-egov-mcp の get_law と nta_get_tsutatsu を案内する。',
+    '国税庁の質疑応答事例 1 件を取得する。URL 形式: /law/shitsugi/{topic}/{category}/{id}.htm。国税庁サイトにそのページが無いときはエラー DOC_NOT_FOUND を返し、nta_search_qa を案内する。format=json では【関係法令通達】を法令（related_laws）と通達（related_tsutatsu）に分け、next_actions で houki-egov-mcp の get_law と nta_get_tsutatsu を案内する。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -131,12 +131,12 @@ export const ntaGetQaTool = {
         type: 'string',
         minLength: 1,
         description:
-          'カテゴリ番号（章相当）。例: "01", "02"。/law/shitsugi/{topic}/01.htm の TOC で確認できる',
+          'カテゴリ番号（章相当）。1 桁か 2 桁の数字。例: "01", "02"。全角の数字は半角に揃えて読む。/law/shitsugi/{topic}/01.htm の TOC で確認できる',
       },
       id: {
         type: 'string',
         minLength: 1,
-        description: '事例番号。例: "19"',
+        description: '事例番号。1 桁か 2 桁の数字。例: "19"。全角の数字は半角に揃えて読む',
       },
       format: {
         type: 'string',
@@ -184,7 +184,7 @@ export const ntaSearchTaxAnswerTool = {
 export const ntaGetTaxAnswerTool = {
   name: 'nta_get_tax_answer',
   description:
-    '国税庁のタックスアンサー（よくある税の質問）本文を番号で取得する。番号の先頭桁から税目フォルダを自動判定。例: 6101 → 消費税の基本的なしくみ',
+    '国税庁のタックスアンサー（よくある税の質問）本文を番号で取得する。番号の先頭桁から税目フォルダを自動判定。例: 6101 → 消費税の基本的なしくみ。国税庁サイトにそのページが無いときはエラー DOC_NOT_FOUND を返し、nta_search_tax_answer を案内する',
   inputSchema: {
     type: 'object',
     properties: {
@@ -192,7 +192,7 @@ export const ntaGetTaxAnswerTool = {
         type: 'string',
         minLength: 1,
         description:
-          'タックスアンサー番号。先頭桁で税目決定: 1xxx=所得税, 2xxx=源泉, 3xxx=譲渡, 4xxx=相続・贈与, 5xxx=法人税, 6xxx=消費税, 7xxx=印紙税, 9xxx=お知らせ。例: "6101", "1120"',
+          'タックスアンサー番号。4 桁の数字（全角の数字は半角に揃えて読む）。先頭桁で税目決定: 1xxx=所得税, 2xxx=源泉, 3xxx=譲渡, 4xxx=相続・贈与, 5xxx=法人税, 6xxx=消費税, 7xxx=印紙税, 9xxx=お知らせ。例: "6101", "1120"',
       },
       format: {
         type: 'string',
@@ -253,7 +253,7 @@ export const ntaGetKaiseiTsutatsuTool = {
         type: 'string',
         minLength: 1,
         description:
-          '文書 ID。新形式 "0026003-067" または旧形式 "240401" 等。`nta_search_kaisei_tsutatsu` 結果や DB hint で取得',
+          '文書 ID。英小文字・数字・- だけの値（例: "0026003-067"、"240401"）。全角の数字・ハイフンは半角に揃えて読む。`nta_search_kaisei_tsutatsu` 結果や DB hint で取得',
       },
       format: {
         type: 'string',
@@ -314,7 +314,7 @@ export const ntaGetJimuUneiTool = {
         type: 'string',
         minLength: 1,
         description:
-          '文書 ID。例: "shotoku/shinkoku/170331" / "sozoku/170111_1"。`nta_search_jimu_unei` 結果や DB hint で取得',
+          '文書 ID。税目/…/フォルダー名 の形（例: "shotoku/shinkoku/170331" / "sozoku/170111_1"）。全角の数字・ハイフンは半角に揃えて読む。`nta_search_jimu_unei` 結果や DB hint で取得',
       },
       format: {
         type: 'string',
@@ -374,7 +374,8 @@ export const ntaGetBunshokaitouTool = {
       docId: {
         type: 'string',
         minLength: 1,
-        description: '文書 ID。例: "shotoku/250416" (本庁) / "tokyo/shotoku/260218" (東京国税局)',
+        description:
+          '文書 ID。税目/フォルダー名（本庁。例: "shotoku/250416"）か 局/税目/フォルダー名（国税局。例: "tokyo/shotoku/260218"）。全角の数字・ハイフンは半角に揃えて読む',
       },
       format: {
         type: 'string',
@@ -405,7 +406,7 @@ export const ntaInspectPdfMetaTool = {
         type: 'string',
         minLength: 1,
         description:
-          '文書 ID。各 docType の `nta_search_*` 結果や `nta_get_*` のレスポンスから得られる',
+          '文書 ID。各 docType の `nta_search_*` 結果や `nta_get_*` のレスポンスから得られる。全角の数字・ハイフンは半角に揃えて読む',
       },
       kind: {
         type: 'string',
@@ -434,7 +435,8 @@ export const resolveAbbreviationTool = {
       abbr: {
         type: 'string',
         minLength: 1,
-        description: '略称。例: "消基通", "所基通", "電帳法"',
+        description:
+          '略称。例: "消基通", "所基通", "電帳法"。全角の英数字・ダッシュ類・全角スペースは半角に揃えてから引く',
       },
     },
     required: ['abbr'],
