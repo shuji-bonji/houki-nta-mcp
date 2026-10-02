@@ -5,6 +5,9 @@
  * - 文書はあるが、その docId が無い → 「見つかりません」。available_doc_ids と検索ツールへの next_actions
  *
  * v0.14.0 までは、どちらの場合も「DB に未投入です」と返し、bulk download を案内していた。
+ *
+ * code は v0.22.0 から 3 ツールとも DOC_NOT_FOUND（SPEC-NTA-GET-KAISEI-TSUTATSU-001・002、
+ * SPEC-NTA-GET-JIMU-UNEI-001・002 の MODIFIED。v0.21.3 までの改正通達・事務運営指針は TSUTATSU_NOT_FOUND）。
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -77,7 +80,7 @@ const cases: ReadonlyArray<
   [
     'nta_get_kaisei_tsutatsu',
     'kaisei',
-    'TSUTATSU_NOT_FOUND',
+    'DOC_NOT_FOUND',
     '--bulk-download-kaisei',
     'nta_search_kaisei_tsutatsu',
     '改正通達',
@@ -86,7 +89,7 @@ const cases: ReadonlyArray<
   [
     'nta_get_jimu_unei',
     'jimu-unei',
-    'TSUTATSU_NOT_FOUND',
+    'DOC_NOT_FOUND',
     '--bulk-download-jimu-unei',
     'nta_search_jimu_unei',
     '事務運営指針',
