@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: 共通
 - 版: current
-- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261003-t4-response-shape` は 2026-10-02（PR #124）。差分 `20261003-t5-docs-mismatch` は 2026-10-02（PR #126）
+- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）
 - 起こした元: v0.21.0 の `src/server.ts`、`src/tools/tool-args.ts`、`src/errors.ts`、`src/tools/definitions.ts`、`src/tools/handlers.ts`（ツールの登録の表）、`src/server.test.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue:
 

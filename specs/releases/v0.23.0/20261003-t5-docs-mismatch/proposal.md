@@ -2,7 +2,7 @@
 
 - 対象: `specs/current/common_errors/spec.md`・`resolve_abbreviation/spec.md`・`nta_search_tsutatsu/spec.md`・`nta_search_tax_answer/spec.md`（動きを変える行）と、tool description・`hint` の文・CLI の使い方・README（文書だけを直す行。仕様 ID なし）
 - 実装の変更: 要（`UNKNOWN_TOOL` / `INTERNAL_ERROR` の `retryable` と文、`resolve_abbreviation` の `hint` と `next_actions`、`nta_search_tsutatsu` の空の DB の案内、`nta_search_tax_answer` の `next_actions`。文書だけの行は「実装 PR で直す文書」）
-- 承認日: 2026-10-02（PR #126）
+- 承認日: 2026-10-03（PR #126）
 - 状態: 取り込み済み（v0.23.0）
 - 起こした日: 2026-10-03（JST）
 - 起こした役: Spec Steward

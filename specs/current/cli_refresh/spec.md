@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: CLI
 - 版: current
-- 承認日: 2026-09-29（PR #103）。差分 `20261003-t5-docs-mismatch` は 2026-10-02（PR #126）
+- 承認日: 2026-09-29（PR #103）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）
 - 起こした元: v0.21.2 の `src/cli.ts`（`--refresh`・`--refresh-stale`・`--apply`）、`src/services/bulk-downloader.ts`（節ごとの条件付き取得）、`src/services/document-conditional-fetch.ts`、`src/services/nta-scraper.ts`（`If-Modified-Since` / `If-None-Match`）、`src/services/db-search.ts`（古い節の列挙）、`src/cli.test.ts`、`src/services/db-stale.test.ts`
 - 関連する Issue: なし（v0.10.2 で `--refresh` が通達の投入に、v0.10.4 で文書系 5 種別の投入にも効くようになった）
 

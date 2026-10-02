@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t5-docs-mismatch` は 2026-10-02（PR #126）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleResolveAbbreviation`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/tools/handlers.test.ts`、`src/server.test.ts`
 
 この文書は「このツールは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。

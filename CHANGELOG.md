@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.23.0] - 2026-10-03
 
-**minor リリース** — 段階 4 の後半（houki-hub `docs/notes/2026-09-29-plan-spec-issues.md`）。応答の形（T4）と、hint・next_actions・説明文・CLI の使い方と実際の動きの食い違い（T5）を、承認済みの仕様の差分どおりに直した。仕様 PR は #124（T4）・#126（T5）。対象 Issue: #70 #71 #82 #108。エラーの `code` は変えていない。消したフィールド・名前を付け替えたフィールドは無い。DB のスキーマは変えていない（版 11 のまま）。
+**minor リリース** — 段階 4 の後半（houki-hub `docs/notes/2026-09-29-plan-spec-issues.md`）。応答の形（T4）と、hint・next_actions・説明文・CLI の使い方と実際の動きの食い違い（T5）を、承認済みの仕様の差分どおりに直した。仕様 PR は #125（T4）・#126（T5）。対象 Issue: #70 #71 #82 #108。エラーの `code` は変えていない。消したフィールド・名前を付け替えたフィールドは無い。DB のスキーマは変えていない（版 11 のまま）。
 
 ### 互換性
 
