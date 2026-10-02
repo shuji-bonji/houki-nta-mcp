@@ -3,7 +3,7 @@
 - 対象: `specs/current/db_schema/spec.md`、`specs/current/cli_entry/spec.md`、`specs/current/cli_bulk_download/spec.md`、`specs/current/cli_refresh/spec.md`、`specs/current/cli_health_check/spec.md`（`## 未決` の節）
 - 実装の変更: 不要
 - 承認日: 2026-09-30（PR #114）
-- 状態: 草案。この仕様 PR の中で `specs/current/` に反映する。次の実装 PR の最終コミットで `specs/releases/<tag>/` へ移す
+- 状態: 取り込み済み（`specs/current/` へは仕様 PR #114 の中で反映。v0.22.0 の実装 PR の最終コミットで `specs/releases/v0.22.0/` へ移した）
 - 起こした日: 2026-09-30（JST）
 - 起こした役: Spec Steward
 - 関連する Issue: houki-nta-mcp #75（CLI・DB の初版起こし、PR #103）、#106〜#112（移した先）、#74（14 ツールの未決を Issue に移した仕様 PR。同じ形）

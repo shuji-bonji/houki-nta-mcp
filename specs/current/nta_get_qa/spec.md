@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-24（初版。PR #52 のマージ）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）
+- 承認日: 2026-09-24（初版。PR #52 のマージ）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
 - 起こした元: v0.20.2 の `src/tools/handlers.ts`（`getQa`）、`src/tools/definitions.ts`、`src/services/tax-answer-render.ts`、`src/tools/handlers.test.ts`、`src/tools/get-db-first.test.ts`
 - 関連する Issue: houki-nta-mcp #22（関係法令通達の構造化）、#29（DB を先に引く）、#30（索引から消えた文書の印）
 
@@ -17,8 +17,8 @@
 | 引数 | 必須 | 内容 |
 |---|---|---|
 | `topic` | 必須 | 税目フォルダ。`shotoku` / `gensen` / `joto` / `sozoku` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei` のどれか |
-| `category` | 必須 | カテゴリ番号（章に当たる）。例: `"02"`。1 桁でもよい |
-| `id` | 必須 | 事例番号。例: `"19"`。1 桁でもよい |
+| `category` | 必須 | カテゴリ番号（章に当たる）。例: `"02"`。1 桁でもよい。1 桁か 2 桁の半角の数字（SPEC-NTA-GET-QA-013）。空文字・空白だけは不可（002）。全角の数字は半角に揃えてから読む（016） |
+| `id` | 必須 | 事例番号。例: `"19"`。1 桁でもよい。1 桁か 2 桁の半角の数字（SPEC-NTA-GET-QA-013）。空文字・空白だけは不可（002）。全角の数字は半角に揃えてから読む（016） |
 | `format` | 任意 | `markdown`（既定）または `json` |
 
 ## 処理の流れ
@@ -29,15 +29,17 @@
 flowchart TD
   A["呼び出し（topic・category・id・format）"] --> B{"topic は対応する 9 税目のどれかか"}
   B -- いいえ --> E1["INVALID_ARGUMENT を返す（001）"]
-  B -- はい --> C{"category と id が両方あるか"}
-  C -- いいえ --> E2["INVALID_ARGUMENT を返す（002）"]
+  B -- はい --> C{"category と id が空白だけでなく、全角を半角に揃えて 1 桁か 2 桁の数字か（016）"}
+  C -- いいえ --> E2["INVALID_ARGUMENT を返す（002・013）"]
   C -- はい --> D["1 桁の category・id を 2 桁に揃える（003）"]
   D --> F{"その事例がローカル DB にあるか"}
   F -- ある --> F2{"段落の構造を持つ行か（012）"}
   F2 -- 持つ --> G["DB の内容を使う（004、source: db）"]
   F2 -- "持たない・構造の記録が読めない" --> H
   F -- 無い --> H["国税庁サイトから取る（005、source: live）"]
-  H --> I["取った事例を DB に入れる（006。失敗しても応答は返す）"]
+  H -- "ページが無い（404・410・404 ページへの転送）" --> E3["DOC_NOT_FOUND と nta_search_qa の案内を返す（014）"]
+  H -- 通信の失敗 --> E4["SOURCE_API_ERROR を返す（015）"]
+  H -- 取れた --> I["取った事例を DB に入れる（006。失敗しても応答は返す）"]
   G --> X{"国税庁の索引から外れているか（010）"}
   X -- はい --> Y["索引から外れた印を付ける（010。json は index_status・orphaned_at・notice、markdown は索引の状態の行と注記）"]
   X -- いいえ --> J{"format"}
@@ -53,9 +55,11 @@ flowchart TD
 
 `topic` が上の 9 税目のどれでもないときは、エラー `INVALID_ARGUMENT` を返す。`hint` に対応している税目の一覧を書く。DB も国税庁サイトも引かない。
 
-### SPEC-NTA-GET-QA-002 category と id の両方が無ければ取りに行かない
+### SPEC-NTA-GET-QA-002 category と id が空文字・空白だけのときは取りに行かない
 
-`category` か `id` が空のときは、エラー `INVALID_ARGUMENT` を返す。`hint` に、税目の目次ページ（`/law/shitsugi/{topic}/01.htm`）でカテゴリ番号と事例番号を確かめるよう書く。
+`category` / `id` が空文字のときは、inputSchema の `minLength: 1` の検査（SPEC-NTA-COMMON-ERRORS-013）で止まり、`INVALID_ARGUMENT`（`tool: "nta_get_qa"`、`detail.issues[].path` はその引数名、`message: "空文字は指定できません"`）を返す。空白（半角スペース・全角スペース・タブ・改行）だけのときは、ツールの処理が DB と国税庁サイトを引く前に、SPEC-NTA-COMMON-ERRORS-014 の形の `INVALID_ARGUMENT`（`error: "<引数名> が空です"`、`detail.issues: [{ path: "<引数名>", message: "空白だけは指定できません" }]`、`hint` に税目の目次ページ（`/law/shitsugi/{topic}/01.htm`）でカテゴリ番号と事例番号を確かめるよう書く）を返す。
+
+例: `{ topic: "shohi", category: "", id: "19" }` は `detail.issues` が `[{ path: "category", message: "空文字は指定できません" }]`。`{ topic: "shohi", category: "02", id: "  " }` は `error: "id が空です"`・`detail.issues[0].path: "id"`。どちらも `code: "INVALID_ARGUMENT"` で、DB も国税庁サイトも引かない。
 
 ### SPEC-NTA-GET-QA-003 1 桁の category と id は 2 桁に揃えてから引く
 
@@ -133,6 +137,36 @@ SPEC-NTA-GET-QA-009 の `next_actions` には、読み取った参照のうち�
 
 DB にその事例の行があっても、段落の構造（照会要旨・回答要旨・関係法令通達を分けたもの）を持たない行（v0.16.0 より前に DB に入れた行）や、構造の記録が読めない行は、DB から返さず、DB に無いとき（SPEC-NTA-GET-QA-005）と同じく国税庁サイトから取る。応答の `source` は `live` になり、取った事例は SPEC-NTA-GET-QA-006 のとおり DB に書き戻す。次の呼び出しからは DB から返す（`source: "db"`）。
 
+### SPEC-NTA-GET-QA-013 category と id は 1 桁か 2 桁の半角の数字で、それ以外は取りに行かずに `INVALID_ARGUMENT` を返す
+
+`category` と `id` の形は、前後の空白を除いて、半角の数字 1 桁か 2 桁である（SPEC-NTA-COMMON-ERRORS-015）。それ以外（英字を含む、3 桁以上、記号を含む）のときは、DB と国税庁サイトを引く前に `INVALID_ARGUMENT`（`tool: "nta_get_qa"`、`error: "<引数名> の形が受け付ける形ではありません: <渡した値>"`、`detail.issues: [{ path: "<引数名>", message: "1 桁か 2 桁の数字で指定してください" }]`、`hint` に `"02"`・`"19"` のような例）を返す。形が正しければ SPEC-NTA-GET-QA-003 のとおり 2 桁に揃えて引く。
+
+例: `{ topic: "shohi", category: "02", id: "19" }` と `{ topic: "shohi", category: "2", id: "9" }` は検査を通る。`{ topic: "shohi", category: "1a", id: "19" }` は `detail.issues[0].path: "category"`、`{ topic: "shohi", category: "02", id: "190" }` は `detail.issues[0].path: "id"` で、どちらも `code: "INVALID_ARGUMENT"`、DB も国税庁サイトも引かない（v0.21.3 では引いてから `DOC_NOT_FOUND` か `SOURCE_API_ERROR` になっていた）。
+
+### SPEC-NTA-GET-QA-014 国税庁サイトにページが無い（404・410・404 ページへの転送）ときは `DOC_NOT_FOUND` を返し、検索ツールを案内する
+
+`topic` / `category` / `id` の事例が DB に無く国税庁サイトから取るとき、国税庁サイトが HTTP 404 か 410 を返した、または `https://www.nta.go.jp/error/404.htm` に転送したときは、エラー `DOC_NOT_FOUND`（`retryable: false`）を返す（SPEC-NTA-COMMON-ERRORS-016）。`SOURCE_API_ERROR` にはしない。
+
+- `error`: 渡した引数の値と、そのページが国税庁サイトに無いこと
+- `hint`: 番号を確かめる案内（nta_search_qa で探す）
+- `next_actions`: `{ action: "nta_search_qa", reason: "キーワード検索で正しい番号を探せます", example: { topic: <渡した topic>, keyword: "<探したい語>" } }` の 1 件。`retry_later` は入れない
+- `detail.status`: 国税庁サイトが返した HTTP ステータス（転送のときは 404）、`detail.url`: 取りに行った URL
+- `tool`: `nta_get_qa`
+
+例: 国税庁サイトが 404 を返す状態で `{ topic: "shohi", category: "99", id: "99" }` を渡すと、`code: "DOC_NOT_FOUND"`、`retryable: false`、`next_actions[0].action: "nta_search_qa"`（v0.21.3 では `SOURCE_API_ERROR`・`retryable: true`・`retry_later` だった）。`/error/404.htm` への転送でも、410 でも同じ。
+
+### SPEC-NTA-GET-QA-015 国税庁サイトとの通信が失敗したときは `SOURCE_API_ERROR`（`retryable: true`）を返す
+
+国税庁サイトから取るときに、接続できない・応答を待ちきれなかった・HTTP 5xx・HTTP 429 のどれかで終わったとき（取り直しても失敗したとき）は、エラー `SOURCE_API_ERROR`（`retryable: true`、`next_actions` に `retry_later`、`detail.status` に HTTP ステータス（あれば）、`detail.url` に取りに行った URL、`tool` に `nta_get_qa`）を返す。ページが無いこと（SPEC-NTA-GET-QA-014）はこのエラーにしない。
+
+例: 国税庁サイトが 503 を返す状態で `{ topic: "shohi", category: "02", id: "19" }` を渡すと、`code: "SOURCE_API_ERROR"`、`retryable: true`、`detail.status: 503`。接続できないときは `detail.status` が無く `retryable: true`。
+
+### SPEC-NTA-GET-QA-016 `category` と `id` は半角に揃えてから形を確かめる
+
+`category` と `id` は、前後の空白を除いた値を houki-abbreviations の `normalizeJpText` の規則（全角英数字を半角に、ダッシュ類 `－` `‐` `‑` `–` `—` `―` `−` を `-` に、全角チルダ `～` `〜` を `~` に、全角空白を半角空白にし、前後の空白を除く。罫線 `─` と長音 `ー` は変えない。大文字と小文字は区別する）で揃えてから、SPEC-NTA-GET-QA-013 の形の検査に進む（SPEC-NTA-SEARCH-RULES-019）。揃えた後の値で DB を引き、国税庁サイトの URL を組み立てる。
+
+例: `{ topic: "shohi", category: "０２", id: "１９" }` は `{ topic: "shohi", category: "02", id: "19" }` と同じ応答（v0.21.3 では全角のまま DB を引き、国税庁サイトの `/law/shitsugi/shohi/０２/１９.htm` を取りに行っていた）。
+
 ## できないこと
 
 - markdown の応答で `related_laws` / `related_tsutatsu` / `next_actions` を返すこと（json のときだけ。markdown は【関係法令通達】の節をページの表記のまま載せる）
@@ -146,5 +180,3 @@ DB にその事例の行があっても、段落の構造（照会要旨・回�
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **存在しない事例を指定したときのエラー。** → houki-nta-mcp #65
-2. **`category` と `id` の形を確かめない。** → houki-nta-mcp #66

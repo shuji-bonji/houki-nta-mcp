@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: 共通
 - 版: current
-- 承認日: 2026-09-27 （PR #78）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）
+- 承認日: 2026-09-27 （PR #78）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
 - 起こした元: v0.21.0 の `src/services/db-search.ts`、`src/services/text-normalize.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/services/relevance-scoring.ts`、`src/tools/handlers.ts`（検索系 6 ツールのハンドラー）、各種別の取り込み処理（`src/services/*-bulk-downloader.ts`・`src/services/*-parser.ts`・`src/services/document-writeback.ts`）、`src/services/db-search.test.ts`、`src/services/text-normalize.test.ts`、`src/services/relevance-scoring.test.ts`、`src/services/index-status.test.ts`、`src/services/db-writeback.test.ts`、`src/services/kaisei-parser.test.ts`、`src/tools/handlers.test.ts`、`src/tools/index-status-response.test.ts`
 - 関連する Issue: houki-nta-mcp #14（通称の展開）、#18（短い語の扱い）、#21（通称の展開を 0 件のときだけにする）、#27（全角英字の揃え方）、#30（索引から消えた文書の印）、#68（limit の丸め）、#69（空のキーワード）、#71（応答の形の不揃い）
 
@@ -101,15 +101,18 @@ flowchart TD
 
 ### SPEC-NTA-SEARCH-RULES-007 DB に入れる文字列は全角の数字・英字・記号・空白を揃える
 
-国税庁サイトの文字列は半角と全角が混ざっているので、DB に入れる題名・本文を次のように揃える。
+国税庁サイトの文字列は半角と全角が混ざっているので、DB に入れる題名・本文を houki-abbreviations の `normalizeJpText`（0.7.0）で次のように揃える。
 
 - 全角の数字・英字を半角にする。例: `１２３` → `123`、`ＮＩＳＡ` → `NISA`、`ｅ－Ｔａｘ` → `e-Tax`、`ＤＸ投資促進税制` → `DX投資促進税制`
-- 全角のハイフン `－` を `-` に、全角のチルダ `～` と波ダッシュ `〜` を `~` にする。例: `1－4－13の2` → `1-4-13の2`、`183〜193共-1` → `183~193共-1`
+- 全角のハイフン `－` と、ダッシュ類 `‐`（U+2010）`‑`（U+2011）`–`（U+2013）`—`（U+2014）`―`（U+2015）`−`（U+2212）を `-` にする。罫線 `─`（U+2500）と長音 `ー` は変えない。例: `1－4－13の2` → `1-4-13の2`、`課消２―11` → `課消2-11`、`データ` はそのまま
+- 全角のチルダ `～` と波ダッシュ `〜` を `~` にする。例: `183〜193共-1` → `183~193共-1`
 - 全角の空白を半角の空白にし、前後の空白を落とす。例: `第1章　通則` → `第1章 通則`
 - 中黒 `・` と、「共」「の」「条」「項」「章」などの語は変えない。例: `1の3・1の4共-1` はそのまま
 - 揃えた文字列にもう一度通しても変わらない
 
-例: 本文 `本文 with 全角ハイフン－と全角チルダ～が混入` は `全角ハイフン-と`・`全角チルダ~が` を含む形で入る。改正通達の本文の `課消２－11` は `課消2-11` として入る。
+v0.21.3（houki-abbreviations 0.6.x）までは `－` だけを `-` にしていた。0.22.0 より前に取り込んだ行は、版 10 から 11 への移行で入れ直す（SPEC-NTA-DB-SCHEMA-019）。
+
+例: 本文 `本文 with 全角ハイフン－と全角チルダ～が混入` は `全角ハイフン-と`・`全角チルダ~が` を含む形で入る。改正通達の本文の `課消２－11` も `課消２―11` も `課消2-11` として入る。
 
 ### SPEC-NTA-SEARCH-RULES-008 キーワードも DB と同じ揃え方をしてから探す
 
@@ -219,6 +222,23 @@ SPEC-NTA-SEARCH-RULES-009・010 で `keyword` を正式名に広げるのは、�
 
 例: 取得日時が `2026-01-01T00:00:00Z` と `2026-09-25T00:00:00Z` の質疑応答事例がある DB で、2026-09-27 に `nta_search_qa` を呼ぶと、`oldest_fetched_at` は `2026-01-01T00:00:00Z`、`staleness` は `outdated` で、`warning` は「一部ドキュメントが 269 日前のデータです。最新化するには `--bulk-download-qa` を実行してください」になる。
 
+### SPEC-NTA-SEARCH-RULES-018 `taxonomy` は列挙で検査せず、DB に無い値のときは `available_taxonomies` で正しい値を返す
+
+`nta_search_bunshokaitou` / `nta_search_jimu_unei` / `nta_search_kaisei_tsutatsu` の `taxonomy` は、tools/list の inputSchema に `enum` を書かず、どの文字列でも受け付ける。税目フォルダは国税庁サイトの構成で増えるので、一覧を inputSchema に固定しない。DB のその種別の文書にその値の税目が無いときは、エラーにせず `results: []` と、DB にある税目の一覧 `available_taxonomies` を返す（SPEC-NTA-SEARCH-BUNSHOKAITOU-002、SPEC-NTA-SEARCH-KAISEI-TSUTATSU-002、SPEC-NTA-SEARCH-JIMU-UNEI-005）。3 ツールの inputSchema の `taxonomy` の `description` には、例の値に加えて「DB に無い値のときは `available_taxonomies` で正しい値を返す」と書く。
+
+例: tools/list の `nta_search_kaisei_tsutatsu` の inputSchema の `properties.taxonomy` に `enum` は無く、`description` に `available_taxonomies` の語が入る。`{ keyword: "改正", taxonomy: "bogus" }` は `INVALID_ARGUMENT` ではなく、`results: []` と `available_taxonomies` の応答になる。
+
+### SPEC-NTA-SEARCH-RULES-019 略称辞書を引く文字列と文書の識別子は、半角に揃えてから照合する
+
+次の 2 つの入口は、どのツールでも同じ規則（全角英数字を半角に、ダッシュ類 `－` `‐` `‑` `–` `—` `―` `−` を `-` に、全角チルダ `～` `〜` を `~` に、全角空白を半角空白にし、前後の空白を除く。罫線 `─` と長音 `ー` は変えない。大文字と小文字は区別する）で揃えてから使う。
+
+1. 略称辞書（houki-abbreviations）を引く文字列: `resolve_abbreviation` の `abbr`（SPEC-NTA-RESOLVE-ABBREVIATION-008）、`nta_get_tsutatsu` の `name`（SPEC-NTA-GET-TSUTATSU-018）、検索 6 ツールの `keyword` の略称・通称の展開（SPEC-NTA-SEARCH-RULES-009・010・016）。`resolveAbbreviation(name, { normalize: true })` で引く
+2. 文書の識別子: `nta_get_qa` の `category` / `id`（SPEC-NTA-GET-QA-016）、`nta_get_tax_answer` の `no`（SPEC-NTA-GET-TAX-ANSWER-015）、`nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` / `nta_inspect_pdf_meta` の `docId`（各 011・020）。`normalizeJpText` を通してから、T1 の形の検査（SPEC-NTA-COMMON-ERRORS-015）に進む。`nta_get_tsutatsu` の `clause`（SPEC-NTA-GET-TSUTATSU-004・008）も同じ規則
+
+応答に返す引数の値（`keyword`、`abbr` など）は渡した値のまま。houki-egov-mcp の T3（SPEC-EGOV-RESOLVE-ABBREVIATION-011 など）と同じ範囲である。
+
+例: `nta_search_qa` に `keyword: "ＰＬ法"` を渡すと、略称辞書の `PL法`（`製造物責任法`）に当たり、SPEC-NTA-SEARCH-RULES-016 の管轄の規則で展開するかどうかを決める（v0.21.3 では辞書に無い扱いで展開しなかった）。応答の `keyword` は `"ＰＬ法"` のまま。
+
 ## できないこと
 
 - 表記の揺れ（ひらがなとカタカナ、送り仮名、漢数字と算用数字）を揃えること（揃えるのは全角と半角だけ）
@@ -235,8 +255,6 @@ SPEC-NTA-SEARCH-RULES-009・010 で `keyword` を正式名に広げるのは、�
 
 2. **`freshness` を付ける場面の違い。** 文書系 5 ツールはヒットしたときも 0 件のときも付けるが、`nta_search_tsutatsu` はヒットしたときだけ付ける。→ houki-nta-mcp #71
 3. **応答の形の違い。** `nta_search_tsutatsu` は `hits`・`count`・0 件のときの `message`、文書系は `results`。`nta_search_tsutatsu` は `keyword` の前後の空白を落として応答に返すが、文書系は受けた `keyword` をそのまま返す。→ houki-nta-mcp #71
-4. **`limit` の丸め。** → houki-nta-mcp #68
-5. **空のキーワード。** → houki-nta-mcp #69
 7. **DB に入れるときの揃え方（SPEC-NTA-SEARCH-RULES-007）の証拠。** 取り込みの処理は種別ごとにあり、揃えた形で入ることを確かめるテストは基本通達の条項（書き戻し）と改正通達の本文にしか無い。質疑応答事例・タックスアンサー・文書回答事例・事務運営指針は、揃える処理を通ることをコードで確かめたが、テストが無い。ID を振るのは受入テストを書いてから（種別ごとの受入テストを足すか）。
 8. **英字の 2 文字の語が 3 文字以上の語と混ざるときに当たらない。** キーワードは英字を小文字に寄せる（SPEC-NTA-SEARCH-RULES-008）が、DB の本文は大文字のまま入る（SPEC-NTA-SEARCH-RULES-007）。全文検索と、2 文字の語だけのときの部分一致は大文字と小文字を区別しないので当たる。しかし SPEC-NTA-SEARCH-RULES-004 の絞り込みは大文字と小文字を区別して比べるため、例えば `"DX 投資促進税制"` は本文に `DX` があっても 0 件になるとコードから読める。不具合か。テストは無い。
 9. **3 文字未満の略称の `search_notes` が実際の検索と食い違う。** `keyword` が 3 文字未満の略称（例: `消法`）のときは、正式名（`消費税法`）だけで全文検索し、部分一致は行わない。しかし `search_notes` には「部分一致 (LIKE) で検索しました」の文（SPEC-NTA-SEARCH-RULES-006）が入るとコードから読める。文を直すか。正式名だけで探すこと自体もテストが無い。

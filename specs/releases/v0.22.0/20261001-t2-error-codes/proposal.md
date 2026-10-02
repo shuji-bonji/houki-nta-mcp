@@ -3,7 +3,7 @@
 - 対象: `specs/current/common_errors/spec.md` と、`nta_get_qa` / `nta_get_tax_answer` / `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` の `specs/current/<tool>/spec.md`（`nta_get_bunshokaitou` と `resolve_abbreviation` は「未決」を消すだけで、差分のファイルは無い）
 - 実装の変更: 要（`nta_get_bunshokaitou` と `resolve_abbreviation` は「未決」を閉じるだけで、動きは変えない）
 - 承認日: 2026-10-01（PR #118）
-- 状態: 提案中
+- 状態: 取り込み済み（v0.22.0）
 - 起こした日: 2026-10-01（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #64（取得系と `resolve_abbreviation` の「見つからない」の code）、#65（存在しない番号で `SOURCE_API_ERROR`）、houki-abbreviations 0.7.0 からの申し送り（`computeDaysSince` / `judgeStaleness` の例外）

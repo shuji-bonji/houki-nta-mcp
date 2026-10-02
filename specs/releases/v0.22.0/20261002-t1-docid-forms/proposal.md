@@ -3,7 +3,7 @@
 - 対象: 差分 `20261001-t1-argument-guards` の `specs/nta_get_kaisei_tsutatsu/spec.md`・`specs/nta_get_jimu_unei/spec.md`・`specs/nta_get_bunshokaitou/spec.md` の SPEC-NTA-GET-KAISEI-TSUTATSU-010・SPEC-NTA-GET-JIMU-UNEI-010・SPEC-NTA-GET-BUNSHOKAITOU-010 と、同じ差分の proposal.md（訂正の記録を 1 行足す）
 - 実装の変更: 要（3 つの ID はまだ実装していない。0.22.0 の実装 PR で、T1 の他の ID と一緒に、この訂正後の形で実装する）
 - 承認日: 2026-10-02（PR #121）
-- 状態: 提案中
+- 状態: 取り込み済み（v0.22.0）
 - 起こした日: 2026-10-02（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #66（識別子の形の検査）

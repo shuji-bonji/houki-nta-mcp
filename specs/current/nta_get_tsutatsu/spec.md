@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-22（初版。PR #49 のマージ）。差分 `20260924-tsutatsu-clause-forms` は 2026-09-24（PR #53 のマージ）。差分 `20260925-tsutatsu-live-toc` は 2026-09-25（PR #59）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）
+- 承認日: 2026-09-22（初版。PR #49 のマージ）。差分 `20260924-tsutatsu-clause-forms` は 2026-09-24（PR #53 のマージ）。差分 `20260925-tsutatsu-live-toc` は 2026-09-25（PR #59）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
 - 起こした元: v0.20.2 の `src/tools/handlers.ts`（`getTsutatsu`）、`src/tools/definitions.ts`、`src/tools/handlers.test.ts`
 - 関連する判断: houki-hub `docs/DECISIONS.md`（2026-09-21 の行）
 - 取り込んだ差分: `specs/releases/v0.20.3/20260924-tsutatsu-clause-forms/`（入力の `clause`。2026-09-24 JST）
@@ -18,7 +18,7 @@
 
 | 引数 | 必須 | 内容 |
 |---|---|---|
-| `name` | 必須 | 通達名。略称（`消基通` / `所基通` / `法基通` / `相基通`）でも正式名（`消費税法基本通達` など）でもよい |
+| `name` | 必須 | 通達名。略称（`消基通` / `所基通` / `法基通` / `相基通`）でも正式名（`消費税法基本通達` など）でもよい。全角英数字・ダッシュ類・全角空白は半角に揃えてから辞書で引く（018） |
 | `clause` | 実質必須（スキーマ上は任意） | 通達番号。形は通達ごとに違う（下の表）。全角の数字・ハイフンは半角に揃えてから読む（DB から返すときも、国税庁サイトから取るときも） |
 | `format` | 任意 | `markdown`（既定）または `json` |
 
@@ -183,6 +183,20 @@ DB に保存してあった目次を使った呼び出しで次のどれかが�
 - 注記の文: `本文に画像が <箇所数> 箇所含まれています（算式などが GIF 画像で掲載されている箇所）。画像の内容は取得できないため、本文には alt テキストを [画像: …] として同じ位置に残しています（"<alt1>" / "<alt2>"）。算式の正確な内容は出典 URL の原ページで確認してください`。alt テキストが 1 つも無いときは `（"…"）` の部分を書かない
 - `format` が `json` のとき: `content_notes` に、この注記 1 件の配列を入れる
 - `format` を省くか `markdown` のとき: 本文の後、`出典:` の行の前に `> 注意: <注記>` の行を入れる
+
+### SPEC-NTA-GET-TSUTATSU-017 name が空文字・空白だけのときは略称辞書と DBを引かずに `INVALID_ARGUMENT` を返す
+
+空文字は inputSchema の `minLength: 1` の検査（SPEC-NTA-COMMON-ERRORS-013）で止まり、`INVALID_ARGUMENT`（`tool: "nta_get_tsutatsu"`、`detail.issues: [{ path: "name", message: "空文字は指定できません" }]`）を返す。空白（半角スペース・全角スペース・タブ・改行）だけのときは、ツールの処理が略称辞書と DBを引く前に、SPEC-NTA-COMMON-ERRORS-014 の形の `INVALID_ARGUMENT`（`tool: "nta_get_tsutatsu"`、`error: "name が空です"`、`detail.issues: [{ path: "name", message: "空白だけは指定できません" }]`、`hint` に通達名（略称か正式名）を渡すよう書く）を返す。
+
+例: `name: ""` は `code: "INVALID_ARGUMENT"`・`detail.issues[0].message: "空文字は指定できません"`。`name: "　"`（全角スペース）と `name: " \n"` は `code: "INVALID_ARGUMENT"`・`error: "name が空です"`。どれも略称辞書と DBは引かない。
+
+`clause` は任意なので、空文字・空白だけの `clause` は今までどおり SPEC-NTA-GET-TSUTATSU-003（無いときと同じ）に従う。
+
+### SPEC-NTA-GET-TSUTATSU-018 `name` の全角英数字・ダッシュ類・全角空白は半角に揃えてから略称辞書で引く
+
+`name` を略称辞書で解決するとき（SPEC-NTA-GET-TSUTATSU-001）は、houki-abbreviations の `resolveAbbreviation(name, { normalize: true })` の規則（全角英数字を半角に、ダッシュ類 `－` `‐` `‑` `–` `—` `―` `−` を `-` に、全角チルダ `～` `〜` を `~` に、全角空白を半角空白にし、前後の空白を除く。罫線 `─` と長音 `ー` は変えない。大文字と小文字は区別する）で揃えてから引く（SPEC-NTA-SEARCH-RULES-019）。管轄の判定（002）も同じ規則で引く。`clause` は今までどおり SPEC-NTA-GET-TSUTATSU-004・008 の規則で揃える。
+
+例: `{ name: "消基通　", clause: "５－１－９" }` は `{ name: "消基通", clause: "5-1-9" }` と同じ応答（v0.21.3 では `name` が辞書に無い扱いで `ABBREVIATION_NOT_FOUND` だった）。
 
 ## できないこと
 

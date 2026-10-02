@@ -3,7 +3,7 @@
 - 対象: `resolve_abbreviation` / `search_rules` / `db_schema` / `nta_get_tsutatsu` / `nta_get_qa` / `nta_get_tax_answer` / `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` / `nta_inspect_pdf_meta` の `specs/current/<dir>/spec.md`
 - 実装の変更: 要（`package.json` の `@shuji-bonji/houki-abbreviations` を `^0.7.0` に上げる変更と、スキーマの版 11 への移行を含む）
 - 承認日: 2026-10-01（PR #119）
-- 状態: 提案中
+- 状態: 取り込み済み（v0.22.0）
 - 起こした日: 2026-10-01（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #66（全角の数字・記号の扱いの部分。形の検査は T1）、houki-abbreviations 0.7.0 からの申し送り（`normalizeJpText` がダッシュ類を `-` に揃えるので、DB の検索用列と食い違う）

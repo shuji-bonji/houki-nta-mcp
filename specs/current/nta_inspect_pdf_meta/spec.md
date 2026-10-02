@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaInspectPdfMeta`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/pdf-meta.ts`、`src/services/pdf-files.ts`、`src/constants.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #36（読み方の事実と `save: true`）、#44（改正通達の「別紙 N」を新旧対照表として扱う）、#1（docType 別の `legal_status`）
 
@@ -17,7 +17,7 @@
 | 引数      | 必須 | 内容                                                                                                                                                                                                |
 | --------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `docType` | 必須 | 文書種別。`kaisei`（改正通達）/ `jimu-unei`（事務運営指針）/ `bunshokaitou`（文書回答事例）/ `tax-answer`（タックスアンサー）のどれか。質疑応答事例（qa-jirei）は PDF を持たないので選べない        |
-| `docId`   | 必須 | 文書 ID。`nta_search_*` の結果や `nta_get_*` の応答から得る                                                                                                                                         |
+| `docId`   | 必須 | 文書 ID。`nta_search_*` の結果や `nta_get_*` の応答から得る。全角の数字・ダッシュ類は半角に揃えてから読む（020） |
 | `kind`    | 任意 | 返す PDF の種別を 1 つに絞る。`comparison`（新旧対照表）/ `attachment`（別紙・別表）/ `qa-pdf`（Q&A）/ `related`（参考資料）/ `notice`（通知・連絡）/ `unknown`（判定できなかったもの）。省くと全件 |
 | `save`    | 任意 | `true` のとき、返す PDF をサーバー側の保存先に取得し、`saved[]` に絶対パスを返す。既定は `false`                                                                                                    |
 
@@ -195,6 +195,19 @@ DB にある文書の添付 PDF の記録が JSON として読めないときは
 保存するファイル名は、その文書の添付 PDF 全体（`kind` で絞る前）の URL を並べて決める。URL の最後のパス要素が他の PDF と同じときは、その PDF どうしが区別できるようになるまで、直前のパス要素から順に `_` でつないで前に付ける。他と重ならない PDF のファイル名は最後のパス要素のまま（SPEC-NTA-INSPECT-PDF-META-010）。同じ URL は、`kind` で絞っても絞らなくても同じファイル名になる。区別した PDF はそれぞれ取得して別のファイルに置き、`saved[]` の `path` はその PDF 自身のファイルを指す。
 
 例: 添付 PDF の URL が `https://www.nta.go.jp/law/tsutatsu/kihon/shohi/kaisei/0026003-067/pdf/01.pdf` と `https://www.nta.go.jp/law/tsutatsu/kihon/shohi/kaisei/0026003-068/pdf/01.pdf` と `https://www.nta.go.jp/law/tsutatsu/kihon/shohi/kaisei/0026003-067/pdf/02.pdf` の文書を `save: true` で呼ぶと、ファイル名は順に `0026003-067_pdf_01.pdf`・`0026003-068_pdf_01.pdf`・`02.pdf` になる（`pdf_01.pdf` ではまだ重なるので、もう 1 つ前の要素を付ける）。3 件とも取得され、`cached` は `false`。`kind` で絞って 2 件目だけを保存する呼び出しでも、ファイル名は `0026003-068_pdf_01.pdf` のまま。
+
+### SPEC-NTA-INSPECT-PDF-META-019 docId が空文字・空白だけのときはDBを引かずに `INVALID_ARGUMENT` を返す
+
+空文字は inputSchema の `minLength: 1` の検査（SPEC-NTA-COMMON-ERRORS-013）で止まり、`INVALID_ARGUMENT`（`tool: "nta_inspect_pdf_meta"`、`detail.issues: [{ path: "docId", message: "空文字は指定できません" }]`）を返す。空白（半角スペース・全角スペース・タブ・改行）だけのときは、ツールの処理がDBを引く前に、SPEC-NTA-COMMON-ERRORS-014 の形の `INVALID_ARGUMENT`（`tool: "nta_inspect_pdf_meta"`、`error: "docId が空です"`、`detail.issues: [{ path: "docId", message: "空白だけは指定できません" }]`、`hint` に`nta_search_*` の結果の `docId`を渡すよう書く）を返す。
+
+例: `docId: ""` は `code: "INVALID_ARGUMENT"`・`detail.issues[0].message: "空文字は指定できません"`。`docId: "　"`（全角スペース）と `docId: " \n"` は `code: "INVALID_ARGUMENT"`・`error: "docId が空です"`。どれもDBは引かない。
+
+### SPEC-NTA-INSPECT-PDF-META-020 `docId` は半角に揃えてから形を確かめる
+
+`docId` は、前後の空白を除いた値を houki-abbreviations の `normalizeJpText` の規則（全角英数字を半角に、ダッシュ類 `－` `‐` `‑` `–` `—` `―` `−` を `-` に、全角チルダ `～` `〜` を `~` に、全角空白を半角空白にし、前後の空白を除く。罫線 `─` と長音 `ー` は変えない。大文字と小文字は区別する）で揃えてから、SPEC-NTA-INSPECT-PDF-META-001（DB に無い文書は取りに行かない） の形の検査に進む（SPEC-NTA-SEARCH-RULES-019）。揃えた後の値で DB を引き、国税庁サイトの URL を組み立てる。
+
+例: `{ docType: "kaisei", docId: "００２６００３―０６７" }` は `{ docType: "kaisei", docId: "0026003-067" }` と同じ応答（v0.21.3 では全角のまま DB を引いて「DB に無い」だった）。
+
 ## できないこと
 
 - PDF の本文を読むこと・要約すること（読むのは pdf-reader-mcp などの PDF 読み取りツール。このツールは一覧・種別・読み方・保存だけ）

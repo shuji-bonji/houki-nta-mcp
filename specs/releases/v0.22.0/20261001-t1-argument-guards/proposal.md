@@ -4,7 +4,7 @@
 - 実装の変更: 要（`taxonomy` の部分だけは「今の動きを意図とする」で、実装の変更は説明文のみ）
 - 承認日: 2026-10-01（PR #117）
 - 訂正: 2026-10-02 に差分 `20261002-t1-docid-forms` で、SPEC-NTA-GET-KAISEI-TSUTATSU-010・SPEC-NTA-GET-JIMU-UNEI-010・SPEC-NTA-GET-BUNSHOKAITOU-010 の docId の形を、DB にある実際の値に合わせて緩めた（数字の桁数を見ず、使える文字と `/` の区切りだけを見る）。3 つの ID の本文はこの差分の spec.md で書き換えてある。訂正の理由と承認日は `specs/changes/20261002-t1-docid-forms/proposal.md`
-- 状態: 提案中
+- 状態: 取り込み済み（v0.22.0）
 - 起こした日: 2026-10-01（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #66（識別子の形の検査。全角の扱いは T3）、#67（`taxonomy` の値）、#68（`limit` の丸め）、#69（空のキーワード）、#79（`detail.issues` の分け方）

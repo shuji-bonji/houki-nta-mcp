@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaSearchKaiseiTsutatsu`・`explainDocZeroHits`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/errors.ts`、`src/tools/doc-search-zero-hit.test.ts`
 - 関連する Issue: houki-nta-mcp #18（短い語の補完）、#21（通称の展開）、#23（0 件の理由を分ける）、#30（索引から消えた文書の印）
 
@@ -16,9 +16,9 @@
 
 | 引数       | 必須 | 内容                                                                                                                                                                               |
 | ---------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `keyword`  | 必須 | 検索キーワード。例: `"電子帳簿"` / `"インボイス"` / `"軽減税率"`。空白で区切ると複数の語になる。3 文字以上の語を推奨（2 文字の語は本文の部分一致で補い、1 文字の語は条件から外す） |
-| `taxonomy` | 任意 | 税目フォルダで絞り込む。`shohi` / `shotoku` / `hojin` / `sisan/sozoku` のどれか（説明上の一覧。値の検査はしない。未決 1）                                                          |
-| `limit`    | 任意 | 返す件数。既定 10、最大 50                                                                                                                                                         |
+| `keyword`  | 必須 | 検索キーワード。例: `"電子帳簿"` / `"インボイス"` / `"軽減税率"`。空白で区切ると複数の語になる。3 文字以上の語を推奨（2 文字の語は本文の部分一致で補い、1 文字の語は条件から外す）。空文字・空白だけは不可 |
+| `taxonomy` | 任意 | 税目フォルダで絞り込む。`shohi` / `shotoku` / `hojin` / `sisan/sozoku` のどれか（例。列挙で検査せず、DB に無い値は `available_taxonomies` で正しい値を返す。SPEC-NTA-SEARCH-RULES-018） |
+| `limit`    | 任意 | 返す件数。既定 10。1 以上 50 以下の整数 |
 | `hasPdf`   | 任意 | 添付 PDF の有無で絞り込む。`true` は PDF 付きだけ、`false` は PDF 無しだけ、省略は絞らない                                                                                         |
 
 このツールはローカル DB だけを引く。国税庁サイトには取りに行かない。DB には事前に `--bulk-download-kaisei` で改正通達を入れておく。
@@ -94,6 +94,20 @@ DB に改正通達はあるが、`taxonomy` で絞った範囲に文書が 1 件
 
 0 件の理由は SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 → 002 → 003 → 004 の順に決める。先に当てはまった理由の応答を返す。
 
+### SPEC-NTA-SEARCH-KAISEI-TSUTATSU-005 `limit` は 1 以上 50 以下の整数で、範囲の外は `INVALID_ARGUMENT` にして丸めない
+
+tools/list の inputSchema の `limit` は `type: "integer"`、`minimum: 1`、`maximum: 50` を持つ（SPEC-NTA-COMMON-ERRORS-012）。0・負の数・小数・51 以上・数値でない値を渡すと、inputSchema の検査で `INVALID_ARGUMENT`（`tool: "nta_search_kaisei_tsutatsu"`、`detail.issues[0].path: "limit"`）を返し、DB を引かない。1 件や 50 件に丸めたり、切り捨てたりしない。既定の 10 件は変えない。
+
+例: `{ keyword: "電子帳簿", limit: 0 }` は `code: "INVALID_ARGUMENT"`、`detail.issues` は `[{ path: "limit", message: "1 以上で指定してください" }]` で、DB は引かない（v0.21.3 では 1 件に丸めていた）。`limit: 100` は `[{ path: "limit", message: "50 以下で指定してください" }]`（v0.21.3 では 50 件）。`limit: 2.5` と `limit: "10"` は `整数で指定してください`。`limit: 50` は検査を通り、最大 50 件を返す。
+
+### SPEC-NTA-SEARCH-KAISEI-TSUTATSU-006 keyword が空文字・空白だけのときはDBを引かずに `INVALID_ARGUMENT` を返す
+
+空文字は inputSchema の `minLength: 1` の検査（SPEC-NTA-COMMON-ERRORS-013）で止まり、`INVALID_ARGUMENT`（`tool: "nta_search_kaisei_tsutatsu"`、`detail.issues: [{ path: "keyword", message: "空文字は指定できません" }]`）を返す。空白（半角スペース・全角スペース・タブ・改行）だけのときは、ツールの処理がDBを引く前に、SPEC-NTA-COMMON-ERRORS-014 の形の `INVALID_ARGUMENT`（`tool: "nta_search_kaisei_tsutatsu"`、`error: "keyword が空です"`、`detail.issues: [{ path: "keyword", message: "空白だけは指定できません" }]`、`hint` に探したい語を渡すよう書く）を返す。
+
+例: `keyword: ""` は `code: "INVALID_ARGUMENT"`・`detail.issues[0].message: "空文字は指定できません"`。`keyword: "　"`（全角スペース）と `keyword: " \n"` は `code: "INVALID_ARGUMENT"`・`error: "keyword が空です"`。どれもDBは引かない。
+
+v0.21.3 では空の `keyword` に `results: []` と「該当なし」の `hint`（SPEC-NTA-SEARCH-KAISEI-TSUTATSU-004 の形）を返していたが、空の `keyword` は探していないので、004 の対象から外れる。
+
 ## できないこと
 
 - 国税庁サイトから改正通達を取ること（DB に無い文書は検索に出ない。取り込みは `--bulk-download-kaisei`）
@@ -108,7 +122,4 @@ DB に改正通達はあるが、`taxonomy` で絞った範囲に文書が 1 件
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **`taxonomy` の値を検査しない。** → houki-nta-mcp #67
-2. **`keyword` が空文字のとき。** → houki-nta-mcp #69
-3. **`limit` の丸め。** → houki-nta-mcp #68
 9. **SPEC-NTA-SEARCH-KAISEI-TSUTATSU-002 の `hint` の末尾。** → houki-nta-mcp #70

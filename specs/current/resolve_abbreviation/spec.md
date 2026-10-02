@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleResolveAbbreviation`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/tools/handlers.test.ts`、`src/server.test.ts`
 
 この文書は「このツールは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。
@@ -15,7 +15,7 @@
 
 | 引数   | 必須 | 内容                                                                                                                                                                    |
 | ------ | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `abbr` | 必須 | 略称・正式名称・別名（辞書の `aliases`）のどれか。例: `消基通` / `所基通` / `電帳法取通` / `消費税法基本通達`。前後の空白は無視する。完全一致で引く（部分一致はしない） |
+| `abbr` | 必須 | 略称・正式名称・別名（辞書の `aliases`）のどれか。例: `消基通` / `所基通` / `電帳法取通` / `消費税法基本通達`。前後の空白は無視する。全角英数字・ダッシュ類・全角空白は半角に揃えてから照合する（008）。完全一致で引く（部分一致はしない） |
 
 `format` は無い。応答は常に JSON。
 
@@ -86,6 +86,20 @@ flowchart TD
 
 例: `abbr: "電帳法取扱通達"` は `resolved.abbr: "電帳法取通"`・`resolved.source_mcp_hint: "houki-nta"` のエントリに解決され、`in_scope: true`。`abbr: "消費税"` は `resolved.abbr: "消法"`・`resolved.formal: "消費税法"` のエントリに解決され、houki-egov の管轄なので `in_scope: false` と誘導の `hint` が付く。応答の `abbr` は渡した値のまま。
 
+### SPEC-NTA-RESOLVE-ABBREVIATION-007 abbr が空文字・空白だけのときは略称辞書を引かずに `INVALID_ARGUMENT` を返す
+
+空文字は inputSchema の `minLength: 1` の検査（SPEC-NTA-COMMON-ERRORS-013）で止まり、`INVALID_ARGUMENT`（`tool: "resolve_abbreviation"`、`detail.issues: [{ path: "abbr", message: "空文字は指定できません" }]`）を返す。空白（半角スペース・全角スペース・タブ・改行）だけのときは、ツールの処理が略称辞書を引く前に、SPEC-NTA-COMMON-ERRORS-014 の形の `INVALID_ARGUMENT`（`tool: "resolve_abbreviation"`、`error: "abbr が空です"`、`detail.issues: [{ path: "abbr", message: "空白だけは指定できません" }]`、`hint` に略称・正式名称・別名を渡すよう書く）を返す。
+
+例: `abbr: ""` は `code: "INVALID_ARGUMENT"`・`detail.issues[0].message: "空文字は指定できません"`。`abbr: "　"`（全角スペース）と `abbr: " \n"` は `code: "INVALID_ARGUMENT"`・`error: "abbr が空です"`。どれも略称辞書は引かない。
+
+v0.21.3 では空文字・空白だけの `abbr` に `resolved: null` と `note`（SPEC-NTA-RESOLVE-ABBREVIATION-004 の形）を返していたが、空の `abbr` は辞書に無い名前ではなく引数の誤りなので、004 の対象から外れる。houki-egov-mcp の `resolve_abbreviation`（SPEC-EGOV-RESOLVE-ABBREVIATION-010）と同じ。
+
+### SPEC-NTA-RESOLVE-ABBREVIATION-008 `abbr` の全角英数字・ダッシュ類・全角空白は半角に揃えてから辞書と照合する
+
+`abbr` は、houki-abbreviations の `resolveAbbreviation(name, { normalize: true })` の規則（全角英数字を半角に、ダッシュ類 `－` `‐` `‑` `–` `—` `―` `−` を `-` に、全角チルダ `～` `〜` を `~` に、全角空白を半角空白にし、前後の空白を除く。罫線 `─` と長音 `ー` は変えない。大文字と小文字は区別する）で揃えてから、略称・正式名称・別名と照合する（SPEC-NTA-SEARCH-RULES-019）。応答の `abbr` は渡した値のまま。
+
+例: `abbr: "ＰＬ法"` は `resolved.formal: "製造物責任法"`・`in_scope: false` で、応答の `abbr` は `"ＰＬ法"`（v0.21.3 では `resolved: null` だった）。`abbr: "消基通　"`（末尾が全角空白）は `消費税法基本通達`・`in_scope: true`。`abbr: "pl法"` は大文字小文字が違うので `resolved: null` のまま。
+
 ## できないこと
 
 - 部分一致やあいまい一致で探すこと（完全一致だけ。`消費税` のような通称は辞書の別名に登録されているときだけ引ける）
@@ -102,8 +116,5 @@ flowchart TD
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **辞書に無い名前をエラーにしない。** → houki-nta-mcp #64
-2. **全角・半角の表記ゆれを吸収しない。** → houki-nta-mcp #66
-3. **空文字・空白だけの `abbr`。** → houki-nta-mcp #69
 4. **`hint` が案内する MCP 名。** → houki-nta-mcp #70
 5. **ツールの説明文の例。** → houki-nta-mcp #70

@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261002-t1-docid-forms` は 2026-10-02（PR #121）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaGetBunshokaitou`、`explainDocIdNotFound`、`renderDocumentMarkdown`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/index-status.ts`、`src/services/pdf-meta.ts`、`src/constants.ts`、`src/errors.ts`、`src/tools/get-doc-not-found.test.ts`
 - 関連する Issue: houki-nta-mcp #2（文書回答事例の `legal_status` の文言）、#23（文書系の bulk download の案内）、#30（索引から消えた文書の印）
 
@@ -16,7 +16,7 @@
 
 | 引数     | 必須 | 内容                                                                                                                                                                            |
 | -------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docId`  | 必須 | 文書 ID。本庁の事例は `税目/番号`（例: `shotoku/250416`）、国税局の事例は `局/税目/番号`（例: `tokyo/shotoku/260218`）。`nta_search_bunshokaitou` の結果の docId をそのまま渡す |
+| `docId`  | 必須 | 文書 ID。本庁の事例は `税目/番号`（例: `shotoku/250416`）、国税局の事例は `局/税目/番号`（例: `tokyo/shotoku/260218`）。`nta_search_bunshokaitou` の結果の docId をそのまま渡す。空文字・空白だけは不可（009）。形は 010。全角の数字・ダッシュ類は半角に揃えてから読む（011） |
 | `format` | 任意 | `markdown`（既定）または `json`                                                                                                                                                 |
 
 `docId` を省く、文字列でない値を渡す、上の 2 つ以外の引数を渡す、のいずれもエラー `INVALID_ARGUMENT` になる（入力の検査はすべてのツールに共通で、このツールのテストは無い。未決 1）。
@@ -127,6 +127,25 @@ SPEC-NTA-GET-BUNSHOKAITOU-003 の `available_doc_ids` は、次の順で最大 3
 DB に入っている添付 PDF に `kind` が無い（v0.6.0 期に投入した文書）ときは、題名から `kind` を決めて応答に入れる。判定は `nta_inspect_pdf_meta` の SPEC-NTA-INSPECT-PDF-META-003 と同じ（「新旧対照表」「新旧対応表」「対比表」は `comparison`、「Q&A」「質疑応答」「FAQ」は `qa-pdf`、「別紙」「別表」「様式」「付録」「添付資料」は `attachment`、「通知」「お知らせ」「連絡」は `notice`、「参考」「参考資料」「関連資料」は `related`、どれにも当たらなければ `unknown`）。改正通達の「別紙 N」を `comparison` に付け替える扱い（SPEC-NTA-GET-KAISEI-TSUTATSU-007）は nta_get_bunshokaitou では行わない（`docType` が `kaisei` でないため）。json の `document.attachedPdfs` の全要素に `kind` が付き、markdown の表と `### 読み方` では決めた種別の行になる（「その他」になるのは `unknown` のときだけ）。DB の内容は書き換えない。
 
 例: `kind` の無い「参考資料」「別紙1」「Q&A」を持つ文書回答事例を `json` で取ると、`document.attachedPdfs` の `kind` は順に `related`・`attachment`・`qa-pdf`。markdown の表には「別紙」「Q&A」「参考資料」の行があり、「その他」の行は無い。同じ文書を `nta_inspect_pdf_meta` で見たときと `kind` が一致する。
+
+### SPEC-NTA-GET-BUNSHOKAITOU-009 docId が空文字・空白だけのときはDBを引かずに `INVALID_ARGUMENT` を返す
+
+空文字は inputSchema の `minLength: 1` の検査（SPEC-NTA-COMMON-ERRORS-013）で止まり、`INVALID_ARGUMENT`（`tool: "nta_get_bunshokaitou"`、`detail.issues: [{ path: "docId", message: "空文字は指定できません" }]`）を返す。空白（半角スペース・全角スペース・タブ・改行）だけのときは、ツールの処理がDBを引く前に、SPEC-NTA-COMMON-ERRORS-014 の形の `INVALID_ARGUMENT`（`tool: "nta_get_bunshokaitou"`、`error: "docId が空です"`、`detail.issues: [{ path: "docId", message: "空白だけは指定できません" }]`、`hint` に`nta_search_bunshokaitou` の結果の `docId`を渡すよう書く）を返す。
+
+例: `docId: ""` は `code: "INVALID_ARGUMENT"`・`detail.issues[0].message: "空文字は指定できません"`。`docId: "　"`（全角スペース）と `docId: " \n"` は `code: "INVALID_ARGUMENT"`・`error: "docId が空です"`。どれもDBは引かない。
+
+### SPEC-NTA-GET-BUNSHOKAITOU-010 `docId` が受け付ける形でないときは DB を引かずに `INVALID_ARGUMENT` を返す
+
+`docId` は、国税庁サイトの文書回答事例のページの URL のフォルダーの並びで、本庁の事例は `税目/フォルダー名`（2 つの要素）、国税局の事例は `局/税目/フォルダー名`（3 つの要素）である。どの要素も英小文字・半角の数字・`-`・`_` だけからなる（SPEC-NTA-COMMON-ERRORS-015）。フォルダー名の付け方は国税局や年代によって違う（`shotoku/250416`・`tokyo/shotoku/260218`・`fukuoka/hojin/20101001`・`sapporo/hojin/02_01`・`nagoya/hojin/nag_140625` など）ので、数字の桁数は確かめない。前後の空白を除き、半角に揃えた（SPEC-NTA-GET-BUNSHOKAITOU-011）値がこの形でないときは、DB を引く前に `INVALID_ARGUMENT`（`tool: "nta_get_bunshokaitou"`、`error: "docId の形が受け付ける形ではありません: <渡した値>"`、`detail.issues: [{ path: "docId", message: "税目/フォルダー名 か 局/税目/フォルダー名 の形で、英小文字・数字・-・_ だけで指定してください（例: shotoku/250416、tokyo/shotoku/260218）" }]`、`hint` に `nta_search_bunshokaitou` の結果の `docId` をそのまま渡すよう書く）を返す。`DOC_NOT_FOUND` は、形に合うが DB にその文書が無いときだけになる。
+
+例: `docId: "shotoku/250416"`・`"tokyo/shotoku/260218"`・`"fukuoka/hojin/20101001"`・`"sapporo/hojin/02_01"`・`"nagoya/hojin/nag_140625"` は検査を通り、DB を引く。`docId: "250416"`（要素が 1 つ）・`"a/b/c/250416"`（要素が 4 つ）・`"shotoku/250416/index.htm"`（`.` を含む）・`"Tokyo/shotoku/260218"`（英大文字）・`"shotoku/文書/250416"`（漢字）は `code: "INVALID_ARGUMENT"`・`detail.issues[0].path: "docId"` で、DB は引かない（v0.21.3 では DB を引いてから「見つかりません」の応答になっていた）。
+
+### SPEC-NTA-GET-BUNSHOKAITOU-011 `docId` は半角に揃えてから形を確かめる
+
+`docId` は、前後の空白を除いた値を houki-abbreviations の `normalizeJpText` の規則（全角英数字を半角に、ダッシュ類 `－` `‐` `‑` `–` `—` `―` `−` を `-` に、全角チルダ `～` `〜` を `~` に、全角空白を半角空白にし、前後の空白を除く。罫線 `─` と長音 `ー` は変えない。大文字と小文字は区別する）で揃えてから、SPEC-NTA-GET-BUNSHOKAITOU-010 の形の検査に進む（SPEC-NTA-SEARCH-RULES-019）。揃えた後の値で DB を引き、国税庁サイトの URL を組み立てる。
+
+例: `{ docId: "shotoku/２５０４１６" }` は `{ docId: "shotoku/250416" }` と同じ応答（v0.21.3 では全角のまま DB を引いて「見つかりません」だった）。
+
 ## できないこと
 
 - DB に無い文書を国税庁サイトから取ること（docId から個別ページの URL を組み立てるには税目フォルダの世代差を解く必要があるため。取り込むのは `--bulk-download-bunshokaitou`）。応答に `source: "live"` が現れることはない
@@ -141,5 +160,3 @@ DB に入っている添付 PDF に `kind` が無い（v0.6.0 期に投入した
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **`docId` の形を確かめない。** → houki-nta-mcp #66
-6. **エラー `code` が 2 つの状況で同じ `DOC_NOT_FOUND`。** → houki-nta-mcp #64

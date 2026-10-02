@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: DB
 - 版: current
-- 承認日: 2026-09-29（PR #103）
+- 承認日: 2026-09-29（PR #103）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
 - 起こした元: v0.21.2 の `src/db/index.ts`、`src/db/schema.ts`、`src/services/bulk-downloader.ts`（`bulk_completed_at` と書き戻し）、`src/db/schema.test.ts`、`src/services/db-writeback.test.ts`、`src/services/bulk-downloader.test.ts`
 - 関連する Issue: houki-nta-mcp #27（全角英字の揃え方。版 4 → 5）、#29（`structured_json`。版 5 → 6）、#30（`orphaned_at`。版 6 → 7）、#45（案内文の行を除く。版 7 → 8・8 → 9）、#54（`bulk_completed_at` と `tsutatsu_toc`。版 9 → 10）
 
@@ -35,10 +35,10 @@ DB を開いたときに何が起きるかを示します。図の中の番号�
 flowchart TD
   A["DB を開く（CLI・各ツール）"] --> B["無いテーブルを作る。あるテーブルはそのまま（001）"]
   B --> C{"schema_meta に schema_version があるか"}
-  C -- 無い --> D["schema_version = 10 を記録する（001）"]
-  C -- "10 と同じ" --> E["そのまま使う"]
-  C -- "3〜9" --> F["既存の行を保ったまま 1 段ずつ移行し、10 にする（006〜014）"]
-  C -- "1・2、または 10 より大きい" --> G["全テーブルを消して作り直す（未決 2）"]
+  C -- 無い --> D["schema_version = 11 を記録する（001）"]
+  C -- "11 と同じ" --> E["そのまま使う"]
+  C -- "3〜10" --> F["既存の行を保ったまま 1 段ずつ移行し、11 にする（006〜014・019・020）"]
+  C -- "1・2、または 11 より大きい" --> G["全テーブルを消して作り直す（未決 2）"]
   D --> H["tsutatsu・chapter・section・clause・document に行を入れる"]
   E --> H
   F --> H
@@ -49,9 +49,9 @@ flowchart TD
 
 ## できること
 
-### SPEC-NTA-DB-SCHEMA-001 DB を開くとテーブルを作り、スキーマの版 10 を記録する
+### SPEC-NTA-DB-SCHEMA-001 DB を開くとテーブルを作り、スキーマの版 11 を記録する
 
-新しい DB を開くと、次のテーブルを作り、`schema_meta` テーブルに `key = 'schema_version'`、`value = '10'` の行を記録する。v0.21.2 のスキーマの版は 10 である。既にテーブルのある DB を開いても、テーブルは残る。
+新しい DB を開くと、次のテーブルを作り、`schema_meta` テーブルに `key = 'schema_version'`、`value = '11'` の行を記録する。v0.22.0 のスキーマの版は 11 である。既にテーブルのある DB を開いても、テーブルは残る。
 
 | テーブル       | 内容                                                                                                                                                                                                                                                                                     |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,13 +83,13 @@ flowchart TD
 
 ### SPEC-NTA-DB-SCHEMA-006 版 3 の DB を開くと、既存の行を保ったまま最新の版まで順に移行する
 
-`schema_meta` の `schema_version` が `3` の DB（`section` と `document` に `last_modified`・`etag` が無い）を開くと、列を足して版 4 にし、そこから版 10 まで 1 段ずつ移行する。`section` の行は残り、`last_modified`・`etag` は NULL のまま、`content_hash` は未計算（NULL）に戻る（SPEC-NTA-DB-SCHEMA-009）。移行が終わると `schema_version` は `10` になる。
+`schema_meta` の `schema_version` が `3` の DB（`section` と `document` に `last_modified`・`etag` が無い）を開くと、列を足して版 4 にし、そこから版 11 まで 1 段ずつ移行する。`section` の行は残り、`last_modified`・`etag` は NULL のまま、`content_hash` は未計算（NULL）に戻る（SPEC-NTA-DB-SCHEMA-009）。移行が終わると `schema_version` は `11` になる。
 
-例: 版 3 の DB に `section` の行（`title` が `第1章第1節`、`content_hash` が `pre-existing-hash`）を入れて開くと、`title` は `第1章第1節` のまま、`last_modified`・`etag`・`content_hash` は NULL、`schema_version` は `10`。
+例: 版 3 の DB に `section` の行（`title` が `第1章第1節`、`content_hash` が `pre-existing-hash`）を入れて開くと、`title` は `第1章第1節` のまま、`last_modified`・`etag`・`content_hash` は NULL、`schema_version` は `11`。
 
 ### SPEC-NTA-DB-SCHEMA-007 版 4 の DB を開くと、clause・section・document の文字列を共通の揃え方で入れ直す
 
-`schema_version` が `4` の DB（全角英字を半角にしない揃え方で入れた行がある）を開くと、国税庁サイトを取りに行かずに、DB の中の文字列を SPEC-NTA-SEARCH-RULES-007 の揃え方で入れ直し、`schema_version` を `10` にする。もう一度開いても何も変わらない。
+`schema_version` が `4` の DB（全角英字を半角にしない揃え方で入れた行がある）を開くと、国税庁サイトを取りに行かずに、DB の中の文字列を SPEC-NTA-SEARCH-RULES-007 の揃え方で入れ直し、`schema_version` を `11` にする。もう一度開いても何も変わらない。
 
 - `clause`: `clause_number`・`title`・`full_text`・`paragraphs_json` の各段落の `text`。例: `Ａ－１` → `A-1`、`ＮＩＳＡの取扱い` → `NISAの取扱い`、`ｅ－Ｔａｘで提出する` → `e-Taxで提出する`
 - `section`: `title`。例: `ＮＩＳＡ関係` → `NISA関係`
@@ -105,15 +105,15 @@ SPEC-NTA-DB-SCHEMA-007 の入れ直しで、`section.content_hash` は NULL（�
 
 ### SPEC-NTA-DB-SCHEMA-010 版 5 の DB を開くと document に structured_json 列を足し、既存の行は変えない
 
-`schema_version` が `5` の DB（`document` に `structured_json` が無い）を開くと、`structured_json` 列を足して版 10 まで移行する。既存の行は消えず、`title`・`full_text`・`content_hash` は変えず、`structured_json` は NULL のまま残る。もう一度開いても行数と `schema_version` は変わらない。
+`schema_version` が `5` の DB（`document` に `structured_json` が無い）を開くと、`structured_json` 列を足して版 11 まで移行する。既存の行は消えず、`title`・`full_text`・`content_hash` は変えず、`structured_json` は NULL のまま残る。もう一度開いても行数と `schema_version` は変わらない。
 
 ### SPEC-NTA-DB-SCHEMA-011 版 6 の DB を開くと document に orphaned_at 列を足し、既存の行は変えない
 
-`schema_version` が `6` の DB（`document` に `orphaned_at` が無い）を開くと、`orphaned_at` 列を足して版 10 まで移行する。既存の行は消えず、`content_hash` は変えず、`orphaned_at` は NULL（国税庁の索引にある）のまま残る。
+`schema_version` が `6` の DB（`document` に `orphaned_at` が無い）を開くと、`orphaned_at` 列を足して版 11 まで移行する。既存の行は消えず、`content_hash` は変えず、`orphaned_at` は NULL（国税庁の索引にある）のまま残る。
 
 ### SPEC-NTA-DB-SCHEMA-012 版 7 の DB を開くと、文書回答事例の本文から国税庁サイトの案内文の行を除く
 
-`schema_version` が `7` の DB を開くと、`doc_type = 'bunshokaitou'` の行の `full_text` から、国税庁サイトの案内文の行（`←上記照会の内容に対する回答はこちら` など）を除き、版 10 まで移行する。国税庁サイトは取りに行かない。もう一度開いても何も変わらない。
+`schema_version` が `7` の DB を開くと、`doc_type = 'bunshokaitou'` の行の `full_text` から、国税庁サイトの案内文の行（`←上記照会の内容に対する回答はこちら` など）を除き、版 11 まで移行する。国税庁サイトは取りに行かない。もう一度開いても何も変わらない。
 
 - 案内文を除いた行は、`content_hash` を除いた後の本文で計算し直す（SPEC-NTA-DB-SCHEMA-009 と同じ式）。`content_hash` が NULL だった行は本文だけ直り、NULL のまま
 - 案内文の無い行は `full_text` も `content_hash` も変わらない
@@ -124,13 +124,13 @@ SPEC-NTA-DB-SCHEMA-007 の入れ直しで、`section.content_hash` は NULL（�
 
 ### SPEC-NTA-DB-SCHEMA-013 版 8 の DB を開くと、改正通達・事務運営指針の本文からも案内文の行を除く
 
-`schema_version` が `8` の DB を開くと、`doc_type` が `kaisei`・`jimu-unei` の行の `full_text` から、案内文の行（`※PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。`）を除き、版 10 まで移行する。`content_hash` の扱い、案内文の無い行、`document_fts` への反映は SPEC-NTA-DB-SCHEMA-012 と同じ。もう一度開いても何も変わらない。
+`schema_version` が `8` の DB を開くと、`doc_type` が `kaisei`・`jimu-unei` の行の `full_text` から、案内文の行（`※PDFファイルが開けない、印刷できないなどの場合はこちらをご覧ください。`）を除き、版 11 まで移行する。`content_hash` の扱い、案内文の無い行、`document_fts` への反映は SPEC-NTA-DB-SCHEMA-012 と同じ。もう一度開いても何も変わらない。
 
 例: 改正通達の行の `full_text` の末尾にこの案内文があれば、それを除いた本文になり、`content_hash` は `kaisei`・`0026003-067`・題名・除いた後の本文から計算した SHA-1 になる。`document_fts MATCH '"PDFファイルが開けない"'` は 0 件。
 
 ### SPEC-NTA-DB-SCHEMA-014 版 9 の DB を開くと tsutatsu に bulk_completed_at を足し、bulk download 済みの通達だけ埋める
 
-`schema_version` が `9` の DB（`tsutatsu` に `bulk_completed_at` が無く、`tsutatsu_toc` が無い）を開くと、`bulk_completed_at` 列と `tsutatsu_toc` テーブルを足して版 10 にする。国税庁サイトは取りに行かない。
+`schema_version` が `9` の DB（`tsutatsu` に `bulk_completed_at` が無く、`tsutatsu_toc` が無い）を開くと、`bulk_completed_at` 列と `tsutatsu_toc` テーブルを足して版 11 にする。国税庁サイトは取りに行かない。
 
 - `last_modified` か `etag` の入った `section` を持つ通達（bulk download が節を書いた通達）は、その節の `fetched_at` の最大値を `bulk_completed_at` に入れる。例: 消費税法基本通達の節の `fetched_at` が `2026-09-01T00:00:00.000Z`（`last_modified` あり）と `2026-09-02T00:00:00.000Z`（`etag` あり）なら `2026-09-02T00:00:00.000Z`
 - `last_modified` も `etag` も無い `section` しか持たない通達（`nta_get_tsutatsu` が国税庁サイトから取って書き戻した節だけの通達）は NULL のまま
@@ -154,6 +154,24 @@ SPEC-NTA-DB-SCHEMA-007 の入れ直しで、`section.content_hash` は NULL（�
 
 書き戻しが失敗したとき（例: 閉じた DB に書こうとした）は、例外を投げずに 0 を返す。`nta_get_tsutatsu` の応答は変わらない。
 
+### SPEC-NTA-DB-SCHEMA-019 版 10 の DB を開くと、ダッシュ類も揃えた形で clause・section・document の文字列を入れ直し、版 11 にする
+
+`schema_version` が `10` の DB（ダッシュ類 `‐` `‑` `–` `—` `―` `−` を `-` にしない揃え方で入れた行がある）を開くと、国税庁サイトを取りに行かずに、DB の中の文字列を SPEC-NTA-SEARCH-RULES-007（houki-abbreviations 0.7.0 の `normalizeJpText`）の揃え方で入れ直し、`schema_version` を `11` にする。もう一度開いても何も変わらない。入れ直す列は版 4 → 5 のとき（SPEC-NTA-DB-SCHEMA-007）と同じである。
+
+- `clause`: `clause_number`・`title`・`full_text`・`paragraphs_json` の各段落の `text`。例: `1―4―13の2` → `1-4-13の2`
+- `section`: `title`
+- `document`: `title`・`full_text`。例: `課消２―11` → `課消2-11`
+
+版 4 以前の DB は、007 の入れ直しの後にこの入れ直しも通る（順に移行する。SPEC-NTA-DB-SCHEMA-006）。
+
+例: `document.full_text` に `課消２―11` を含む版 10 の DB を開くと、`schema_version` は `11` になり、その行の `full_text` は `課消2-11` を含み、`document_fts MATCH '課消2-11'` で当たる。
+
+### SPEC-NTA-DB-SCHEMA-020 版 10 から 11 の入れ直しでも、section の content_hash を未計算に戻し、document の content_hash は計算し直す
+
+SPEC-NTA-DB-SCHEMA-019 の入れ直しで、`section.content_hash` は NULL（未計算）に戻し、`document.content_hash` は入れ直した `title`・`full_text` で SPEC-NTA-DB-SCHEMA-009 と同じ式で計算し直す。次の取り込みで、変わっていない文書が「更新された」と数えられないようにするためである。
+
+例: 入れ直した `document` の行の `content_hash` は、`doc_type`・`doc_id`・入れ直した `title`・入れ直した `full_text` を改行で連結した SHA-1 になる。
+
 ## できないこと
 
 - DB を消したり中身を空にしたりする CLI やツールは無い（空にするには利用者がファイルを消す。未決 4）
@@ -168,7 +186,7 @@ SPEC-NTA-DB-SCHEMA-007 の入れ直しで、`section.content_hash` は NULL（�
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
 1. **DB の置き場所と環境変数。** `HOUKI_NTA_DB_PATH` があればそのパス、無ければ `$XDG_CACHE_HOME/houki-nta-mcp/cache.db`、どちらも無ければ `~/.cache/houki-nta-mcp/cache.db`。置き場所のディレクトリが無ければ途中のディレクトリも含めて作る。`XDG_CACHE_HOME` が空文字のときは無いときと同じに扱う。どれもテストが無い（houki-egov-mcp の SPEC-EGOV-DB-SCHEMA-012〜015 に当たる）。ID を振るのは受入テストを書いてから。
-2. **版 3 より前、または 10 より大きい版の DB を開くと、全テーブルを消して作り直す。** → houki-nta-mcp #107
+2. **版 3 より前、または 11 より大きい版の DB を開くと、全テーブルを消して作り直す。** → houki-nta-mcp #107
 3. **DB は WAL で開き、外部キーの制約を有効にする。** `PRAGMA journal_mode = WAL`・`PRAGMA foreign_keys = ON`。`tsutatsu` の行を消すと、その `chapter`・`section`・`clause` も消える（`ON DELETE CASCADE`）。テストが無い。ID を振るのは受入テストを書いてから。
 4. **全データを消す機能がテストにだけある。** → houki-nta-mcp #107
 5. **MCP サーバーは呼び出しごとに DB を開いて閉じ、そのたびにスキーマの移行が走りうる。** 取り込み中に検索を呼んだときの読み取りの扱い（houki-egov-mcp の SPEC-EGOV-DB-SCHEMA-023 に当たる）と、古い版の DB を初めて開くのが MCP サーバーの呼び出しだったときの移行の時間は、テストも文書も無い。ID を振るのは受入テストを書いてから。

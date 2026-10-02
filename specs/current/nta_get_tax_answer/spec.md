@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`getTaxAnswer`）、`src/tools/definitions.ts`、`src/services/tax-answer-render.ts`、`src/services/tax-answer-parser.ts`、`src/services/index-status.ts`、`src/tools/handlers.test.ts`、`src/tools/get-db-first.test.ts`
 - 関連する Issue: houki-nta-mcp #29（DB を先に引く）、#30（索引から消えた文書の印）
 
@@ -16,7 +16,7 @@
 
 | 引数     | 必須 | 内容                                                                                                                                   |
 | -------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `no`     | 必須 | タックスアンサー番号。半角の数字だけ。例: `"6101"`（消費税の基本的なしくみ）、`"1120"`（医療費控除）。先頭の桁で税目が決まる（下の表） |
+| `no`     | 必須 | タックスアンサー番号。数字 4 桁（全角は半角に揃えてから読む。001・012・015）。例: `"6101"`（消費税の基本的なしくみ）、`"1120"`（医療費控除）。先頭の桁で税目が決まる（下の表） |
 | `format` | 任意 | `markdown`（既定）または `json`                                                                                                        |
 
 | 先頭の桁 | 税目                 | 税目フォルダ |
@@ -36,8 +36,8 @@
 
 ```mermaid
 flowchart TD
-  A["呼び出し（no・format）"] --> B{"前後の空白を除いた no が半角の数字だけか"}
-  B -- いいえ --> E1["INVALID_ARGUMENT を返す（001）"]
+  A["呼び出し（no・format）"] --> B{"no が空白だけでなく、全角を半角に揃えて 4 桁の数字か（015）"}
+  B -- いいえ --> E1["INVALID_ARGUMENT を返す（001・012）"]
   B -- はい --> C{"先頭の桁が対応する番号帯か"}
   C -- いいえ --> E2["INVALID_ARGUMENT と対応する番号帯を返す（002）"]
   C -- はい --> D{"その番号の記事がローカル DB にあるか"}
@@ -45,7 +45,9 @@ flowchart TD
   D2 -- 持つ --> G["DB の内容を使う（004、source: db）"]
   D2 -- "持たない・構造の記録が読めない" --> H
   D -- 無い --> H["先頭の桁で決めた税目フォルダのページを国税庁サイトから 1 回取る（003・005、source: live）"]
-  H --> I["取った記事を DB に入れる（006。失敗しても応答は返す）"]
+  H -- "ページが無い（404・410・404 ページへの転送）" --> E3["DOC_NOT_FOUND と nta_search_tax_answer の案内を返す（013）"]
+  H -- 通信の失敗 --> E4["SOURCE_API_ERROR を返す（014）"]
+  H -- 取れた --> I["取った記事を DB に入れる（006。失敗しても応答は返す）"]
   G --> X{"国税庁の索引から外れているか（009）"}
   X -- はい --> Y["索引から外れた印を付ける（009。json は index_status・orphaned_at・notice、markdown は索引の状態の行と注記）"]
   X -- いいえ --> J{"format"}
@@ -57,9 +59,11 @@ flowchart TD
 
 ## できること
 
-### SPEC-NTA-GET-TAX-ANSWER-001 番号が数字でなければ取りに行かない
+### SPEC-NTA-GET-TAX-ANSWER-001 番号が空か数字でなければ取りに行かない
 
-`no` が空、または半角の数字以外の文字を含む（`"abc"` など）ときは、エラー `INVALID_ARGUMENT` を返す。`error` に「数字で指定してください」の旨と渡された値を書き、`hint` に `"6101"`・`"1120"` のような書き方の例を入れる。DB も国税庁サイトも引かない。前後の空白は取り除いてから見る。
+`no` が空文字のときは、inputSchema の `minLength: 1` の検査（SPEC-NTA-COMMON-ERRORS-013）で止まり、`INVALID_ARGUMENT`（`tool: "nta_get_tax_answer"`、`detail.issues: [{ path: "no", message: "空文字は指定できません" }]`）を返す。空白だけのときは、SPEC-NTA-COMMON-ERRORS-014 の形の `INVALID_ARGUMENT`（`error: "no が空です"`、`detail.issues: [{ path: "no", message: "空白だけは指定できません" }]`）を返す。前後の空白を除いた値が半角の数字以外の文字を含む（`"abc"`、`"61-01"` など）ときは、SPEC-NTA-COMMON-ERRORS-015 の形の `INVALID_ARGUMENT`（`error: "no の形が受け付ける形ではありません: <渡した値>"`、`detail.issues: [{ path: "no", message: "半角の数字 4 桁で指定してください" }]`、`hint` に `"6101"`・`"1120"` のような例）を返す。どれも DB も国税庁サイトも引かない。全角の数字は半角に揃えてから見る（SPEC-NTA-GET-TAX-ANSWER-015）。
+
+例: `no: ""` は `detail.issues[0].message: "空文字は指定できません"`。`no: " "` は `error: "no が空です"`。`no: "abc"` は `detail.issues[0].message: "半角の数字 4 桁で指定してください"`。どれも `code: "INVALID_ARGUMENT"`・`tool: "nta_get_tax_answer"`。
 
 ### SPEC-NTA-GET-TAX-ANSWER-002 対応していない先頭の桁は取りに行かない
 
@@ -128,6 +132,37 @@ DB にその記事の行があっても、節の構造（見出しと段落を�
 - DB から返すとき（SPEC-NTA-GET-TAX-ANSWER-004）、行に記録された番号が空でも `taxAnswer.no` は `no`
 
 例: 見出しが `消費税の基本的なしくみ`（`No.` が無い）のページを `no: "6101"` で取ると、`taxAnswer.no` は `"6101"`、`taxAnswer.title` は `"消費税の基本的なしくみ"`、DB の行の文書 ID は `6101`、税目は `shohi`。同じ番号をもう一度求めると `source` は `db` で `taxAnswer.no` は `"6101"`。
+
+### SPEC-NTA-GET-TAX-ANSWER-012 番号は 4 桁で、桁数が違えば取りに行かずに `INVALID_ARGUMENT` を返す
+
+`no` は、前後の空白を除いて半角の数字 4 桁である（SPEC-NTA-COMMON-ERRORS-015）。数字だけだが 4 桁でない（`"61"`、`"61011"`）ときは、先頭の桁で税目を決める（SPEC-NTA-GET-TAX-ANSWER-002・003）前に、`INVALID_ARGUMENT`（`tool: "nta_get_tax_answer"`、`error: "no の形が受け付ける形ではありません: <渡した値>"`、`detail.issues: [{ path: "no", message: "半角の数字 4 桁で指定してください" }]`、`hint` に `"6101"`・`"1120"` のような例）を返す。DB も国税庁サイトも引かない。
+
+例: `no: "6101"` は検査を通る。`no: "61"` と `no: "61011"` は `code: "INVALID_ARGUMENT"`・`detail.issues[0].path: "no"` で、DB も国税庁サイトも引かない（v0.21.3 では先頭の桁で税目を決めて取りに行っていた）。`no: "8101"` は 4 桁なので検査を通り、SPEC-NTA-GET-TAX-ANSWER-002 の未対応の桁のエラーになる。
+
+### SPEC-NTA-GET-TAX-ANSWER-013 国税庁サイトにページが無い（404・410・404 ページへの転送）ときは `DOC_NOT_FOUND` を返し、検索ツールを案内する
+
+`no` の記事が DB に無く国税庁サイトから取るとき、国税庁サイトが HTTP 404 か 410 を返した、または `https://www.nta.go.jp/error/404.htm` に転送したときは、エラー `DOC_NOT_FOUND`（`retryable: false`）を返す（SPEC-NTA-COMMON-ERRORS-016）。`SOURCE_API_ERROR` にはしない。
+
+- `error`: 渡した引数の値と、そのページが国税庁サイトに無いこと
+- `hint`: 番号を確かめる案内（nta_search_tax_answer で探す）
+- `next_actions`: `{ action: "nta_search_tax_answer", reason: "キーワード検索で正しい番号を探せます", example: { keyword: "<探したい語>" } }` の 1 件。`retry_later` は入れない
+- `detail.status`: 国税庁サイトが返した HTTP ステータス（転送のときは 404）、`detail.url`: 取りに行った URL
+- `tool`: `nta_get_tax_answer`
+
+例: 国税庁サイトが 404 を返す状態で `{ no: "6999" }` を渡すと、`code: "DOC_NOT_FOUND"`、`retryable: false`、`next_actions[0].action: "nta_search_tax_answer"`（v0.21.3 では `SOURCE_API_ERROR`・`retryable: true`・`retry_later` だった）。`/error/404.htm` への転送でも、410 でも同じ。
+
+### SPEC-NTA-GET-TAX-ANSWER-014 国税庁サイトとの通信が失敗したときは `SOURCE_API_ERROR`（`retryable: true`）を返す
+
+国税庁サイトから取るときに、接続できない・応答を待ちきれなかった・HTTP 5xx・HTTP 429 のどれかで終わったとき（取り直しても失敗したとき）は、エラー `SOURCE_API_ERROR`（`retryable: true`、`next_actions` に `retry_later`、`detail.status` に HTTP ステータス（あれば）、`detail.url` に取りに行った URL、`tool` に `nta_get_tax_answer`）を返す。ページが無いこと（SPEC-NTA-GET-TAX-ANSWER-013）はこのエラーにしない。
+
+例: 国税庁サイトが 503 を返す状態で `{ no: "6101" }` を渡すと、`code: "SOURCE_API_ERROR"`、`retryable: true`、`detail.status: 503`。接続できないときは `detail.status` が無く `retryable: true`。
+
+### SPEC-NTA-GET-TAX-ANSWER-015 `no` は半角に揃えてから形を確かめる
+
+`no` は、前後の空白を除いた値を houki-abbreviations の `normalizeJpText` の規則（全角英数字を半角に、ダッシュ類 `－` `‐` `‑` `–` `—` `―` `−` を `-` に、全角チルダ `～` `〜` を `~` に、全角空白を半角空白にし、前後の空白を除く。罫線 `─` と長音 `ー` は変えない。大文字と小文字は区別する）で揃えてから、SPEC-NTA-GET-TAX-ANSWER-001・012 の形の検査に進む（SPEC-NTA-SEARCH-RULES-019）。揃えた後の値で DB を引き、国税庁サイトの URL を組み立てる。
+
+例: `{ no: "６１０１" }` は `{ no: "6101" }` と同じ応答（v0.21.3 では数字以外として `INVALID_ARGUMENT` だった）。
+
 ## できないこと
 
 - 記事を題名やキーワードから探すこと（探すのは `nta_search_tax_answer`）
@@ -143,7 +178,4 @@ DB にその記事の行があっても、節の構造（見出しと段落を�
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **存在しない番号を指定したときのエラー。** → houki-nta-mcp #65
-2. **全角の数字を受け付けない。** → houki-nta-mcp #66
-3. **番号の桁数と先頭の `0` を確かめない。** → houki-nta-mcp #66
 4. **未対応の番号帯のエラー文に古い版が書かれている。** → houki-nta-mcp #70
