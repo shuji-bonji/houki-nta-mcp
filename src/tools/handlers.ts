@@ -208,11 +208,14 @@ function unreadableFetchedAt(
 
 /**
  * 取得系 3 ツールの docId を確かめる。空白だけなら SPEC-NTA-COMMON-ERRORS-014、形が合わなければ 015 のエラーを返し、
- * 合えば DB を引く値（前後の空白を除いた値）を返す。DB を開く前に呼ぶ
+ * 合えば DB を引く値を返す。DB を開く前に呼ぶ。
+ *
+ * 形は、houki-abbreviations の `normalizeJpText`（全角英数字・ダッシュ類を半角にし、前後の空白を除く）を
+ * 通した値で確かめる（v0.22.0、T3。SPEC-NTA-GET-*-011、SPEC-NTA-SEARCH-RULES-019）
  */
 function guardDocId(form: DocIdForm, docId: string): LawServiceError | { docId: string } {
   if (isBlank(docId)) return blankArgument(form.tool, 'docId', form.blankHint);
-  const value = docId.trim();
+  const value = normalizeJpText(docId);
   if (!form.pattern.test(value)) {
     return badFormArgument(form.tool, 'docId', docId, form.message, form.formHint);
   }
@@ -339,8 +342,8 @@ export async function getTsutatsu(
     );
   }
 
-  // 1. 略称解決
-  const resolved = resolveAbbreviation(args.name);
+  // 1. 略称解決。全角英数字・ダッシュ類・全角空白は半角に揃えてから引く（SPEC-NTA-GET-TSUTATSU-018）
+  const resolved = resolveAbbreviation(args.name, { normalize: true });
   if (!resolved) {
     return makeError(
       'ABBREVIATION_NOT_FOUND',
@@ -946,12 +949,16 @@ export async function getQa(
   }
   // category と id は空白だけ（SPEC-NTA-GET-QA-002）と形（013）を、DB と国税庁サイトを引く前に確かめる
   const tocHint = `税目の目次ページ（/law/shitsugi/${topic}/01.htm）でカテゴリ番号と事例番号を確かめてください`;
-  for (const [path, value] of [
+  const pairs = [
     ['category', args.category],
     ['id', args.id],
-  ] as const) {
+  ] as const;
+  for (const [path, value] of pairs) {
     if (isBlank(value)) return blankArgument('nta_get_qa', path, tocHint);
-    if (!/^[0-9]{1,2}$/.test(value.trim())) {
+  }
+  for (const [path, value] of pairs) {
+    // 全角の数字は半角に揃えてから形を確かめる（SPEC-NTA-GET-QA-016）
+    if (!/^[0-9]{1,2}$/.test(normalizeJpText(value))) {
       return badFormArgument(
         'nta_get_qa',
         path,
@@ -963,8 +970,8 @@ export async function getQa(
   }
 
   // パディングを綺麗に: "2" → "02" に揃える（実 URL は 2 桁ゼロ埋めが多い）
-  const category = args.category.trim().padStart(2, '0');
-  const id = args.id.trim().padStart(2, '0');
+  const category = normalizeJpText(args.category).padStart(2, '0');
+  const id = normalizeJpText(args.id).padStart(2, '0');
   const url = `${QA_BASE_URL}${topic}/${category}/${id}.htm`;
   const docId = `${topic}/${category}/${id}`;
 
@@ -1290,7 +1297,8 @@ export async function getTaxAnswer(
       'タックスアンサー番号（"6101"、"1120" のような 4 桁の数字）を渡してください'
     );
   }
-  const no = args.no.trim();
+  // 全角の数字は半角に揃えてから形を確かめる（SPEC-NTA-GET-TAX-ANSWER-015）
+  const no = normalizeJpText(args.no);
   if (!/^[0-9]{4}$/.test(no)) {
     return badFormArgument(
       'nta_get_tax_answer',
@@ -1452,7 +1460,9 @@ export async function handleResolveAbbreviation(args: ResolveAbbreviationArgs) {
       '略称・正式名称・別名（例: "消基通"、"消費税法基本通達"）を渡してください'
     );
   }
-  const result = resolveAbbreviation(args.abbr);
+  // 全角英数字・ダッシュ類・全角空白は半角に揃えてから照合する。応答の abbr は渡した値のまま
+  // （SPEC-NTA-RESOLVE-ABBREVIATION-008）
+  const result = resolveAbbreviation(args.abbr, { normalize: true });
 
   if (!result) {
     return {
@@ -1972,17 +1982,15 @@ export async function handleNtaInspectPdfMeta(
       'nta_search_* か nta_get_* の結果の docId を渡してください'
     );
   }
+  // 全角の数字・ダッシュ類は半角に揃えてから DB を引く（SPEC-NTA-INSPECT-PDF-META-020）
+  const docId = normalizeJpText(args.docId);
   const db = openDb(options.dbPath);
   try {
-    const doc = getDocumentFromDb(db, args.docType, args.docId);
+    const doc = getDocumentFromDb(db, args.docType, docId);
     if (!doc) {
-      return makeError(
-        'DOC_NOT_FOUND',
-        `${args.docType} の docId="${args.docId}" は DB に未登録です`,
-        {
-          hint: `\`--bulk-download-${args.docType === 'tax-answer' ? 'tax-answer' : args.docType}\` で投入済みか確認してください。docId が正しいかも \`nta_search_*\` で検証可能`,
-        }
-      );
+      return makeError('DOC_NOT_FOUND', `${args.docType} の docId="${docId}" は DB に未登録です`, {
+        hint: `\`--bulk-download-${args.docType === 'tax-answer' ? 'tax-answer' : args.docType}\` で投入済みか確認してください。docId が正しいかも \`nta_search_*\` で検証可能`,
+      });
     }
 
     // v0.7.2: kind 未設定（v0.6.0 期に投入された DB レコード）はタイトルから動的補完。

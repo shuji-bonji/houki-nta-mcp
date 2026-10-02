@@ -31,8 +31,9 @@ import { normalizeClauseNumber, normalizeJpText } from '../services/text-normali
  * - v8: 文書回答事例の full_text から国税庁サイトの案内文の行を除く（Issue #45: 「←上記照会の内容に対する回答はこちら」）
  * - v9: 改正通達・事務運営指針の full_text からも案内文の行を除く（Issue #45 の続き: 「※PDFファイルが開けない…こちらをご覧ください。」）
  * - v10: tsutatsu に bulk_completed_at、目次を保存する tsutatsu_toc を追加（Issue #54: 国税庁サイトからの取得を基本通達 4 種で成立させる）
+ * - v11: 投入済みテキストを houki-abbreviations 0.7.0 の正規化（ダッシュ類も `-` にする）で入れ直す（T3、SPEC-NTA-DB-SCHEMA-019・020）
  */
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -250,6 +251,10 @@ export function initSchema(db: DatabaseT.Database): void {
     migrateV9ToV10(db);
     version = 10;
   }
+  if (version === 10) {
+    migrateV10ToV11(db);
+    version = 11;
+  }
   if (version === SCHEMA_VERSION) {
     setSchemaVersion(db, SCHEMA_VERSION);
     return;
@@ -424,6 +429,28 @@ function migrateV9ToV10(db: DatabaseT.Database): void {
   tx();
 }
 
+/**
+ * v10 → v11 マイグレーション（T3: houki-abbreviations 0.7.0 の正規化に揃える）
+ *
+ * houki-abbreviations 0.7.0 の `normalizeJpText` は、全角ハイフン `－` に加えてダッシュ類
+ * `‐` `‑` `–` `—` `―` `−` も `-` にする（0.6.x は `－` だけ）。検索語は 0.22.0 からダッシュ類が `-` になるので、
+ * 0.21.x までに取り込んだ行（`―` のまま）を同じ揃え方で入れ直さないと、検索が分かれる。
+ * 手順は v4 → v5 と同じ（SPEC-NTA-DB-SCHEMA-019・020）。
+ *
+ * - 0.6.x の正規化の変換は 0.7.0 の変換の部分集合なので、保存済みの文字列にもう一度通すと原文から通したのと同じ結果になる。
+ *   国税庁サイトへのアクセスは発生しない
+ * - `section.content_hash` は NULL（未計算）に戻し、`document.content_hash` は入れ直した題名・本文で計算し直す
+ * - 版 4 以前の DB は、v4 → v5 の入れ直しの後にこの入れ直しも通る（同じ関数を 2 回通しても結果は変わらない）
+ */
+function migrateV10ToV11(db: DatabaseT.Database): void {
+  const tx = db.transaction(() => {
+    renormalizeClauses(db);
+    renormalizeSections(db);
+    renormalizeDocuments(db);
+  });
+  tx();
+}
+
 /** 指定した種別の full_text から案内文の行を除き、content_hash を計算し直す */
 function stripNavigationLines(db: DatabaseT.Database, docTypes: string[]): void {
   const placeholders = docTypes.map(() => '?').join(', ');
@@ -549,14 +576,14 @@ function renormalizeDocuments(db: DatabaseT.Database): void {
   for (const row of rows) {
     const title = normalizeJpText(row.title);
     const fullText = normalizeJpText(row.full_text);
+    // 入れ直さなかった行は content_hash も触らない（v0.22.0。版 10 → 11 の入れ直しでダッシュ類を含まない行まで
+    // hash を計算し直さないため。取り込みが書いた hash は同じ式なので、計算し直しても値は変わらない）
+    if (title === row.title && fullText === row.full_text) continue;
     // hash を持っていなかった行には付けない（「未計算」のままにしておく）
     const contentHash =
       row.content_hash === null
         ? null
         : computeDocumentContentHash(row.doc_type, row.doc_id, title, fullText);
-    if (title === row.title && fullText === row.full_text && contentHash === row.content_hash) {
-      continue;
-    }
     update.run(title, fullText, contentHash, row.id);
   }
 }

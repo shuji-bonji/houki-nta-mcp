@@ -11,7 +11,7 @@ import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
 import type DatabaseT from 'better-sqlite3';
 import type { AttachedPdf, DocType, NtaDocument, StoredStructure } from '../types/document.js';
 import { computeRelevance, type DocTypeForScoring, sortByScoreDesc } from './relevance-scoring.js';
-import { normalizeClauseNumber, normalizeSearchQuery } from './text-normalize.js';
+import { normalizeClauseNumber, normalizeJpText, normalizeSearchQuery } from './text-normalize.js';
 
 /**
  * Issue #18 (v0.10.1): trigram tokenizer が索引する最小文字数。
@@ -496,17 +496,20 @@ export function buildFtsQueryWithAbbreviation(
   const main = buildSanitizedPhrase(trimmed);
   if (!enable) return { query: main };
 
-  const abbr = resolveAbbreviation(trimmed);
+  // 全角英数字・ダッシュ類・全角空白は半角に揃えてから辞書を引き、辞書の名前とも揃えた値で比べる
+  // （v0.22.0、SPEC-NTA-SEARCH-RULES-019。"ＰＬ法" は "PL法" と同じく略称として広げる）
+  const abbr = resolveAbbreviation(trimmed, { normalize: true });
   if (!abbr) return { query: main };
+  const key = normalizeJpText(trimmed);
   // 許可リストに含まれる source_mcp_hint のみ formal を OR 展開
   // (court / saiketsu は houki-nta の検索対象外なので展開しない)
   if (!EXPAND_FORMAL_FOR_HINTS.has(abbr.source_mcp_hint)) return { query: main };
   // formal が同一文字列なら展開しても意味がない
-  if (abbr.formal === trimmed) return { query: main };
+  if (abbr.formal === key) return { query: main };
 
   const formalPhrase = buildSanitizedPhrase(abbr.formal);
   if (!formalPhrase) return { query: main };
-  const expansionKind: ExpansionKind = abbr.abbr === trimmed ? 'abbreviation' : 'alias';
+  const expansionKind: ExpansionKind = abbr.abbr === key ? 'abbreviation' : 'alias';
 
   // Issue #18: 「消法」のように略称自体が 3 文字未満で trigram に乗らない場合は formal だけで検索する
   if (!main) {
