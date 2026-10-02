@@ -2,7 +2,7 @@
  * 差分 specs/changes/20260927-search-hit-responses/ の受入テスト。
  *
  * - ADDED: SPEC-NTA-SEARCH-RULES-015（文書系 5 ツールのヒットしたときの応答）
- * - ADDED: SPEC-NTA-SEARCH-TSUTATSU-010（legal_status はヒットしたときだけ付ける）
+ * - ADDED: SPEC-NTA-SEARCH-TSUTATSU-010（legal_status はヒットしたときだけ付ける。v0.23.0 の T4 で、ヒットの有無によらず付けるに変わった）
  * - 既存の ID で受ける項目: nta_search_tsutatsu の応答としての
  *   SPEC-NTA-SEARCH-RULES-012・013・014
  *
@@ -36,8 +36,8 @@ interface HitResult {
   snippet: string;
   score: number;
   scoreReasons: string[];
-  index_status?: string;
-  orphaned_at?: string;
+  index_status?: string | null;
+  orphaned_at?: string | null;
 }
 
 interface LegalStatus {
@@ -290,7 +290,7 @@ describe('SPEC-NTA-SEARCH-RULES-015 文書系 5 ツールのヒットしたと�
       (d) => d.docType === t.docType && `${d.title}${d.body}`.includes(KEYWORD)
     );
 
-    it(`SPEC-NTA-SEARCH-RULES-015 ${t.tool}: エラーにせず keyword と results を返し、results の要素が docType・docId・taxonomy・title・sourceUrl・snippet・score・scoreReasons を持つ`, async () => {
+    it(`SPEC-NTA-SEARCH-RULES-015 ${t.tool}: エラーにせず keyword と results を返し、results の要素が docType・docId・taxonomy・title・sourceUrl・snippet・score・scoreReasons を持ち、索引にある文書は index_status・orphaned_at が null`, async () => {
       const r = (await t.call({ keyword: KEYWORD }, dbPath)) as DocHitResponse;
       expect(r.code).toBeUndefined();
       expect(r.error).toBeUndefined();
@@ -313,9 +313,9 @@ describe('SPEC-NTA-SEARCH-RULES-015 文書系 5 ツールのヒットしたと�
         expect(x.score).toBeLessThanOrEqual(1.5);
         expect(Array.isArray(x.scoreReasons)).toBe(true);
         expect(x.scoreReasons[0]).toMatch(/^doc_type=\S+ weight \d/);
-        // 索引にある文書には index_status / orphaned_at は付かない
-        expect(x.index_status).toBeUndefined();
-        expect(x.orphaned_at).toBeUndefined();
+        // v0.23.0（T4）: 索引にある文書でも index_status / orphaned_at を null で置く
+        expect(x.index_status).toBeNull();
+        expect(x.orphaned_at).toBeNull();
       }
     });
 
@@ -418,15 +418,15 @@ describe('SPEC-NTA-SEARCH-RULES-015 文書系 5 ツールのヒットしたと�
     expect(r.freshness?.newest_fetched_at).toBe(T_NEW);
   });
 
-  it('SPEC-NTA-SEARCH-RULES-015 nta_search_qa: 索引から消えた文書にだけ index_status / orphaned_at が付き、search_notes が付く', async () => {
+  it('SPEC-NTA-SEARCH-RULES-015 SPEC-NTA-SEARCH-RULES-011 nta_search_qa: 索引から消えた文書の index_status / orphaned_at は値、索引にある文書は null で、search_notes が付く', async () => {
     const r = (await handleNtaSearchQa(
       { keyword: KEYWORD },
       { dbPath: orphanDbPath }
     )) as DocHitResponse;
     const current = r.results?.find((x) => x.docId === 'gensen/01/01');
     const removed = r.results?.find((x) => x.docId === 'gensen/01/02');
-    expect(current?.index_status).toBeUndefined();
-    expect(current?.orphaned_at).toBeUndefined();
+    expect(current?.index_status).toBeNull();
+    expect(current?.orphaned_at).toBeNull();
     expect(removed?.index_status).toBe('removed_from_index');
     expect(removed?.orphaned_at).toBe(ORPHANED_AT);
     expect(r.search_notes?.some((n) => n.includes('2 件のうち 1 件'))).toBe(true);
@@ -530,14 +530,17 @@ describe('nta_search_tsutatsu のヒットしたときの応答', () => {
     expect(r.legal_status?.note).toContain('拘束');
   });
 
-  it('SPEC-NTA-SEARCH-TSUTATSU-010 nta_search_tsutatsu: 合う条項が無いときは legal_status を付けない', async () => {
+  it('SPEC-NTA-SEARCH-TSUTATSU-010 nta_search_tsutatsu: 合う条項が無いときも legal_status を付ける', async () => {
     const r = (await searchTsutatsu(
       { keyword: '存在しない語句です' },
       { dbPath }
     )) as TsutatsuResponse;
     expect(r.code).toBeUndefined();
     expect(r.hits).toEqual([]);
-    expect(r.legal_status).toBeUndefined();
+    // v0.23.0（T4）: 0 件のときも付ける（文書系 5 ツールの 0 件と同じ）
+    expect(r.legal_status?.binds_citizens).toBe(false);
+    expect(r.legal_status?.binds_courts).toBe(false);
+    expect(r.legal_status?.binds_tax_office).toBe(true);
   });
 
   it('SPEC-NTA-SEARCH-RULES-012 nta_search_tsutatsu の応答: 各 hit の score は 0〜1.5、scoreReasons に doc_type=tsutatsu weight 1.00', async () => {

@@ -51,9 +51,9 @@ const failingFetch = vi.fn(async () => {
 }) as unknown as typeof fetch;
 
 interface MarkedJson {
-  index_status?: string;
-  orphaned_at?: string;
-  notice?: string;
+  index_status?: string | null;
+  orphaned_at?: string | null;
+  notice?: string | null;
   source?: string;
   document?: { docId?: string; orphanedAt?: string | null };
 }
@@ -161,18 +161,22 @@ async function jimuUneiNotice(): Promise<string | undefined> {
   }
 }
 
-/** markdown の「- **取得**」の次に索引の状態の行、空行、「> 」の注記が続くこと（改正通達・文書回答事例） */
+/**
+ * markdown の「- **取得**」「- **取得元**」の次に索引の状態の行、空行、「> 」の注記が続くこと（改正通達・文書回答事例）。
+ * v0.23.0（T4、SPEC-NTA-GET-KAISEI-TSUTATSU-004・SPEC-NTA-GET-BUNSHOKAITOU-004）から「取得元」の行の次に置く
+ */
 function expectListStyleMark(md: string): void {
   const lines = md.split('\n');
   const fetchedIdx = lines.findIndex((l) => l.startsWith('- **取得**'));
   expect(fetchedIdx).toBeGreaterThanOrEqual(0);
-  const stateLine = lines[fetchedIdx + 1] ?? '';
+  expect(lines[fetchedIdx + 1]?.startsWith('- **取得元**: ')).toBe(true);
+  const stateLine = lines[fetchedIdx + 2] ?? '';
   expect(stateLine.startsWith(`- **${STATE_PREFIX}`)).toBe(true);
   expect(stateLine).toContain('2026-10-01');
   expect(stateLine.endsWith(' に確認）')).toBe(true);
-  expect(lines[fetchedIdx + 2]).toBe('');
-  expect(lines[fetchedIdx + 3]?.startsWith('> ')).toBe(true);
-  expect(lines[fetchedIdx + 3]).toContain('索引から外れ');
+  expect(lines[fetchedIdx + 3]).toBe('');
+  expect(lines[fetchedIdx + 4]?.startsWith('> ')).toBe(true);
+  expect(lines[fetchedIdx + 4]).toContain('索引から外れ');
 }
 
 function expectNoMarkInMarkdown(md: string): void {
@@ -180,10 +184,11 @@ function expectNoMarkInMarkdown(md: string): void {
   expect(md).not.toContain('removed_from_index');
 }
 
+/** v0.23.0（T4）から、索引にある文書と国税庁サイトから取った文書では印のキーを null で置く */
 function expectNoMarkInJson(r: MarkedJson): void {
-  expect(r.index_status).toBeUndefined();
-  expect(r.orphaned_at).toBeUndefined();
-  expect(r.notice).toBeUndefined();
+  expect(r.index_status).toBeNull();
+  expect(r.orphaned_at).toBeNull();
+  expect(r.notice).toBeNull();
 }
 
 /** 検索結果で「索引にある 1 件」と「消えた 1 件」を確かめる。消えた要素は marker を含む */
@@ -196,8 +201,9 @@ function expectSearchMarks(r: SearchResponse, orphanMarker: string): void {
 
   expect(removed[0]?.index_status).toBe('removed_from_index');
   expect(removed[0]?.orphaned_at).toBe(ORPHANED_AT);
-  expect(current[0]?.index_status).toBeUndefined();
-  expect(current[0]?.orphaned_at).toBeUndefined();
+  // v0.23.0（T4、SPEC-NTA-SEARCH-RULES-011）: 索引にある文書でもキーを null で置く
+  expect(current[0]?.index_status).toBeNull();
+  expect(current[0]?.orphaned_at).toBeNull();
 
   const note = r.search_notes?.find((n) => n.includes('2 件のうち 1 件'));
   expect(note).toBeDefined();
@@ -253,7 +259,7 @@ describe('SPEC-NTA-GET-BUNSHOKAITOU-004 nta_get_bunshokaitou — 国税庁の索
     expect(r.notice).toBe(await jimuUneiNotice());
   });
 
-  it('SPEC-NTA-GET-BUNSHOKAITOU-004 format 省略（markdown）では「取得」の行の次に索引の状態の行、空行、「> 」の注記が入る', async () => {
+  it('SPEC-NTA-GET-BUNSHOKAITOU-004 format 省略（markdown）では「取得元」の行の次に索引の状態の行、空行、「> 」の注記が入る', async () => {
     const r = (await handleNtaGetBunshokaitou({ docId: 'shotoku/200401' }, { dbPath })) as string;
     expect(typeof r).toBe('string');
     expectListStyleMark(r);
@@ -267,7 +273,7 @@ describe('SPEC-NTA-GET-BUNSHOKAITOU-004 nta_get_bunshokaitou — 国税庁の索
     expectListStyleMark(r);
   });
 
-  it('SPEC-NTA-GET-BUNSHOKAITOU-004 索引にある文書には json・markdown とも何も付かない', async () => {
+  it('SPEC-NTA-GET-BUNSHOKAITOU-004 索引にある文書は json の印のキーが null で、markdown には何も付かない', async () => {
     const json = (await handleNtaGetBunshokaitou(
       { docId: 'shotoku/250401', format: 'json' },
       { dbPath }
@@ -305,7 +311,7 @@ describe('SPEC-NTA-GET-KAISEI-TSUTATSU-004 nta_get_kaisei_tsutatsu — 国税庁
     expect(r.notice).toBe(await jimuUneiNotice());
   });
 
-  it('SPEC-NTA-GET-KAISEI-TSUTATSU-004 format 省略（markdown）では「取得」の行の次に索引の状態の行、空行、「> 」の注記が入る', async () => {
+  it('SPEC-NTA-GET-KAISEI-TSUTATSU-004 format 省略（markdown）では「取得元」の行の次に索引の状態の行、空行、「> 」の注記が入る', async () => {
     const r = (await handleNtaGetKaiseiTsutatsu({ docId: 'k-removed' }, { dbPath })) as string;
     expect(typeof r).toBe('string');
     expectListStyleMark(r);
@@ -319,7 +325,7 @@ describe('SPEC-NTA-GET-KAISEI-TSUTATSU-004 nta_get_kaisei_tsutatsu — 国税庁
     expectListStyleMark(r);
   });
 
-  it('SPEC-NTA-GET-KAISEI-TSUTATSU-004 索引にある文書には json・markdown とも何も付かない', async () => {
+  it('SPEC-NTA-GET-KAISEI-TSUTATSU-004 索引にある文書は json の印のキーが null で、markdown には何も付かない', async () => {
     const json = (await handleNtaGetKaiseiTsutatsu(
       { docId: 'k-current', format: 'json' },
       { dbPath }
@@ -333,7 +339,7 @@ describe('SPEC-NTA-GET-KAISEI-TSUTATSU-004 nta_get_kaisei_tsutatsu — 国税庁
 describe('SPEC-NTA-GET-QA-010 nta_get_qa — 国税庁の索引から消えた事例に印を付ける', () => {
   const args = { topic: 'shohi', category: '02', id: '19' } as const;
 
-  it('SPEC-NTA-GET-QA-010 国税庁サイトから取った事例（source=live）と、索引にある DB の事例には何も付かない', async () => {
+  it('SPEC-NTA-GET-QA-010 国税庁サイトから取った事例（source=live）と、索引にある DB の事例は json の印のキーが null で、markdown には何も付かない', async () => {
     const live = (await getQa(
       { ...args, format: 'json' },
       { fetchImpl: fixtureFetch(QA_FIXTURE), dbPath }
@@ -390,7 +396,7 @@ describe('SPEC-NTA-GET-QA-010 nta_get_qa — 国税庁の索引から消えた�
 });
 
 describe('SPEC-NTA-GET-TAX-ANSWER-009 nta_get_tax_answer — 国税庁の索引から消えた記事に印を付ける', () => {
-  it('SPEC-NTA-GET-TAX-ANSWER-009 国税庁サイトから取った記事（source=live）と、索引にある DB の記事には何も付かない', async () => {
+  it('SPEC-NTA-GET-TAX-ANSWER-009 国税庁サイトから取った記事（source=live）と、索引にある DB の記事は json の印のキーが null で、markdown には何も付かない', async () => {
     const live = (await getTaxAnswer(
       { no: '6101', format: 'json' },
       { fetchImpl: fixtureFetch(TAX_ANSWER_FIXTURE), dbPath }
@@ -459,7 +465,7 @@ describe('SPEC-NTA-GET-TAX-ANSWER-009 nta_get_tax_answer — 国税庁の索引�
 // ---------------------------------------------------------------------------
 
 describe('SPEC-NTA-SEARCH-RULES-011 検索系 4 ツールの応答 — 索引から消えた文書も返し、印と件数の文を付ける', () => {
-  it('SPEC-NTA-SEARCH-RULES-011 nta_search_bunshokaitou の応答: 両方返り、消えた文書だけに印、search_notes に件数の文', async () => {
+  it('SPEC-NTA-SEARCH-RULES-011 nta_search_bunshokaitou の応答: 両方返り、消えた文書だけに印（索引にある文書は null）、search_notes に件数の文', async () => {
     seed([
       [
         'bunshokaitou',
@@ -485,7 +491,7 @@ describe('SPEC-NTA-SEARCH-RULES-011 検索系 4 ツールの応答 — 索引か
     expectSearchMarks(r, 'orphan-b');
   });
 
-  it('SPEC-NTA-SEARCH-RULES-011 nta_search_kaisei_tsutatsu の応答: 両方返り、消えた文書だけに印、search_notes に件数の文', async () => {
+  it('SPEC-NTA-SEARCH-RULES-011 nta_search_kaisei_tsutatsu の応答: 両方返り、消えた文書だけに印（索引にある文書は null）、search_notes に件数の文', async () => {
     seed([
       ['kaisei', 'k-current', 'shohi', '現行の改正通達', '適格請求書の記載事項を改める', null],
       [
@@ -504,7 +510,7 @@ describe('SPEC-NTA-SEARCH-RULES-011 検索系 4 ツールの応答 — 索引か
     expectSearchMarks(r, 'orphan-k');
   });
 
-  it('SPEC-NTA-SEARCH-RULES-011 nta_search_qa の応答: 両方返り、消えた事例だけに印、search_notes に件数の文', async () => {
+  it('SPEC-NTA-SEARCH-RULES-011 nta_search_qa の応答: 両方返り、消えた事例だけに印（索引にある事例は null）、search_notes に件数の文', async () => {
     await getQa(
       { topic: 'shohi', category: '02', id: '19', format: 'json' },
       { fetchImpl: fixtureFetch(QA_FIXTURE), dbPath }
@@ -514,7 +520,7 @@ describe('SPEC-NTA-SEARCH-RULES-011 検索系 4 ツールの応答 — 索引か
     expectSearchMarks(r, 'orphan-q');
   });
 
-  it('SPEC-NTA-SEARCH-RULES-011 nta_search_tax_answer の応答: 両方返り、消えた記事だけに印、search_notes に件数の文', async () => {
+  it('SPEC-NTA-SEARCH-RULES-011 nta_search_tax_answer の応答: 両方返り、消えた記事だけに印（索引にある記事は null）、search_notes に件数の文', async () => {
     seed([
       [
         'tax-answer',
