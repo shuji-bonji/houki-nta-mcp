@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261003-t4-response-shape` は 2026-10-02（PR #124）。差分 `20261003-t5-docs-mismatch` は 2026-10-02（PR #126）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`searchTsutatsu`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/relevance-scoring.ts`、`src/services/freshness.ts`、`src/constants.ts`、`src/errors.ts`、`src/tools/handlers.test.ts`、`src/server.test.ts`
 - 関連する Issue: houki-nta-mcp #18（2 文字の語の補完）、#20（通達の応答に base_laws）、#21（通称の展開を 0 件のときだけにする）
 
@@ -32,7 +32,7 @@ flowchart TD
   B -- はい --> C{"keyword が空文字列か空白だけか"}
   C -- はい --> E2["INVALID_ARGUMENT を返す（002）"]
   C -- いいえ --> D{"ローカル DB に基本通達の条項があるか"}
-  D -- 無い --> E3["TSUTATSU_NOT_FOUND と --bulk-download の案内を返す（003）"]
+  D -- 無い --> E3["TSUTATSU_NOT_FOUND と --bulk-download-all の案内を返す（003）"]
   D -- ある --> F{"2 文字の語を含むか"}
   F -- はい --> G["2 文字の語は本文と題名の部分一致で補い、search_notes に書く（006）"]
   F -- いいえ --> H["全部の語を含む条項を全文検索で探す（004）"]
@@ -43,7 +43,7 @@ flowchart TD
   J --> K
   K -- ある --> L["keyword・count・hits・freshness・legal_status の応答（004・010）"]
   L --> M["通達ごとの base_laws_by_tsutatsu と next_actions を付ける（009）"]
-  K -- 無い --> N["keyword・hits: []・message を返す。エラーにしない（005）"]
+  K -- 無い --> N["keyword・count: 0・hits: []・message・freshness・legal_status を返す。エラーにしない（005・010）"]
   M --> O["語が全部 3 文字以上で通称の展開も無ければ search_notes を付けない（007）"]
   N --> O
 ```
@@ -62,9 +62,13 @@ flowchart TD
 
 例: `keyword: ""` は `detail.issues[0].message: "空文字は指定できません"`。`keyword: "   "` は `error: "keyword が空です"`・`detail.issues[0].path: "keyword"`。どちらも `code: "INVALID_ARGUMENT"`・`tool: "nta_search_tsutatsu"`（v0.21.3 は `error` の文だけで `detail.issues` が無かった）。
 
-### SPEC-NTA-SEARCH-TSUTATSU-003 DB に条項が 1 件も無いときは bulk download を案内する
+### SPEC-NTA-SEARCH-TSUTATSU-003 DB に条項が 1 件も無いときは、基本通達 4 種の bulk download を案内する
 
-ローカル DB に基本通達の条項が 1 件も入っていないときは、エラー `TSUTATSU_NOT_FOUND`（`error` は「ローカル DB に検索対象がありません」）を返す。`hint` に CLI の `--bulk-download` を実行する案内を書き、`next_actions` に `action: "cli_bulk_download"`（`example.command` は `houki-nta-mcp --bulk-download`）を入れる。
+ローカル DB に基本通達の条項が 1 件も入っていないときは、エラー `TSUTATSU_NOT_FOUND`（`error` は「ローカル DB に検索対象がありません」）を返す。`hint` に CLI の `--bulk-download-all`（基本通達 4 種を順に投入する。SPEC-NTA-CLI-BULK-DOWNLOAD-001）を実行する案内と、1 つの通達だけを先に入れるなら `--bulk-download --tsutatsu=<正式名>` でもよい旨を書き、`next_actions` に `action: "cli_bulk_download"`（`example.command` は `houki-nta-mcp --bulk-download-all`）を入れる。
+
+このツールは基本通達 4 種をまとめて検索し、ツールの説明文と `freshness.warning`（SPEC-NTA-SEARCH-RULES-017）は `--bulk-download-all` を案内している。DB が空のときの案内も同じフラグにする。
+
+例: 空の DB で `{ keyword: "役員" }` を渡すと、`code: "TSUTATSU_NOT_FOUND"`、`hint` に `--bulk-download-all` を含み、`next_actions[0].example.command` は `houki-nta-mcp --bulk-download-all`（v0.22.0 では `--bulk-download` で、既定では消費税法基本通達 1 つだけが入っていた）。
 
 ### SPEC-NTA-SEARCH-TSUTATSU-004 キーワードに合う条項があれば count と hits を返す
 
@@ -84,9 +88,21 @@ flowchart TD
 
 例: `{ keyword: "役員" }` で DB に「役員の範囲」の条項 9-2-1 があれば、`count` は 1、`hits[0].clauseNumber` は `"9-2-1"`、`hits[0].snippet` は `<b>役員</b>` を含む。
 
-### SPEC-NTA-SEARCH-TSUTATSU-005 キーワードに合う条項が無いときはエラーにしない
+### SPEC-NTA-SEARCH-TSUTATSU-005 キーワードに合う条項が無いときはエラーにせず、`count: 0` と `freshness`・`legal_status` を返す
 
-DB に条項はあるがキーワードに合うものが無いときは、`keyword`・`hits: []`・`message`（`"<keyword>" にマッチする clause はありません`）を返す。`count`・`freshness`・`legal_status`・`base_laws_by_tsutatsu`・`next_actions` は付けない。注記があれば `search_notes` を付ける（SPEC-NTA-SEARCH-TSUTATSU-006・008）。
+DB に条項はあるがキーワードに合うものが無いときは、エラーにせず次を返す。
+
+- `keyword`: 渡されたキーワード（前後の空白を除いたもの。SPEC-NTA-SEARCH-TSUTATSU-004 と同じ）
+- `count`: `0`
+- `hits`: `[]`
+- `message`: `"<keyword>" にマッチする clause はありません`
+- `freshness`: SPEC-NTA-SEARCH-TSUTATSU-004 と同じ範囲（DB にある通達の節すべて）で判定したもの
+- `legal_status`: SPEC-NTA-SEARCH-TSUTATSU-010 と同じもの
+- `search_notes`: 注記があるときだけ（SPEC-NTA-SEARCH-TSUTATSU-006・008）
+
+`base_laws_by_tsutatsu` と `next_actions` は付けない（`hits` に現れた通達から作るもので、`hits` が空なら作れない。SPEC-NTA-SEARCH-TSUTATSU-009）。
+
+例: 条項が 1 件以上ある DB で `{ keyword: "存在しない語句" }` を渡すと、`count: 0`、`hits: []`、`message` は `"存在しない語句" にマッチする clause はありません`、`freshness.staleness` と `legal_status.binds_tax_office: true` を持つ（v0.22.0 では `count`・`freshness`・`legal_status` が無かった）。
 
 ### SPEC-NTA-SEARCH-TSUTATSU-006 2 文字の語は本文の部分一致で補い、search_notes で知らせる
 
@@ -123,9 +139,11 @@ DB に条項はあるがキーワードに合うものが無いときは、`keyw
 
 例: 法人税基本通達 2 件と消費税法基本通達 1 件が当たったとき、`base_laws_by_tsutatsu` は `{ 法人税基本通達: ["法人税法", "法人税法施行令", "法人税法施行規則"], 消費税法基本通達: ["消費税法", "消費税法施行令", "消費税法施行規則"] }`、`next_actions` は `law_name` が `"法人税法"` と `"消費税法"` の 2 件。
 
-### SPEC-NTA-SEARCH-TSUTATSU-010 `legal_status` はヒットしたときだけ付ける
+### SPEC-NTA-SEARCH-TSUTATSU-010 `legal_status` は、ヒットの有無によらず付ける
 
-キーワードに合う条項があるとき（SPEC-NTA-SEARCH-TSUTATSU-004）は、応答に `legal_status`（`binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と、通達は行政内部文書で納税者・裁判所を直接は拘束しないが税務署員は職務として守る旨の `note`）を付ける。キーワードに合う条項が無いとき（SPEC-NTA-SEARCH-TSUTATSU-005）は `legal_status` を付けない。
+DB に条項があり検索をしたときは、キーワードに合う条項があるとき（SPEC-NTA-SEARCH-TSUTATSU-004）も無いとき（SPEC-NTA-SEARCH-TSUTATSU-005）も、応答に `legal_status`（`binds_citizens: false` / `binds_courts: false` / `binds_tax_office: true` と、通達は行政内部文書で納税者・裁判所を直接は拘束しないが税務署員は職務として守る旨の `note`）を付ける。文書系 5 ツールが 0 件のときも `legal_status` を付けるのと同じにする。エラー（SPEC-NTA-SEARCH-TSUTATSU-001〜003）には付けない。
+
+例: `{ keyword: "役員" }` で 1 件当たったときも、`{ keyword: "存在しない語句" }` で 0 件のときも、`legal_status.binds_tax_office` は `true`（v0.22.0 では 0 件のときに `legal_status` が無かった）。
 
 ### SPEC-NTA-SEARCH-TSUTATSU-011 `limit` は 1 以上 50 以下の整数で、範囲の外は `INVALID_ARGUMENT` にして丸めない
 
@@ -148,5 +166,4 @@ tools/list の inputSchema の `limit` は `type: "integer"`、`minimum: 1`、`m
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-8. **`TSUTATSU_NOT_FOUND` の案内するフラグ。** → houki-nta-mcp #70
-10. **0 件のときの `count`。** → houki-nta-mcp #71
+8. **`TSUTATSU_NOT_FOUND` の案内するフラグ。** → SPEC-NTA-SEARCH-TSUTATSU-003

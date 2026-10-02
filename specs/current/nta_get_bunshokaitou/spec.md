@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261002-t1-docid-forms` は 2026-10-02（PR #121）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261002-t1-docid-forms` は 2026-10-02（PR #121）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-02（PR #124）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaGetBunshokaitou`、`explainDocIdNotFound`、`renderDocumentMarkdown`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/index-status.ts`、`src/services/pdf-meta.ts`、`src/constants.ts`、`src/errors.ts`、`src/tools/get-doc-not-found.test.ts`
 - 関連する Issue: houki-nta-mcp #2（文書回答事例の `legal_status` の文言）、#23（文書系の bulk download の案内）、#30（索引から消えた文書の印）
 
@@ -71,22 +71,23 @@ flowchart TD
 | `next_actions`      | 1 件。`{ action: "nta_search_bunshokaitou", reason: "キーワード検索で正しい docId を探せます" }`                                                                                                                                                                                 |
 | `tool`              | `nta_get_bunshokaitou`                                                                                                                                                                                                                                                           |
 
-### SPEC-NTA-GET-BUNSHOKAITOU-004 国税庁の索引から消えた文書に印を付ける
+### SPEC-NTA-GET-BUNSHOKAITOU-004 国税庁の索引から消えた文書に印を付け、索引にある文書では印のキーを null にする
 
-DB から返す文書回答事例が国税庁の索引から外れている（bulk download で外れたことを確認した日時が付いている）ときは、応答に印を付ける。索引にある文書には何も付けない。
+DB から返す文書回答事例が国税庁の索引から外れている（bulk download で外れたことを確認した日時が付いている）ときは、応答に印を付ける。
 
-- `format` が `json` のとき: `index_status: "removed_from_index"`、`orphaned_at`（確認した日時。例: `"2026-10-01T00:30:00Z"`）、`notice`（索引から外れている旨と、過去の課税期間では意味を持つ場合があること、現在の取扱いは最新の通達で確かめること、出典 URL が 404 になることがあることの注記）を付ける。`document.orphanedAt` にも同じ日時が入る
-- `format` を省くか `markdown` のとき: `- **取得**` の行の次に `- **索引の状態**: removed_from_index（<確認した日時> に確認）` の行を入れ、空行を挟んで `> ` で始まる注記の行を入れる
-- 索引にある文書では、json に `index_status` / `orphaned_at` / `notice` を付けず、markdown に「索引の状態」の行と注記を入れない
+- `format` が `json` のとき: `index_status: "removed_from_index"`、`orphaned_at`（確認した日時。例: `"2026-10-01T00:30:00Z"`）、`notice`（索引から外れている旨と、過去の課税期間では意味を持つ場合があること、現在の取扱いは最新の通達で確かめること、出典 URL が 404 になることがあることの注記）を付ける。`document.orphanedAt` にも同じ日時が入る。索引にある文書では、`index_status`・`orphaned_at`・`notice`・`document.orphanedAt` をどれも `null` にする（キーは無くならない）
+- `format` を省くか `markdown` のとき: `- **取得元**` の行（SPEC-NTA-GET-BUNSHOKAITOU-005）の次に `- **索引の状態**: removed_from_index（<確認した日時> に確認）` の行を入れ、空行を挟んで `> ` で始まる注記の行を入れる。索引にある文書では、この行と注記を入れない
 
 注記の文は `nta_get_jimu_unei`（SPEC-NTA-GET-JIMU-UNEI-004）と同じである。
+
+例: 索引にある文書回答事例を `format: "json"` で取ると、`index_status: null`・`orphaned_at: null`・`notice: null`・`document.orphanedAt: null` を持つ（v0.22.0 では `index_status`・`orphaned_at`・`notice` のキーが無かった）。
 
 ### SPEC-NTA-GET-BUNSHOKAITOU-005 markdown（既定）の応答
 
 `format` を省くか `markdown` にしたとき、応答は次の順に並ぶ文字列である。
 
 - 見出し `# <題名>`
-- `- **種別**: 文書回答事例`、`- **発出日**: <発出日>`（DB にあるときだけ）、`- **税目**: <税目>`（DB にあるときだけ）、`` - **docId**: `<docId>` ``、`- **出典**: <国税庁ページの URL>`、`- **取得**: <DB に入れた日時>` の行
+- `- **種別**: 文書回答事例`、`- **発出日**: <発出日>`（DB にあるときだけ）、`- **税目**: <税目>`（DB にあるときだけ）、`` - **docId**: `<docId>` ``、`- **出典**: <国税庁ページの URL>`、`- **取得**: <DB に入れた日時>`、`- **取得元**: ローカル DB（bulk download で取り込んだもの）` の行
 - 国税庁の索引から消えた文書では、索引の状態の行と注記（SPEC-NTA-GET-BUNSHOKAITOU-004）
 - 宛先・発出者が DB にある文書では `## 宛先・発出者` の節。各行を `> ` で引用する
 - `## 本文` の節と本文
@@ -98,20 +99,28 @@ DB から返す文書回答事例が国税庁の索引から外れている（bu
 - PDF の本文はこのサーバーが読まないことと、pdf-reader-mcp の `read_url` か、`nta_inspect_pdf_meta` を `save: true` で呼んで `extract_tables` に渡す読み方の案内（`>` の引用）
 - 種別・タイトル・サイズ・読み方・URL の表。行は種別の順（新旧対照表・別紙・Q&A・参考資料・通知・その他）で、同じ種別の中は DB に入っている順
 - `### 読み方` の節。表に現れた種別ごとに 1 行ずつ、その種別の PDF の読み方（`nta_inspect_pdf_meta` の `layout_note` と同じ文。SPEC-NTA-INSPECT-PDF-META-005）
+
+「取得元」の行は `nta_get_jimu_unei`（SPEC-NTA-GET-JIMU-UNEI-006）と同じ文で、このツールは DB だけを引くので値は常に `ローカル DB（bulk download で取り込んだもの）` である（v0.22.0 ではこの行が無かった）。
+
 ### SPEC-NTA-GET-BUNSHOKAITOU-006 json の応答
 
-`format` を `json` にしたとき、応答は次のフィールドを持つ。
+`format` を `json` にしたとき、応答は次のフィールドを持つ。値の無いフィールドは `null` にし、キーは無くさない。
 
 | フィールド | 内容 |
 |---|---|
 | `document.docType` | `bunshokaitou` |
 | `document.docId` / `document.taxonomy` / `document.title` | 文書 ID・税目・題名 |
-| `document.issuedAt` / `document.issuer` | 発出日と宛先・発出者。DB にあるときだけ付く |
+| `document.issuedAt` / `document.issuer` | 発出日（`YYYY-MM-DD`）と宛先・発出者。DB に無ければ `null` |
 | `document.sourceUrl` / `document.fetchedAt` | 出典 URL と DB に入れた日時 |
+| `document.orphanedAt` | 索引から消えたことを確認した日時。索引にある文書では `null`（SPEC-NTA-GET-BUNSHOKAITOU-004） |
 | `document.fullText` | 本文 |
 | `document.attachedPdfs` | 添付 PDF の配列。要素は `title`・`url`・`sizeKb`・`kind`。`kind` は全要素に付く（DB に無ければ SPEC-NTA-GET-BUNSHOKAITOU-008 で題名から決める）。添付が無ければ空の配列 |
+| `index_status` / `orphaned_at` / `notice` | SPEC-NTA-GET-BUNSHOKAITOU-004。索引にある文書では `null` |
 | `legal_status` | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と、個別事案への回答で一般的な法的拘束力はない旨の `note` |
 | `source` | `db` |
+
+例: 発出日と宛先が DB に無い文書回答事例では、`document.issuedAt: null`・`document.issuer: null`（v0.22.0 ではどちらのキーも無かった）。
+
 ### SPEC-NTA-GET-BUNSHOKAITOU-007 `available_doc_ids` は発出日の新しい順で、発出日の無い文書は後ろに置く
 
 SPEC-NTA-GET-BUNSHOKAITOU-003 の `available_doc_ids` は、次の順で最大 30 件である。

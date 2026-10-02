@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: CLI
 - 版: current
-- 承認日: 2026-09-29（PR #103）
+- 承認日: 2026-09-29（PR #103）。差分 `20261003-t5-docs-mismatch` は 2026-10-02（PR #126）
 - 起こした元: v0.21.2 の `src/index.ts`、`src/cli.ts`（引数の読み方・`--help`・`--version`・処理の振り分け）、`src/config.ts`、`src/db/index.ts`（`--db-path` の既定）、`src/cli.test.ts`
 - 関連する Issue: houki-nta-mcp #25（税目フラグの値の検査。cli_bulk_download に書く）、#35（`--quickstart` と使い方の並び）
 
@@ -92,5 +92,4 @@ flowchart TD
 2. **知らないフラグと、`=` の無いフラグを黙って無視し、MCP サーバーを起動する。** → houki-nta-mcp #106
 3. **処理を選ぶフラグを複数渡したときの優先順。** 処理の流れの図の順（`--quickstart` が最初、`--check-baseline-drift` が最後）で 1 つだけを行う。`--refresh-stale` は `--bulk-download-all` / `--bulk-download` より先で、`--health-check` は投入のどれよりも後である。テストが無い。ID を振るのは受入テストを書いてから。
 4. **MCP サーバーの終わり方。** 起動すると標準エラー出力に `[server] <パッケージ名> v<版> started …` を JSON のログとして出す。SIGINT / SIGTERM を受けると標準入出力の接続を閉じる。起動の途中で想定外の例外が起きると `fatal error` のログを出して `exit 1`。どれもテストが無い（houki-egov-mcp の SPEC-EGOV-CLI-ENTRY-006・007 に当たる）。ID を振るのは受入テストを書いてから。
-5. **使い方に載っていない環境変数。** → houki-nta-mcp #108
 6. **`--db-path` の既定の決め方。** `HOUKI_NTA_DB_PATH` → `$XDG_CACHE_HOME/houki-nta-mcp/cache.db` → `~/.cache/houki-nta-mcp/cache.db` の順で、テストが無い。db_schema の未決 1 と同じ。

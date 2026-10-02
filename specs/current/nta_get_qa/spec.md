@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-24（初版。PR #52 のマージ）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
+- 承認日: 2026-09-24（初版。PR #52 のマージ）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-02（PR #124）
 - 起こした元: v0.20.2 の `src/tools/handlers.ts`（`getQa`）、`src/tools/definitions.ts`、`src/services/tax-answer-render.ts`、`src/tools/handlers.test.ts`、`src/tools/get-db-first.test.ts`
 - 関連する Issue: houki-nta-mcp #22（関係法令通達の構造化）、#29（DB を先に引く）、#30（索引から消えた文書の印）
 
@@ -89,7 +89,7 @@ SPEC-NTA-GET-QA-005 で取得した事例は DB に入る。同じ事例をも�
 
 ### SPEC-NTA-GET-QA-008 json の応答
 
-`format` を `json` にしたとき、応答は次のフィールドを持つ。
+`format` を `json` にしたとき、応答は次のフィールドを持つ。値の無いフィールドは `null` にし、キーは無くさない。
 
 | フィールド | 内容 |
 |---|---|
@@ -97,10 +97,13 @@ SPEC-NTA-GET-QA-005 で取得した事例は DB に入る。同じ事例をも�
 | `qa.title` | 題名 |
 | `qa.question` / `qa.answer` | 照会要旨・回答要旨の段落の配列 |
 | `qa.relatedLaws` | 【関係法令通達】の段落の配列（ページの表記のまま） |
-| `qa.notice` / `qa.basisDate` | ページ下部の注記と、その注記から読んだ作成時点の日付（`YYYY-MM-DD`）。注記が無い事例では付かない |
+| `qa.notice` / `qa.basisDate` | ページ下部の注記と、その注記から読んだ作成時点の日付（`YYYY-MM-DD`）。注記が無い事例ではどちらも `null`。注記はあるが日付を読めないときは `qa.basisDate` だけ `null` |
 | `qa.sourceUrl` / `qa.fetchedAt` | 出典 URL と取得日時 |
+| `index_status` / `orphaned_at` / `notice` | SPEC-NTA-GET-QA-010。索引にある事例と、この呼び出しで国税庁サイトから取った事例では `null` |
 | `source` | `db` または `live` |
 | `legal_status` | `binds_citizens: false` / `binds_courts: false` / `binds_tax_office: false` と注 |
+
+例: 注記の無い事例を `format: "json"` で取ると、`qa.notice: null`・`qa.basisDate: null`（v0.22.0 ではどちらのキーも無かった）。
 
 ### SPEC-NTA-GET-QA-009 関係法令通達を法令と通達に分け、本文を読む案内を付ける
 
@@ -112,15 +115,17 @@ json の応答では、【関係法令通達】を読み取って次を付ける
 
 例: shohi/02/19 の「消費税法第2条第1項第8号、消費税法基本通達5-1-1」からは、`related_laws` に `{ law_name: "消費税法", article: "2", paragraph: 1, item: 8 }`、`related_tsutatsu` に `{ name: "消費税法基本通達", clause: "5-1-1" }` が入り、`next_actions` はこの 2 つを読む案内の 2 件になる。
 
-### SPEC-NTA-GET-QA-010 国税庁の索引から消えた事例に印を付ける
+### SPEC-NTA-GET-QA-010 国税庁の索引から消えた事例に印を付け、それ以外では印のキーを null にする
 
-DB から返す事例（SPEC-NTA-GET-QA-004）が国税庁の索引から外れている（bulk download で外れたことを確認した日時が付いている）ときは、応答に印を付ける。索引にある事例と、この呼び出しで国税庁サイトから取った事例には何も付けない。
+DB から返す事例（SPEC-NTA-GET-QA-004）が国税庁の索引から外れている（bulk download で外れたことを確認した日時が付いている）ときは、応答に印を付ける。
 
 - `format` が `json` のとき: `index_status: "removed_from_index"`、`orphaned_at`（確認した日時。例: `"2026-10-01T00:30:00Z"`）、`notice`（索引から外れている旨と、過去の課税期間では意味を持つ場合があること、現在の取扱いは最新の通達で確かめること、出典 URL が 404 になることがあることの注記）を付ける
 - `format` を省くか `markdown` のとき: `> 税目: … / カテゴリ: … / 事例番号: …` の行の後に、`> **索引の状態**: removed_from_index（<確認した日時> に確認）` の行と、`> ` で始まる注記の行を入れる
-- 索引にある事例では、json に `index_status` / `orphaned_at` / `notice` を付けず、markdown に「索引の状態」の行と注記を入れない
+- 索引にある事例と、この呼び出しで国税庁サイトから取った事例では、json の `index_status`・`orphaned_at`・`notice` をどれも `null` にし（キーは無くならない）、markdown に「索引の状態」の行と注記を入れない
 
 注記の文は `nta_get_jimu_unei`（SPEC-NTA-GET-JIMU-UNEI-004）と同じである。
+
+例: 索引にある事例を DB から `format: "json"` で取ると、`index_status: null`・`orphaned_at: null`・`notice: null`（v0.22.0 ではどのキーも無かった）。
 
 ### SPEC-NTA-GET-QA-011 条まで読めない法令や、基本通達 4 種以外の通達は `next_actions` に入れない
 

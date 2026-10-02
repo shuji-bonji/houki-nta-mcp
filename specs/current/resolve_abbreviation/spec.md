@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t5-docs-mismatch` は 2026-10-02（PR #126）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleResolveAbbreviation`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/tools/handlers.test.ts`、`src/server.test.ts`
 
 この文書は「このツールは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。
@@ -32,7 +32,7 @@ flowchart TD
   C -- はい --> D["見つかったエントリを resolved に入れる（001）"]
   D --> F{"エントリの source_mcp_hint が houki-nta か"}
   F -- はい --> G["in_scope: true を付けて返す（002）"]
-  F -- いいえ --> H["in_scope: false と管轄先の MCP 名を書いた hint を付けて返す（003）"]
+  F -- いいえ --> H["in_scope: false と管轄の MCP への案内（hint。houki-egov なら next_actions も）を付けて返す（003）"]
 ```
 
 ## できること
@@ -62,11 +62,18 @@ flowchart TD
 
 例: `abbr: "電帳法取通"` の応答は `resolved.category: "kobetsu-tsutatsu"`、`resolved.source_mcp_hint: "houki-nta"`、`in_scope: true` で、`hint` は無い。
 
-### SPEC-NTA-RESOLVE-ABBREVIATION-003 管轄外のエントリには in_scope: false と誘導の hint を返す
+### SPEC-NTA-RESOLVE-ABBREVIATION-003 管轄外のエントリには in_scope: false と、管轄の MCP への案内を返す
 
-解決したエントリの `source_mcp_hint` が `houki-nta` でないとき（法律・政令・省令など）は、`resolved` にエントリを入れたうえで `in_scope: false` を付け、`hint` に管轄先の MCP 名を書く。エラーにはしない。
+解決したエントリの `source_mcp_hint` が `houki-nta` でないとき（法律・政令・省令など）は、`resolved` にエントリを入れたうえで `in_scope: false` を付ける。エラーにはしない。`hint` と `next_actions` は、管轄の MCP サーバーが houki-hub family にあるかどうかで次のとおりにする。
 
-例: `abbr: "消法"` の応答は `resolved.formal: "消費税法"`、`resolved.source_mcp_hint: "houki-egov"`、`in_scope: false`、`hint: "このエントリは houki-egov の管轄です。houki-egov-mcp で取得してください。"`。
+| `source_mcp_hint` | `hint` | `next_actions` |
+| --- | --- | --- |
+| `houki-egov`（family にある） | `このエントリは houki-egov の管轄です。houki-egov-mcp で取得してください。` | `{ action: "delegate_to_mcp", reason: "houki-egov の管轄リソースです。該当 MCP に切り替えてください", example: { mcp: "houki-egov" } }` の 1 件。`nta_get_tsutatsu` の `OUT_OF_SCOPE`（SPEC-NTA-GET-TSUTATSU-002）と同じ形 |
+| それ以外（family にまだ無い） | `このエントリは <source_mcp_hint> の管轄ですが、対応する MCP サーバーはまだありません。` | 付けない（切り替える先が無いため） |
+
+`<source_mcp_hint>-mcp` の形で、まだ無い MCP サーバーの名前（`houki-court-mcp` など）を案内しない。houki-abbreviations 0.7.0 の辞書の `source_mcp_hint` は `houki-egov` と `houki-nta` の 2 つだけなので、2 行目は辞書に新しい管轄が足されたときの備えである。
+
+例: `abbr: "消法"` の応答は `resolved.formal: "消費税法"`、`resolved.source_mcp_hint: "houki-egov"`、`in_scope: false`、`hint: "このエントリは houki-egov の管轄です。houki-egov-mcp で取得してください。"`、`next_actions: [{ action: "delegate_to_mcp", reason: "houki-egov の管轄リソースです。該当 MCP に切り替えてください", example: { mcp: "houki-egov" } }]`（v0.22.0 では `next_actions` が無かった）。`source_mcp_hint` が `houki-court` のエントリを返すときは、`hint` は `このエントリは houki-court の管轄ですが、対応する MCP サーバーはまだありません。` で、`next_actions` は無い。
 
 ### SPEC-NTA-RESOLVE-ABBREVIATION-004 辞書に無い名前には resolved: null を返す
 
@@ -116,5 +123,4 @@ v0.21.3 では空文字・空白だけの `abbr` に `resolved: null` と `note`
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-4. **`hint` が案内する MCP 名。** → houki-nta-mcp #70
-5. **ツールの説明文の例。** → houki-nta-mcp #70
+4. **`hint` が案内する MCP 名。** → SPEC-NTA-RESOLVE-ABBREVIATION-003

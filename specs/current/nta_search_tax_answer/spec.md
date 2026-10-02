@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261003-t5-docs-mismatch` は 2026-10-02（PR #126）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaSearchTaxAnswer`）、`src/tools/definitions.ts`、`src/services/db-search.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/tools/handlers.test.ts`、`src/tools/doc-search-zero-hit.test.ts`
 - 関連する Issue: houki-nta-mcp #18（短い語の扱い）、#21（通称の展開）、#23（0 件の理由を分ける）、#30（索引から消えた文書の印）
 
@@ -31,7 +31,7 @@ flowchart TD
   A["呼び出し（keyword・limit・hasPdf）"] --> B{"ローカル DB にタックスアンサーが 1 件でもあるか"}
   B -- 無い --> E1["DOC_NOT_FOUND と投入コマンドの案内を返す（001）"]
   B -- ある --> C{"keyword と hasPdf の条件に合う文書があるか（003）"}
-  C -- ある --> R["results・keyword・freshness・legal_status を返す（015）"]
+  C -- ある --> R["results・keyword・freshness・legal_status と、先頭の記事を読む next_actions を返す（015・006）"]
   C -- 無い --> H{"hasPdf の条件に合う文書があるか（003）"}
   H -- 無い --> E2["results: [] と hasPdf を外す案内を返す（003）"]
   H -- "ある（hasPdf を省いたときを含む）" --> D["results: []・keyword・件数付きの hint・freshness・legal_status を返す。エラーにしない（002）"]
@@ -92,6 +92,14 @@ tools/list の inputSchema の `limit` は `type: "integer"`、`minimum: 1`、`m
 
 v0.21.3 では空の `keyword` に `results: []` と「該当なし」の `hint`（SPEC-NTA-SEARCH-TAX-ANSWER-002 の形）を返していたが、空の `keyword` は探していないので、002 の対象から外れる。
 
+### SPEC-NTA-SEARCH-TAX-ANSWER-006 ヒットしたときは、先頭の記事を `nta_get_tax_answer` で読む案内を `next_actions` に入れる
+
+キーワードに合うタックスアンサーが 1 件以上あるとき（SPEC-NTA-SEARCH-RULES-015）は、応答に `next_actions` を付ける。`next_actions` は 1 件で、`action: "nta_get_tax_answer"`、`reason: "記事の本文を読めます"`、`example: { no: <results[0].docId> }`。`results[].docId` は 4 桁の記事番号で、`nta_get_tax_answer` の `no` にそのまま渡せる。
+
+0 件のとき（SPEC-NTA-SEARCH-TAX-ANSWER-002・003）は、この案内を付けない（読む記事が無いため）。
+
+例: `{ keyword: "医療費控除" }` で `results[0].docId` が `"1131"` のとき、`next_actions` は `[{ action: "nta_get_tax_answer", reason: "記事の本文を読めます", example: { no: "1131" } }]`（v0.22.0 では `next_actions` が無かった）。
+
 ## できないこと
 
 - 国税庁サイトからタックスアンサーを探すこと（探すのはローカル DB だけ。DB に入れるのは `--bulk-download-tax-answer`）
@@ -106,4 +114,4 @@ v0.21.3 では空の `keyword` に `results: []` と「該当なし」の `hint`
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-8. **`nta_get_tax_answer` へ進む案内が無い。** → houki-nta-mcp #70
+8. **`nta_get_tax_answer` へ進む案内が無い。** → SPEC-NTA-SEARCH-TAX-ANSWER-006

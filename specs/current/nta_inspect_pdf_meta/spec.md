@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-02（PR #124）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaInspectPdfMeta`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/pdf-meta.ts`、`src/services/pdf-files.ts`、`src/constants.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #36（読み方の事実と `save: true`）、#44（改正通達の「別紙 N」を新旧対照表として扱う）、#1（docType 別の `legal_status`）
 
@@ -62,7 +62,7 @@ flowchart TD
 
 `docType` と `docId` の組がローカル DB に無いときは、エラー `DOC_NOT_FOUND` を返す。`error` に「DB に未登録」である旨、`hint` に `--bulk-download-<docType>`（例: `--bulk-download-kaisei`）で投入済みかを確かめることと、`docId` が正しいかを `nta_search_*` で確かめられることを書く。国税庁サイトには取りに行かない。
 
-### SPEC-NTA-INSPECT-PDF-META-002 文書の添付 PDF の一覧を種別の順に返す
+### SPEC-NTA-INSPECT-PDF-META-002 文書の添付 PDF の一覧を種別の順に返し、索引から消えた文書には印を付ける
 
 文書がローカル DB にあるとき、応答は次のフィールドを持つ。
 
@@ -71,11 +71,14 @@ flowchart TD
 | `docType` / `docId`   | 引数のとおり                                                                                               |
 | `title` / `sourceUrl` | 文書の題名と、文書ページの URL                                                                             |
 | `attachedPdfs`        | 添付 PDF の配列。要素は `title`・`url`・`sizeKb`（分かるときだけ）・`kind`・`read_strategy`・`layout_note` |
+| `index_status` / `orphaned_at` / `notice` | 国税庁の索引から外れた文書（bulk download で外れたことを確認した日時が付いている文書）では、`index_status: "removed_from_index"`、`orphaned_at`（確認した日時）、`notice`（`nta_get_jimu_unei` の SPEC-NTA-GET-JIMU-UNEI-004 と同じ注記の文）。索引にある文書では、3 つとも `null` |
 | `legal_status`        | 文書種別に応じた法的位置付け（`binds_citizens` / `binds_courts` / `binds_tax_office` と注）                |
 
 `attachedPdfs` は `kind` の順に並べる。順は `comparison` → `attachment` → `qa-pdf` → `related` → `notice` → `unknown`。同じ `kind` の中では DB に入っている順のまま。
 
-例: 「別紙1 計算明細書」（`attachment`）と「新旧対照表」（`comparison`）がこの順で入っている改正通達では、応答の `attachedPdfs` は `comparison` の「新旧対照表」が先、`attachment` の「別紙1 計算明細書」が後になる。
+索引の印の形は、取得ツール（`nta_get_*` の json。SPEC-NTA-GET-JIMU-UNEI-004 など）と同じにする。PDF の URL は文書ページから外れていても残っていることがあるので、PDF を読む前に、文書そのものが索引から外れていることを知らせるためである。
+
+例: 「別紙1 計算明細書」（`attachment`）と「新旧対照表」（`comparison`）がこの順で入っている改正通達では、応答の `attachedPdfs` は `comparison` の「新旧対照表」が先、`attachment` の「別紙1 計算明細書」が後になる。この改正通達が索引にあれば `index_status: null`・`orphaned_at: null`・`notice: null`、`2026-10-01T00:30:00Z` に索引から外れたことを確認していれば `index_status: "removed_from_index"`・`orphaned_at: "2026-10-01T00:30:00Z"` と注記の `notice`（v0.22.0 ではどちらの場合もこの 3 つのキーが無かった）。
 
 ### SPEC-NTA-INSPECT-PDF-META-003 種別の無い PDF は題名から種別を決める
 
@@ -137,11 +140,14 @@ DB に入っている PDF に `kind` が無い（v0.6.0 期に投入した文書
 
 例: 「新旧対照表」と「別紙1 計算明細書」のある改正通達を `save` 無しで呼ぶと、`next_actions` の `action` は `pdf-reader-mcp:read_url`・`pdf-reader-mcp:read_url`・`read_pdf` の 3 件で、`example` は順に `{ url: "…/a.pdf", split_columns: 2 }`・`{ url: "…/b.pdf" }`・`{ url: "…/a.pdf" }` になる。
 
-### SPEC-NTA-INSPECT-PDF-META-010 save: true で PDF を保存し、saved[] に絶対パスを返す
+### SPEC-NTA-INSPECT-PDF-META-010 save: true で PDF を保存し、saved[] に絶対パスを返す。保存する PDF が 0 件でも `saved: []` を返す
 
-`save: true` のとき、`attachedPdfs` に入る各 PDF を国税庁サイトから取得して保存先に置き、`saved[]` を返す。`saved[]` の要素は `attachedPdfs` と同じ順で、`url`（`attachedPdfs[].url` と同じ値）・`path`（保存したファイルの絶対パス）・`bytes`（ファイルの大きさ）・`cached`（今回取得しなかったとき `true`）を持つ。保存先のパスは `<保存先>/<docType>/<docId>/<ファイル名>`。ファイル名は、その文書の添付 PDF の中で URL の最後のパス要素が他と重ならなければ最後のパス要素（拡張子が無ければ `.pdf` を付ける）、重なるときは SPEC-NTA-INSPECT-PDF-META-018 のとおり前のパス要素を付けたもの。`save` を渡さないときは `saved` を付けない。
+`save: true` のとき、`attachedPdfs` に入る各 PDF を国税庁サイトから取得して保存先に置き、`saved[]` を返す。`saved[]` の要素は `attachedPdfs` と同じ順で、`url`（`attachedPdfs[].url` と同じ値）・`path`（保存したファイルの絶対パス）・`bytes`（ファイルの大きさ）・`cached`（今回取得しなかったとき `true`）を持つ。保存先のパスは `<保存先>/<docType>/<docId>/<ファイル名>`。ファイル名は、その文書の添付 PDF の中で URL の最後のパス要素が他と重ならなければ最後のパス要素（拡張子が無ければ `.pdf` を付ける）、重なるときは SPEC-NTA-INSPECT-PDF-META-018 のとおり前のパス要素を付けたもの。
 
-例: `docType: "kaisei"`、`docId: "sample-003"`、URL が `https://…/a.pdf` の PDF は `<保存先>/kaisei/sample-003/a.pdf` に置かれ、`saved[]` に `{ url: "https://…/a.pdf", path: "<そのパス>", bytes: <大きさ>, cached: false }` が入る。
+`save: true` で `attachedPdfs` が空のとき（文書に PDF が無い、`kind` で絞った結果が 0 件。SPEC-NTA-INSPECT-PDF-META-007）は、`saved: []` を返す。`save` を渡さないときは `saved` を付けない（保存を求めていない応答に保存の結果の欄を置かないため。proposal.md の「人が判断すること」を参照）。
+
+例: `docType: "kaisei"`、`docId: "sample-003"`、URL が `https://…/a.pdf` の PDF は `<保存先>/kaisei/sample-003/a.pdf` に置かれ、`saved[]` に `{ url: "https://…/a.pdf", path: "<そのパス>", bytes: <大きさ>, cached: false }` が入る。`comparison` だけの文書に `{ kind: "qa-pdf", save: true }` を渡すと `attachedPdfs: []`・`saved: []`（v0.22.0 では `saved` のキーが無かった）。
+
 ### SPEC-NTA-INSPECT-PDF-META-011 保存に失敗した PDF は saved[] に error 付きで残す
 
 取得の応答が 2xx でない PDF は、`saved[]` から落とさず `path: null`・`bytes: null`・`cached: false`・`error`（例: `HTTP 404`）で残す。他の PDF の保存は続ける。1 件でも失敗があれば `note` に `<件数> 件の PDF を保存できませんでした（saved[].error を参照）。その PDF は URL のまま読んでください` と書く。失敗した PDF の `next_actions` は保存していないときと同じ（`pdf-reader-mcp:read_url`）になる。
@@ -223,5 +229,3 @@ DB にある文書の添付 PDF の記録が JSON として読めないときは
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
-1. **索引から消えた文書の印が付かない。** → houki-nta-mcp #71
-5. **`save: true` で絞った結果が 0 件のとき `saved` を付けない。** → houki-nta-mcp #71

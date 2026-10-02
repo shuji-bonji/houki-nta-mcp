@@ -3,7 +3,7 @@
 - 対象: `specs/current/common_errors/spec.md`・`resolve_abbreviation/spec.md`・`nta_search_tsutatsu/spec.md`・`nta_search_tax_answer/spec.md`（動きを変える行）と、tool description・`hint` の文・CLI の使い方・README（文書だけを直す行。仕様 ID なし）
 - 実装の変更: 要（`UNKNOWN_TOOL` / `INTERNAL_ERROR` の `retryable` と文、`resolve_abbreviation` の `hint` と `next_actions`、`nta_search_tsutatsu` の空の DB の案内、`nta_search_tax_answer` の `next_actions`。文書だけの行は「実装 PR で直す文書」）
 - 承認日: 2026-10-02（PR #126）
-- 状態: 提案中
+- 状態: 取り込み済み（v0.23.0）
 - 起こした日: 2026-10-03（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #70（hint・next_actions・説明文の案内が実際の動きと合わない）、#108（CLI の使い方の `--refresh` の説明・環境変数の欄・`--refresh-stale` の「N 日以上」が実際の動きと合わない）

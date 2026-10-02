@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: CLI
 - 版: current
-- 承認日: 2026-09-29（PR #103）
+- 承認日: 2026-09-29（PR #103）。差分 `20261003-t5-docs-mismatch` は 2026-10-02（PR #126）
 - 起こした元: v0.21.2 の `src/cli.ts`（`--refresh`・`--refresh-stale`・`--apply`）、`src/services/bulk-downloader.ts`（節ごとの条件付き取得）、`src/services/document-conditional-fetch.ts`、`src/services/nta-scraper.ts`（`If-Modified-Since` / `If-None-Match`）、`src/services/db-search.ts`（古い節の列挙）、`src/cli.test.ts`、`src/services/db-stale.test.ts`
 - 関連する Issue: なし（v0.10.2 で `--refresh` が通達の投入に、v0.10.4 で文書系 5 種別の投入にも効くようになった）
 
@@ -91,8 +91,6 @@ flowchart TD
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
 1. **差分更新の 3 つの経路。** `--refresh` を付けない投入は、DB に前回の `last_modified` / `etag` があれば `If-Modified-Since` / `If-None-Match` を付けて取得し、304 なら `fetched_at` だけを更新し、200 でも内容の SHA-1 が前回と同じなら `fetched_at`・`last_modified`・`etag` だけを更新し、変わっていれば入れ直す。結果の JSON にはその内訳（通達は `sectionsNotModified` / `sectionsContentSame` / `sectionsContentChanged`、文書系は `documentsNotModified` / `documentsContentSame` / `documentsContentChanged`）が入る。質疑応答事例とタックスアンサーは、DB の行が段落の構造（`structured_json`）を持たないときは条件を付けずに取り直す。テストは、ヘッダーを付ける・304 を受け取るという取得の単位（`src/services/nta-scraper.test.ts`）と、DB の読み書きの単位（`src/services/document-conditional-fetch.test.ts`）にしか無く、投入の結果として確かめたものが無い。ID を振るのは受入テストを書いてから。
-2. **`--refresh` の説明が実際の動きと合わない。** → houki-nta-mcp #108
 3. **`--apply` の取り直しは差分更新で、`--refresh` を組み合わせても全部取り直しにならない。** → houki-nta-mcp #109
 4. **日数が不正なときに MCP サーバーが起動する。** → houki-nta-mcp #106
-5. **`--refresh-stale` の表示。** 標準エラー出力に `[refresh-stale] DB: <DB の場所> (<日数> 日以上古い section を対象)`、`[refresh-stale] 該当: <件数> sections`、dry-run なら `[refresh-stale] dry-run（--apply で再 DL を実行）`、`--apply` なら `[refresh-stale] 再 DL 対象通達: <通達名を / で並べたもの>` を出す。テストが無い。ID を振るのは受入テストを書いてから。
-6. **「N 日以上古い」と「N 日より古い」。** → houki-nta-mcp #108
+5. **`--refresh-stale` の表示。** 標準エラー出力に `[refresh-stale] DB: <DB の場所> (<日数> 日より古い section を対象)`、`[refresh-stale] 該当: <件数> sections`、dry-run なら `[refresh-stale] dry-run（--apply で再 DL を実行）`、`--apply` なら `[refresh-stale] 再 DL 対象通達: <通達名を / で並べたもの>` を出す。テストが無い。ID を振るのは受入テストを書いてから。

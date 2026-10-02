@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: 共通
 - 版: current
-- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）
+- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261003-t4-response-shape` は 2026-10-02（PR #124）。差分 `20261003-t5-docs-mismatch` は 2026-10-02（PR #126）
 - 起こした元: v0.21.0 の `src/server.ts`、`src/tools/tool-args.ts`、`src/errors.ts`、`src/tools/definitions.ts`、`src/tools/handlers.ts`（ツールの登録の表）、`src/server.test.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue:
 
@@ -65,7 +65,7 @@
 | `DOC_NOT_FOUND`                          | 求めた文書（または検索の対象になる文書）がローカル DB に無い（質疑応答事例・タックスアンサー・改正通達・事務運営指針・文書回答事例）。国税庁サイトから取るときに、そのページが無い（404・410・404 ページへの転送）ときも同じ |
 | `SOURCE_API_ERROR`                       | 国税庁サイトとの通信が失敗した（接続できない・時間切れ・5xx・429）。ページが無い（404）ことは含まない |
 | `SOURCE_TIMEOUT` / `SOURCE_RATE_LIMITED` | 取得の時間切れ / 取得の回数制限。v0.21.0 ではどのツールも返さない                                                        |
-| `INTERNAL_ERROR`                         | サーバー内部の失敗（ページの解析の失敗や、処理中の想定外の例外）                                                         |
+| `INTERNAL_ERROR`                         | サーバー内部の失敗（ページの解析の失敗や、処理中の想定外の例外）。再試行しても結果は変わらない（`retryable: false`） |
 
 ## 処理の流れ
 
@@ -81,8 +81,8 @@ flowchart TD
   C -- 合う --> D["ツールの処理"]
   D -- "エラーを返した" --> F["isError: true と JSON の本文（001）"]
   D -- "成功を返した" --> G["isError を付けない（001）"]
-  D -- "想定外の例外" --> E4["INTERNAL_ERROR を返す。retryable: true（006）"]
-  D -- "国税庁のページの解析に失敗" --> E5["INTERNAL_ERROR を返す。ページの構造の変更を疑う案内を付ける（009）"]
+  D -- "想定外の例外" --> E4["INTERNAL_ERROR を返す。retryable: false（006）"]
+  D -- "国税庁のページの解析に失敗" --> E5["INTERNAL_ERROR を返す。retryable: false で、ページの構造の変更を疑う案内を付ける（009）"]
 ```
 
 ## できること
@@ -93,12 +93,18 @@ flowchart TD
 
 ツールの処理が成功を返したときは、`isError` を付けない（例: `resolve_abbreviation` に `abbr: "消基通"` を渡すと、`isError` の無い結果で、本文は JSON の応答）。
 
-### SPEC-NTA-COMMON-ERRORS-002 存在しないツール名はエラー `UNKNOWN_TOOL`
+### SPEC-NTA-COMMON-ERRORS-002 存在しないツール名はエラー `UNKNOWN_TOOL`（`retryable: false`）で、`error` は日本語
 
 tools/call の `name` が 14 ツールのどれでもないときは、エラー `UNKNOWN_TOOL` を返す（`isError: true`）。
 
+- `error` は `存在しないツールです: <name>`（ほかのエラーと同じく日本語の 1 文）
+- `retryable` は `false`（同じ名前で呼び直しても結果は変わらない）
 - `hint` に、呼べるツール名の一覧（`nta_search_tsutatsu` など）を書く
 - `next_actions` の先頭は `action: "list_tools"`（MCP の tools/list で呼べるツールを確かめる案内）
+
+houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-002 と同じ文である。
+
+例: `name: "no_such_tool"` を呼ぶと、`code: "UNKNOWN_TOOL"`、`error: "存在しないツールです: no_such_tool"`、`retryable: false` で、`hint` に `nta_search_tsutatsu` が含まれる（v0.22.0 では `error` が英語の `Unknown tool: no_such_tool` で、`retryable` が無かった）。
 
 ### SPEC-NTA-COMMON-ERRORS-003 inputSchema に合わない引数はエラー `INVALID_ARGUMENT`
 
@@ -119,12 +125,17 @@ inputSchema の `properties` に無い引数を渡したときは、エラー `I
 
 tools/list が返す 14 ツールの inputSchema には、どれも `additionalProperties: false` が付く。呼び出し側は tools/list を見て、どのツールでも inputSchema に無い引数は SPEC-NTA-COMMON-ERRORS-004 のエラーになると分かる。
 
-### SPEC-NTA-COMMON-ERRORS-006 処理中の想定外の例外はエラー `INTERNAL_ERROR` で返す
+### SPEC-NTA-COMMON-ERRORS-006 処理中の想定外の例外はエラー `INTERNAL_ERROR`（`retryable: false`）で返し、再試行を案内しない
 
 ツールの処理の途中で想定外の例外が起きたときは、プロトコルのエラーにせず、tools/call の結果としてエラー `INTERNAL_ERROR` を返す（`isError: true`）。
 
-- `retryable` は `true`
+- `retryable` は `false`（不具合の可能性が高く、同じ呼び出しをやり直しても結果は変わらない。`hint` は `バグの可能性があります。再現手順を添えて GitHub issue でご報告ください`）
+- `next_actions` は付けない（再試行を案内する `retry_later` は、`retryable: false` と `hint` の報告の依頼に合わないので入れない）
 - `detail.cause` に、元の例外の文を入れる（例: 例外の文が `boom` なら `detail.cause` は `boom`）
+
+houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-007・018 と同じ扱いである。
+
+例: ツールの処理が `new Error("boom")` を投げると、`code: "INTERNAL_ERROR"`、`retryable: false`、`detail.cause: "boom"` で、`next_actions` は無い（v0.22.0 では `retryable: true`、`next_actions: [{ action: "retry_later", … }]` だった）。
 
 ### SPEC-NTA-COMMON-ERRORS-007 inputSchema の検査で返す `INVALID_ARGUMENT` には、inputSchema を確かめる案内を付ける
 
@@ -140,7 +151,7 @@ SPEC-NTA-COMMON-ERRORS-003・004 のエラーは、14 ツールとも次の形�
 
 SPEC-NTA-COMMON-ERRORS-003・004 のエラーを返すときは、ツールの処理に進まない。ローカル DB を開かず、国税庁サイトに取りに行かず、略称辞書も引かない。例: `nta_get_qa` に `{ topic: "shohi", category: "01" }`（必須の `id` が無い）を渡しても、国税庁サイトへの取得は起きない。
 
-### SPEC-NTA-COMMON-ERRORS-009 国税庁のページの解析に失敗したときは `INTERNAL_ERROR` で、ページの構造の変更を疑う案内を付ける
+### SPEC-NTA-COMMON-ERRORS-009 国税庁のページの解析に失敗したときは `INTERNAL_ERROR`（`retryable: false`）で、ページの構造の変更を疑う案内を付ける
 
 国税庁サイトから取ったページを読み取れなかったときは、エラー `INTERNAL_ERROR` を返す（`isError: true`）。当てはまるのは次の 3 ツールである。
 
@@ -150,12 +161,15 @@ SPEC-NTA-COMMON-ERRORS-003・004 のエラーを返すときは、ツールの�
 | `nta_get_qa` | 事例のページ（SPEC-NTA-GET-QA-005） | `質疑応答事例ページのパースに失敗: <理由>` |
 | `nta_get_tax_answer` | 記事のページ（SPEC-NTA-GET-TAX-ANSWER-005） | `タックスアンサーページのパースに失敗: <理由>` |
 
+- `retryable` は `false`（ページの構造が変わったか、パーサの不具合で、時間をおいても結果は変わらない。SPEC-NTA-COMMON-ERRORS-006 と同じ）
 - `hint` は `パーサのバグまたは国税庁ページの構造変更の可能性。報告してください`
 - `url` に、読み取れなかったページの URL を入れる
 - `detail` は `{ url: <同じ URL>, cause: <理由> }`
 - 読み取れなかったページの内容は DB に書き戻さない
 
 ページの取得そのものに失敗したとき（`SOURCE_API_ERROR`）と、処理中の想定外の例外（SPEC-NTA-COMMON-ERRORS-006）は、この ID に当たらない。
+
+例: `nta_get_qa` が取った事例のページから照会要旨を読み取れなかったとき、`code: "INTERNAL_ERROR"`、`retryable: false`、`hint` は上の文（v0.22.0 では `retryable` が無かった）。
 
 ### SPEC-NTA-COMMON-ERRORS-010 `detail.issues` は違反 1 件ごとに要素を分け、`path` には引数名を入れる
 
@@ -252,7 +266,7 @@ houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ規則である（egov �
 
 ### SPEC-NTA-COMMON-ERRORS-017 DB の取得時点を解釈できないときは `INTERNAL_ERROR`（`retryable: false`）にし、その種別の投入をやり直す案内を付ける
 
-`freshness` を付けるツール（文書系の検索 5 ツール、`nta_search_tsutatsu`、取得 6 ツール）が、`document.fetched_at` または `section.fetched_at` の値を日付（`YYYY-MM-DD`）または時差付きの時刻（`YYYY-MM-DDTHH:MM:SS.sssZ` / `+09:00`）として解釈できないとき（空文字、`2026/05/08` のような別の書き方、`2026-02-30` のような暦に無い日付）は、想定外の例外として止まらず、エラー `INTERNAL_ERROR` を返す。
+`freshness` を付けるツール（文書系の検索 5 ツールと `nta_search_tsutatsu`）が、`document.fetched_at` または `section.fetched_at` の値を日付（`YYYY-MM-DD`）または時差付きの時刻（`YYYY-MM-DDTHH:MM:SS.sssZ` / `+09:00`）として解釈できないとき（空文字、`2026/05/08` のような別の書き方、`2026-02-30` のような暦に無い日付）は、想定外の例外として止まらず、エラー `INTERNAL_ERROR` を返す。
 
 - `retryable`: `false`（時間をおいても DB の値は変わらない）
 - `error`: `取得時点を読めません: <fetched_at の値>`
@@ -261,9 +275,11 @@ houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ規則である（egov �
 - `detail.cause`: 元の例外の文（houki-abbreviations の `computeDaysSince` が投げる `RangeError` の文）
 - `tool`: 呼んだツールの名前
 
+取得 6 ツール（`nta_get_*`）は `freshness` を付けず、取得時点から経過日数を計算しないので、このエラーを返さない。取得ツールの `fetchedAt` は DB の値をそのまま返す。
+
 取り込みが書く `fetched_at` は `new Date().toISOString()` の形（`2026-10-01T00:30:00.000Z`）なので、取り込みを通した DB ではこのエラーは起きない。houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-031 と同じ形である。
 
-例: `document.fetched_at` を `2026/05/08` に書き換えた質疑応答事例だけがある DB で `nta_search_qa` に `{ keyword: "軽減税率" }` を渡すと、`code: "INTERNAL_ERROR"`、`retryable: false`、`error` に `2026/05/08` を含み、`hint` に `--bulk-download-qa` を含み、`results` は返さない。
+例: `document.fetched_at` を `2026/05/08` に書き換えた質疑応答事例だけがある DB で `nta_search_qa` に `{ keyword: "軽減税率" }` を渡すと、`code: "INTERNAL_ERROR"`、`retryable: false`、`error` に `2026/05/08` を含み、`hint` に `--bulk-download-qa` を含み、`results` は返さない（v0.22.0 の本文は対象に「取得 6 ツール」を含めていたが、0.22.0 の実装と受入テストは検索 6 ツールだけだった。houki-nta-mcp #71 の 2026-10-02 のコメント）。
 
 ## できないこと
 
@@ -281,8 +297,8 @@ houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ規則である（egov �
 
 3. **`arguments` を省いた呼び出し。** 空のオブジェクトを渡したものとして検査する（14 ツールとも必須の引数があるので `INVALID_ARGUMENT` になる）。テストが無い。ID を振るのは受入テストを書いてから。
 4. **inputSchema に無い引数の `detail.issues` の `message` と、2 つ以上あるときの `path`。** `message` は「inputSchema に無い引数です」。inputSchema に無い引数が 2 つ以上あるときは、`path` にそれらの名前がすべて「, 」区切りで入り、問題 1 件ごとにどの引数かを分けない。どちらもテストが無い。問題ごとに引数を分けるかは人が決める。
-5. **`UNKNOWN_TOOL` の `error` の文面と `tool`。** `error` は英語の「Unknown tool: <name>」で、ほかのエラーと違い日本語でない。`tool` は付かない。どちらもテストが無い。文面を揃えるかは人が決める。
-6. **処理中の想定外の例外で返す `INTERNAL_ERROR` の `hint`・`next_actions`・`tool`・`error`。** `hint` は「バグの可能性があります。再現手順を添えて GitHub issue でご報告ください」、`next_actions` は `action: "retry_later"` の 1 件、`tool` は呼んだツールの名前、`error` は「内部エラーが発生しました: <例外の文>」。テストは `code`・`retryable`・`detail.cause` しか確かめていない。ID を振るのは受入テストを書いてから。
-7. **`INTERNAL_ERROR` の `retryable` がツールと場面で揃わない。** 処理中の想定外の例外では `retryable: true` と再試行の案内を付けるが、`hint` ではバグの可能性として報告を求めている。一方、`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer` がページの解析の失敗で返す `INTERNAL_ERROR` には `retryable` が付かない。同じ code で再試行してよいかの扱いが違う。どちらに揃えるかは人が決める。
+5. **`UNKNOWN_TOOL` の `error` の文面と `tool`。** → SPEC-NTA-COMMON-ERRORS-002
+6. **処理中の想定外の例外で返す `INTERNAL_ERROR` の `hint`・`next_actions`・`tool`・`error`。** → SPEC-NTA-COMMON-ERRORS-006
+7. **`INTERNAL_ERROR` の `retryable` がツールと場面で揃わない。** → SPEC-NTA-COMMON-ERRORS-006・SPEC-NTA-COMMON-ERRORS-009
 8. **値の無いフィールドを付けない規則。** `hint` が空文字のとき、`next_actions` が空の配列のときは付けない。`retryable` は値を決めたエラーにだけ付き、付かないエラーを「再試行しても変わらない」と読んでよいかは決めていない。テストが無い。ID を振るのは受入テストを書いてから。
 9. **`SOURCE_TIMEOUT` と `SOURCE_RATE_LIMITED`。** code の一覧にはあるが、v0.21.0 ではどのツールも返さない（取得の時間切れも `SOURCE_API_ERROR` になる）。一覧に残すか、取得の失敗を分けて返すかは人が決める。

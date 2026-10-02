@@ -3,7 +3,7 @@
 - 対象: `search_rules` / `common_errors` と、`nta_search_tsutatsu` / `nta_get_tsutatsu` / `nta_get_qa` / `nta_get_tax_answer` / `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` / `nta_inspect_pdf_meta` の `specs/current/<dir>/spec.md`
 - 実装の変更: 要（`search_rules` 020 は今の名前を意図とするだけ、`common_errors` 017 は本文を 0.22.0 の実装に合わせるだけで、どちらもコードは変えない。下の「実装の変更」）
 - 承認日: 2026-10-02（PR #124）
-- 状態: 提案中
+- 状態: 取り込み済み（v0.23.0）
 - 起こした日: 2026-10-03（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #71（同じ種類の応答でフィールドの有無や名前が揃っていない。2026-10-02 の追記を含む）、#82（検索のヒットの要素に `issuedAt` が付くかどうかが種別によって違う）
