@@ -124,6 +124,8 @@ T4 の「`meta` には `at`（時点）と `retrieved_at` を常に付ける」�
 | nta_inspect_pdf_meta    | SPEC-NTA-INSPECT-PDF-META-002    | 索引の印を付ける（索引にあれば `null`）                                                            |
 | nta_inspect_pdf_meta    | SPEC-NTA-INSPECT-PDF-META-010    | `save: true` で 0 件なら `saved: []`                                                               |
 
+4-response-shape（値の無いフィールドを null にし、検索の結果に発出日と法令時点を揃えて返す）)
+
 ## 消す仕様 ID（REMOVED）
 
 無い。
