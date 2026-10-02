@@ -78,11 +78,14 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(search?.inputSchema.required).toEqual(['keyword']);
   });
 
-  it('SPEC-NTA-COMMON-ERRORS-002 存在しないツール名は UNKNOWN_TOOL + isError: true (family error contract)', async () => {
+  it('SPEC-NTA-COMMON-ERRORS-002 存在しないツール名は UNKNOWN_TOOL + isError: true で、error は日本語、retryable: false (family error contract)', async () => {
     const res = await client.callTool({ name: 'no_such_tool', arguments: {} });
     expect(res.isError).toBe(true);
     const body = JSON.parse(firstText(res));
     expect(body.code).toBe('UNKNOWN_TOOL');
+    // v0.23.0（T5）: houki-egov-mcp と同じ文と retryable: false
+    expect(body.error).toBe('存在しないツールです: no_such_tool');
+    expect(body.retryable).toBe(false);
     expect(body.hint).toContain('nta_search_tsutatsu');
     expect(body.next_actions[0].action).toBe('list_tools');
   });
@@ -151,12 +154,17 @@ describe('createServer (SDK v2, InMemoryTransport)', () => {
     expect(body.hint).toBe('テスト用');
   });
 
-  it('SPEC-NTA-COMMON-ERRORS-006 handler が throw すると INTERNAL_ERROR + retryable: true (protocol error にしない)', async () => {
+  it('SPEC-NTA-COMMON-ERRORS-006 handler が throw すると INTERNAL_ERROR + retryable: false で、next_actions を付けない (protocol error にしない)', async () => {
     const res = await client.callTool({ name: '__test_throw', arguments: {} });
     expect(res.isError).toBe(true);
     const body = JSON.parse(firstText(res));
     expect(body.code).toBe('INTERNAL_ERROR');
-    expect(body.retryable).toBe(true);
+    // v0.23.0（T5）: 不具合の可能性が高いので再試行を案内しない（houki-egov-mcp と同じ）
+    expect(body.retryable).toBe(false);
+    expect(body.next_actions).toBeUndefined();
+    expect(body.hint).toBe(
+      'バグの可能性があります。再現手順を添えて GitHub issue でご報告ください'
+    );
     expect(body.detail.cause).toBe('boom');
   });
 });
