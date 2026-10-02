@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-01
+
+**minor リリース** — 段階 4（houki-hub `docs/notes/2026-09-29-plan-spec-issues.md`）。引数の検査（T1）、「見つからない」と「取得元の失敗」の code の分け方（T2）、全角・半角・ダッシュ類の揃え方（T3）を、承認済みの仕様の差分どおりに実装した。仕様 PR は #117（T1）・#121（T1 の docId の形の訂正）・#118（T2）・#119（T3）。対象 Issue: #64 #65 #66 #67 #68 #69 #79。DB は起動時にスキーマの版 11 へ移行し、再ダウンロードは要らない。
+
+### 互換性
+
+応答の `code` と、受け付ける引数が変わる。旧 code を並行して返す期間は設けない。
+
+- **T2: code の置き換え**（#64・#65）
+  - `nta_get_jimu_unei` / `nta_get_kaisei_tsutatsu` で文書が DB に無いとき: `TSUTATSU_NOT_FOUND` → `DOC_NOT_FOUND`（SPEC-NTA-GET-JIMU-UNEI-001・002、SPEC-NTA-GET-KAISEI-TSUTATSU-001・002、SPEC-NTA-COMMON-ERRORS-016）。`error` の文・`hint`・`available_doc_ids`・`next_actions` は変えていない。`nta_search_tsutatsu` / `nta_get_tsutatsu` の `TSUTATSU_NOT_FOUND` はそのまま
+  - `nta_get_qa` / `nta_get_tax_answer` で国税庁サイトにページが無いとき（HTTP 404・410、`/error/404.htm` への転送）: `SOURCE_API_ERROR`（`retryable: true`、`retry_later`）→ `DOC_NOT_FOUND`（`retryable: false`、`next_actions` は `nta_search_qa` / `nta_search_tax_answer`）（SPEC-NTA-GET-QA-014、SPEC-NTA-GET-TAX-ANSWER-013）
+- **T1: 引数の検査**（#66 の形・#67・#68・#69・#79）
+  - 検索 6 ツールの `limit` は 1 以上 50 以下の整数。0・51 以上・小数・数値でない値を丸めずに `INVALID_ARGUMENT` にする（#68、SPEC-NTA-COMMON-ERRORS-012、各検索ツールの ID）。v0.21.3 は 1 件・50 件に丸め、小数を切り捨てていた
+  - 必須の文字列（検索 6 ツールの `keyword`、`abbr`、`name`、`docId`、`category`、`id`、`no`）の空文字と、空白だけの値を `INVALID_ARGUMENT` にする（#69、SPEC-NTA-COMMON-ERRORS-013・014）。v0.21.3 は空の `keyword` に `results: []` と「該当なし」、空の `abbr` に `resolved: null` を返していた
+  - 識別子の形を、DB と国税庁サイトを引く前に確かめる（#66、SPEC-NTA-COMMON-ERRORS-015）。文書系 3 ツールの `docId` は使える文字と `/` の区切りだけを見る（SPEC-NTA-GET-KAISEI-TSUTATSU-010・SPEC-NTA-GET-JIMU-UNEI-010・SPEC-NTA-GET-BUNSHOKAITOU-010。2026-10-02 に DB の全件で確かめた形）。`nta_get_qa` の `category` / `id` は 1 桁か 2 桁の数字（SPEC-NTA-GET-QA-013）
+  - `nta_get_tax_answer` の `no` は 4 桁の数字だけを受け付ける（SPEC-NTA-GET-TAX-ANSWER-012）。v0.21.3 は `"61"` や `"61011"` も先頭の桁で税目を決めて取りに行っていた
+  - inputSchema の検査の `detail.issues` を違反 1 件ごとの要素に分け、`path` に引数名（必須の引数が無いときも）、`message` に決まった日本語の 1 文を入れる（#79、SPEC-NTA-COMMON-ERRORS-010・011）。`hint` の括弧の中は「型・必須・enum・範囲・形式・未知の引数」（SPEC-NTA-COMMON-ERRORS-007）。v0.21.3 は違反が 2 つ以上あると 1 要素にまとまり、`path` が空文字のことがあり、`message` は検査の部品の英文（`must be number` など）だった
+  - `nta_search_tsutatsu` の空の `keyword` のエラーも `tool`・`detail.issues` を持つ形にした（SPEC-NTA-SEARCH-TSUTATSU-002）
+- **T3: 全角の識別子と略称を半角に揃える**（#66 の全角）
+  - `nta_get_qa` の `category` / `id`、`nta_get_tax_answer` の `no`、文書系 3 ツールと `nta_inspect_pdf_meta` の `docId` は、全角の数字・ダッシュ類を半角に揃えてから形を確かめ、DB と国税庁サイトを引く（SPEC-NTA-SEARCH-RULES-019、SPEC-NTA-GET-QA-016・SPEC-NTA-GET-TAX-ANSWER-015・各ツールの 011・SPEC-NTA-INSPECT-PDF-META-020）。`"６１０１"` は `"6101"` と同じ応答（v0.21.3 は `INVALID_ARGUMENT`）
+  - `resolve_abbreviation` の `abbr`、`nta_get_tsutatsu` の `name`、検索キーワードの略称の展開は、全角英数字・ダッシュ類・全角スペースを半角に揃えてから辞書を引く（SPEC-NTA-RESOLVE-ABBREVIATION-008、SPEC-NTA-GET-TSUTATSU-018）。`ＰＬ法` は `PL法` と同じ結果。応答の `abbr` / `keyword` は渡した値のまま
+  - **スキーマの版が 11 になる**（SPEC-NTA-DB-SCHEMA-001・019・020）。0.22.0 で開いた DB は 0.21.x では開けない（版が新しい DB を開くと、0.21.x は全テーブルを作り直す）
+- **依存を `@shuji-bonji/houki-abbreviations` `^0.7.0` に上げた**。0.7.0 の `normalizeJpText` はダッシュ類（`‐` `‑` `–` `—` `―` `−`）も `-` にする（SPEC-NTA-SEARCH-RULES-007）。`computeDaysSince` は読めない取得時点に例外を投げる
+
+### Changed
+
+- **スキーマの版 11 への移行**（T3、SPEC-NTA-DB-SCHEMA-019・020）: 版 10 の DB を開くと、国税庁サイトを取りに行かずに `clause`（条番号・題名・本文・段落）、`section`（題名）、`document`（題名・本文）の文字列を 0.7.0 の正規化で入れ直す。手順は版 4 → 5 と同じで、`section.content_hash` は未計算に戻し、`document.content_hash` は入れ直した行だけ計算し直す。2026-10-01 に確かめた作者の DB では、ダッシュ類を含む行は `clause` 47 件・`document` 71 件だった
+- **DB の取得時点を読めないとき**（T2、SPEC-NTA-COMMON-ERRORS-017）: 検索 6 ツールは、DB の `fetched_at` を日付・時刻として読めない（空文字、`2026/05/08` のような書き方、暦に無い日付）とき、想定外の例外ではなく `INTERNAL_ERROR`・`retryable: false` と、その種別の投入フラグで取り込みをやり直す案内を返す。取り込みが書く `fetched_at` ではこのエラーは起きない
+- **`nta_get_qa` / `nta_get_tax_answer` の `SOURCE_API_ERROR` に `tool` を付けた**（SPEC-NTA-GET-QA-015、SPEC-NTA-GET-TAX-ANSWER-014）
+- **引数の検査の実装を SDK の `fromJsonSchema` から `src/tools/tool-args.ts` の `checkArgs()` に置き換えた**（T1）
+- **tools/list の description**: 文書系 3 ツールの `taxonomy` に「値は列挙で検査しない。DB に無い値のときは available_taxonomies で正しい値を返す」を足した（#67、SPEC-NTA-SEARCH-RULES-018。`nta_search_kaisei_tsutatsu` の 4 つの値は例として残した）。識別子と略称の description に形と全角の扱いを、`nta_get_qa` / `nta_get_tax_answer` にページが無いときの code を足した
+
+### Documentation
+
+- README に「引数の検査（v0.22.0）」の節を足し、エラー応答の例の code を `DOC_NOT_FOUND` に直した
+
+### Tests
+
+- 仕様の差分 3 本の受入テストを足した（`src/tools/spec-20261001-t1-argument-guards.test.ts`・`-t2-error-codes.test.ts`・`-t3-normalize.test.ts`）
+- 承認済みの差分で期待値が変わる既存のテストは、その差分の仕様 ID を名前に入れて書き換えた。取得系のテストの docId（`'A'`・`'J'`・`'no-such-doc'` など）は、T1 の形（`税目/フォルダー名`）に書き換えた
+
+### Specs
+
+- 差分 `20261001-t1-argument-guards`・`20261001-t2-error-codes`・`20261001-t3-normalize`・`20261002-t1-docid-forms` を `specs/current/` に取り込み、`specs/releases/v0.22.0/` へ移した。取り込み済みだった `20260930-cli-db-undecided-to-issues`（#114）も同じ場所へ移した
+
 ## [0.21.3] - 2026-09-30
 
 **patch リリース** — DB に入れる値と保存するファイル名の扱いの不具合 3 件を直した（#73）。応答が一見正しく見えるまま、DB の行か保存したファイルが求めたものと違う状態になっていた。DB のスキーマは変えていない（版 10 のまま）。
