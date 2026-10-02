@@ -3,6 +3,7 @@
 - 対象: `specs/current/common_errors/spec.md`、`specs/current/search_rules/spec.md` と、tools/call で呼べる 14 ツールすべての `specs/current/<tool>/spec.md`
 - 実装の変更: 要（`taxonomy` の部分だけは「今の動きを意図とする」で、実装の変更は説明文のみ）
 - 承認日: 2026-10-01（PR #117）
+- 訂正: 2026-10-02 に差分 `20261002-t1-docid-forms` で、SPEC-NTA-GET-KAISEI-TSUTATSU-010・SPEC-NTA-GET-JIMU-UNEI-010・SPEC-NTA-GET-BUNSHOKAITOU-010 の docId の形を、DB にある実際の値に合わせて緩めた（数字の桁数を見ず、使える文字と `/` の区切りだけを見る）。3 つの ID の本文はこの差分の spec.md で書き換えてある。訂正の理由と承認日は `specs/changes/20261002-t1-docid-forms/proposal.md`
 - 状態: 提案中
 - 起こした日: 2026-10-01（JST）
 - 起こした役: Spec Steward
