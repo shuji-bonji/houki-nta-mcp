@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-03
+
+**minor リリース** — 段階 4 の後半（houki-hub `docs/notes/2026-09-29-plan-spec-issues.md`）。応答の形（T4）と、hint・next_actions・説明文・CLI の使い方と実際の動きの食い違い（T5）を、承認済みの仕様の差分どおりに直した。仕様 PR は #124（T4）・#126（T5）。対象 Issue: #70 #71 #82 #108。エラーの `code` は変えていない。消したフィールド・名前を付け替えたフィールドは無い。DB のスキーマは変えていない（版 11 のまま）。
+
+### 互換性
+
+値の無いフィールドが「キーが無い」から `null` に変わる。`INTERNAL_ERROR` の `retryable` が `false` に変わる。
+
+- **T4: 今まで「キーが無い」だった場面で `null` になるフィールド**（#71・#82）
+  - 文書系の検索 5 ツールの `results[].issuedAt`（質疑応答事例・タックスアンサーは常に `null`。SPEC-NTA-SEARCH-RULES-015）
+  - 検索の `results[].index_status`・`results[].orphaned_at`（索引にある文書。SPEC-NTA-SEARCH-RULES-011）
+  - 取得 3 ツールの json の `document.issuedAt`・`document.issuer`・`document.orphanedAt`（SPEC-NTA-GET-KAISEI-TSUTATSU-004・006、SPEC-NTA-GET-JIMU-UNEI-004・005、SPEC-NTA-GET-BUNSHOKAITOU-004・006）。DB に税目が無い行では `document.taxonomy` も `null`（同じ 3 つの json の表の「値の無いフィールドは `null`」）
+  - `nta_get_qa` の json の `qa.notice`・`qa.basisDate`（SPEC-NTA-GET-QA-008）
+  - `nta_get_tax_answer` の json の `taxAnswer.effectiveDate`・`taxAnswer.taxCategory`（SPEC-NTA-GET-TAX-ANSWER-008）
+  - 取得 5 ツールの json の `index_status`・`orphaned_at`・`notice`（索引にある文書と、国税庁サイトから取った事例・記事。各 004、SPEC-NTA-GET-QA-010、SPEC-NTA-GET-TAX-ANSWER-009）
+  - キーの有無で「索引から消えたか」を見ていた利用側は、値（`index_status === "removed_from_index"`）で見るように直す必要がある
+- **T4: 足したフィールド**
+  - 検索の `results[].basisDate`（タックスアンサーは記事の「法令時点」から読んだ日付、ほかの種別は常に `null`。SPEC-NTA-SEARCH-RULES-015）
+  - `nta_get_tax_answer` の json の `taxAnswer.basisDate`（`effectiveDate` から読んだ `YYYY-MM-DD`。検索の `basisDate` と同じ値。SPEC-NTA-GET-TAX-ANSWER-008）
+  - `nta_search_tsutatsu` の 0 件の応答の `count: 0`・`freshness`・`legal_status`（SPEC-NTA-SEARCH-TSUTATSU-005・010）。`base_laws_by_tsutatsu` と `next_actions` は 0 件では付けない
+  - `nta_inspect_pdf_meta` の索引の印（`index_status`・`orphaned_at`・`notice`。索引にある文書では `null`。SPEC-NTA-INSPECT-PDF-META-002）と、`save: true` で保存する PDF が 0 件のときの `saved: []`（SPEC-NTA-INSPECT-PDF-META-010）。`save` を渡さないときは今までどおり `saved` を付けない
+  - `nta_get_kaisei_tsutatsu`・`nta_get_jimu_unei`・`nta_get_bunshokaitou` の markdown の `- **取得元**: ローカル DB（bulk download で取り込んだもの）` の行（`- **取得**` の行の次。各 005・006）。改正通達・文書回答事例の索引の状態の行は、この行の次に移った（各 004）
+- **T4: `nta_get_tsutatsu` の国税庁サイトの経路の `available_clauses` が最大 50 件になる**（DB の経路と同じ。SPEC-NTA-GET-TSUTATSU-010）
+- **T5: `INTERNAL_ERROR` と `UNKNOWN_TOOL`**（houki-egov-mcp と同じ形に揃えた）
+  - 処理中の想定外の例外の `INTERNAL_ERROR` が `retryable: true` から `false` になり、`next_actions`（`retry_later`）が無くなる（SPEC-NTA-COMMON-ERRORS-006）
+  - 国税庁のページの解析の失敗の `INTERNAL_ERROR`（`nta_get_tsutatsu` / `nta_get_qa` / `nta_get_tax_answer`）に `retryable: false` が付く（SPEC-NTA-COMMON-ERRORS-009）
+  - `UNKNOWN_TOOL` の `error` が英語の `Unknown tool: <name>` から `存在しないツールです: <name>` になり、`retryable: false` が付く（SPEC-NTA-COMMON-ERRORS-002）
+  - DB の取得時点を読めないときの `INTERNAL_ERROR`（SPEC-NTA-COMMON-ERRORS-017）は変えていない
+- **T5: `next_actions` と案内**（#70）
+  - `resolve_abbreviation` で houki-egov の管轄のエントリに `next_actions: [delegate_to_mcp]` を足した。houki-hub family にまだ無い管轄では、`hint` を「対応する MCP サーバーはまだありません」にし、`next_actions` を付けない（SPEC-NTA-RESOLVE-ABBREVIATION-003。houki-abbreviations 0.7.0 の辞書にはこの管轄のエントリは無い）
+  - `nta_search_tax_answer` がヒットしたとき、先頭の記事を `nta_get_tax_answer` で読む `next_actions` を足した（SPEC-NTA-SEARCH-TAX-ANSWER-006）
+  - `nta_search_tsutatsu` で DB が空のときの `hint` と `next_actions` の案内が `--bulk-download` から `--bulk-download-all` になる（SPEC-NTA-SEARCH-TSUTATSU-003）。1 つの通達だけを先に入れる `--bulk-download --tsutatsu=<正式名>` も `hint` に書いた
+
+### Changed
+
+- **`meta` は足していない**（T4 の「人が判断すること」1）。houki-nta-mcp のツールは時点の引数を持たず、取得の時点は検索の `freshness`、取得の `fetchedAt` と markdown の `取得:` の行で返している
+- **`nta_search_tsutatsu` の `hits`・`message` と文書系 5 ツールの `results`・`hint` の名前は変えていない**（SPEC-NTA-SEARCH-RULES-020）
+
+### Documentation
+
+- tools/list の description: `resolve_abbreviation` の `abbr` の例を `"消基通", "所基通", "法基通"` にした（`電帳法` は houki-egov の管轄。#70）
+- `nta_get_jimu_unei` の json の `legal_status.note` を、markdown の注と同じく「通達・事務運営指針は行政内部文書であり、…」で始めた（#70。拘束力の値は変えていない）
+- `nta_get_tsutatsu` の `TSUTATSU_NOT_FOUND`（SPEC-NTA-GET-TSUTATSU-007）の `hint` から、版の段階名（「Phase 2d 以降は…」）を消した
+- `houki-nta-mcp --help`: `--refresh` の説明を実際に消す範囲の文に直し、「環境変数」に `HOUKI_NTA_BASELINE_DIR`・`HOUKI_NTA_FILES_DIR` を足し、`--refresh-stale` の 2 行と標準エラー出力を「N 日より古い」に直した（#108。境界は今の `<` のまま）
+- README のエラーの表の `UNKNOWN_TOOL`・`INTERNAL_ERROR` の行を `retryable: false` にし、`--refresh-stale` の例のコメントを「より古い」に直した
+
+### Tests
+
+- 仕様の差分 2 本の受入テストを足した（`src/tools/spec-20261003-t4-response-shape.test.ts`・`-t5-docs-mismatch.test.ts`）
+- 承認済みの差分で期待値が変わる既存のテストは、その差分の仕様 ID を名前に入れて書き換えた（索引にある文書の印のキーが `null`、`nta_search_tsutatsu` の 0 件の `legal_status`、`UNKNOWN_TOOL` と `INTERNAL_ERROR` の `retryable` など）
+
+### Specs
+
+- 差分 `20261003-t4-response-shape`・`20261003-t5-docs-mismatch` を `specs/current/` に取り込み、`specs/releases/v0.23.0/` へ移した
+
 ## [0.22.0] - 2026-10-01
 
 **minor リリース** — 段階 4（houki-hub `docs/notes/2026-09-29-plan-spec-issues.md`）。引数の検査（T1）、「見つからない」と「取得元の失敗」の code の分け方（T2）、全角・半角・ダッシュ類の揃え方（T3）を、承認済みの仕様の差分どおりに実装した。仕様 PR は #117（T1）・#121（T1 の docId の形の訂正）・#118（T2）・#119（T3）。対象 Issue: #64 #65 #66 #67 #68 #69 #79。DB は起動時にスキーマの版 11 へ移行し、再ダウンロードは要らない。
