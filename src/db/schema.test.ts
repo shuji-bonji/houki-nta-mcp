@@ -277,9 +277,9 @@ describe('SPEC-NTA-DB-SCHEMA-007 initSchema — v4 → v5 (Issue #27): 共通実
     db.close();
   });
 
-  it('schema_version が最新になる', () => {
+  it('SPEC-NTA-DB-SCHEMA-001 schema_version が最新（v0.22.0 から版 11）になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(10);
+    expect(SCHEMA_VERSION).toBe(11);
   });
 
   it('clause の条番号・題名・本文・段落 JSON が半角になる', () => {
@@ -545,9 +545,9 @@ describe('SPEC-NTA-DB-SCHEMA-012 initSchema — v7 → v8 (Issue #45): 文書回
     db.close();
   });
 
-  it('schema_version が最新になる', () => {
+  it('SPEC-NTA-DB-SCHEMA-001 schema_version が最新（v0.22.0 から版 11）になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(10);
+    expect(SCHEMA_VERSION).toBe(11);
   });
 
   it('本庁系の本文は「以上」で終わり、content_hash は計算し直される', () => {
@@ -662,9 +662,9 @@ describe('SPEC-NTA-DB-SCHEMA-013 initSchema — v8 → v9 (Issue #45 の続き):
     db.close();
   });
 
-  it('schema_version が最新になる', () => {
+  it('SPEC-NTA-DB-SCHEMA-001 schema_version が最新（v0.22.0 から版 11）になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(10);
+    expect(SCHEMA_VERSION).toBe(11);
   });
 
   it('改正通達の本文から案内文が消え、content_hash は計算し直される', () => {
@@ -760,9 +760,9 @@ describe('SPEC-NTA-DB-SCHEMA-014 initSchema — v9 → v10 (Issue #54): bulk dow
     db.close();
   });
 
-  it('schema_version が最新になる', () => {
+  it('SPEC-NTA-DB-SCHEMA-001 schema_version が最新（v0.22.0 から版 11）になる', () => {
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(10);
+    expect(SCHEMA_VERSION).toBe(11);
   });
 
   it('bulk download が書いた節を持つ通達は、その節の fetched_at の最大値で bulk_completed_at が埋まる', () => {
