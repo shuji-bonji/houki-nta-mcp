@@ -29,7 +29,6 @@ import {
 import { closeDb, defaultDbPath, openDb } from '../db/index.js';
 import {
   isLawServiceError,
-  type LawErrorCode,
   type LawServiceError,
   makeError,
   NEXT_ACTIONS,
@@ -52,6 +51,7 @@ import {
   type FreshnessRange,
   summarizeFreshnessFromDocument,
   summarizeFreshnessFromSection,
+  UnreadableFetchedAtError,
 } from '../services/freshness.js';
 import {
   indexStatusFields,
@@ -180,6 +180,33 @@ const BUNSHOKAITOU_DOC_ID: DocIdForm = {
 };
 
 /**
+ * DB の取得時点を読めなかったときのエラー（SPEC-NTA-COMMON-ERRORS-017）。その種別の投入をやり直す案内を付ける。
+ * UnreadableFetchedAtError でない例外は undefined を返す（呼び出し側が投げ直す）
+ *
+ * @param flag その種別の投入フラグ。例: `--bulk-download-qa`（基本通達は `--bulk-download-all`）
+ */
+function unreadableFetchedAt(
+  err: unknown,
+  tool: string,
+  flag: string
+): LawServiceError | undefined {
+  if (!(err instanceof UnreadableFetchedAtError)) return undefined;
+  return makeError('INTERNAL_ERROR', `取得時点を読めません: ${err.value}`, {
+    hint: `ローカル DB の取得時点（fetched_at）が日付・時刻の形ではないため、鮮度を判定できません。\`houki-nta-mcp ${flag}\` で取り込みをやり直すと、取得時点が書き直されます`,
+    retryable: false,
+    next_actions: [
+      {
+        action: 'cli_bulk_download',
+        reason: '取り込みをやり直すと、DB の取得時点が日付・時刻の形で書き直されます',
+        example: { command: `houki-nta-mcp ${flag}` },
+      },
+    ],
+    detail: { cause: err.causeMessage },
+    tool,
+  });
+}
+
+/**
  * 取得系 3 ツールの docId を確かめる。空白だけなら SPEC-NTA-COMMON-ERRORS-014、形が合わなければ 015 のエラーを返し、
  * 合えば DB を引く値（前後の空白を除いた値）を返す。DB を開く前に呼ぶ
  */
@@ -262,6 +289,10 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
       legal_status: TSUTATSU_LEGAL_STATUS,
       ...searchBaseLawFields(hits.map((h) => h.tsutatsu)),
     };
+  } catch (err) {
+    const unreadable = unreadableFetchedAt(err, 'nta_search_tsutatsu', '--bulk-download-all');
+    if (unreadable) return unreadable;
+    throw err;
   } finally {
     closeDb(db);
   }
@@ -724,13 +755,14 @@ export function explainDocZeroHits(
  * 1. その種別の文書が DB に 1 件も無い → 投入を案内する（`next_actions` は `cli_bulk_download`。検索ツールの DOC_NOT_FOUND と同じ）
  * 2. 文書はあるが、その docId が無い → 「見つかりません」。`available_doc_ids` と、検索ツールへの `next_actions` を付ける
  *
- * `code` は v0.14.0 から変えない（改正通達・事務運営指針は TSUTATSU_NOT_FOUND、文書回答事例は DOC_NOT_FOUND）。
+ * どちらも DB を引いて 0 件なので、`code` は 3 ツールとも `DOC_NOT_FOUND`。見分けは `error` の文・
+ * `available_doc_ids`・`next_actions` で付ける（v0.22.0、houki-nta-mcp #64、SPEC-NTA-COMMON-ERRORS-016。
+ * v0.21.3 までは改正通達・事務運営指針が TSUTATSU_NOT_FOUND だった）。
  */
 export function explainDocIdNotFound(
   db: DatabaseT.Database,
   docType: 'kaisei' | 'jimu-unei' | 'bunshokaitou',
   docId: string,
-  code: LawErrorCode,
   getTool: string,
   options: { dbPath?: string } = {}
 ): LawServiceError {
@@ -739,7 +771,7 @@ export function explainDocIdNotFound(
   if (total === 0) {
     const dbPath = options.dbPath ?? defaultDbPath();
     return makeError(
-      code,
+      'DOC_NOT_FOUND',
       `ローカル DB に${meta.label}が 1 件も無いため、docId="${docId}" を取得できません`,
       {
         hint: `MCP サーバーが開いている DB（${dbPath}）に${meta.label}（doc_type="${docType}"）が入っていません。\`houki-nta-mcp ${meta.flag}\` で投入してください。投入したはずの場合は、bulk download を実行した環境と MCP サーバーとで、環境変数 HOUKI_NTA_DB_PATH / XDG_CACHE_HOME が同じか確認してください`,
@@ -748,7 +780,7 @@ export function explainDocIdNotFound(
       }
     );
   }
-  return makeError(code, `${meta.label} docId="${docId}" は見つかりません`, {
+  return makeError('DOC_NOT_FOUND', `${meta.label} docId="${docId}" は見つかりません`, {
     hint: `DB の${meta.label} ${formatCount(total)} 件に、この docId はありません。available_doc_ids（新しい順に 30 件）から選ぶか、${meta.tool} で検索して docId を確かめてください。DB を投入した後に国税庁が公開した文書は、\`houki-nta-mcp ${meta.flag}\` をもう一度実行すると取り込めます`,
     available_doc_ids: listAvailableDocIds(db, docType, 30),
     next_actions: [
@@ -875,6 +907,10 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
+  } catch (err) {
+    const unreadable = unreadableFetchedAt(err, 'nta_search_qa', '--bulk-download-qa');
+    if (unreadable) return unreadable;
+    throw err;
   } finally {
     closeDb(db);
   }
@@ -946,11 +982,12 @@ export async function getQa(
     fetchedAt = fetched.fetchedAt;
   } catch (err) {
     if (err instanceof NtaFetchError) {
-      return makeError('SOURCE_API_ERROR', `国税庁サイトからの取得に失敗: ${err.message}`, {
-        url,
-        retryable: true,
-        next_actions: [NEXT_ACTIONS.retryLater()],
-        detail: err.status !== undefined ? { status: err.status, url } : { url },
+      return liveFetchError(err, url, {
+        tool: 'nta_get_qa',
+        missing: `質疑応答事例 topic="${topic}", category="${category}", id="${id}" のページは国税庁サイトにありません`,
+        searchTool: 'nta_search_qa',
+        example: { topic, keyword: '<探したい語>' },
+        hint: 'topic・category・id の組み合わせを確かめてください。番号が分からないときは nta_search_qa でキーワードから探せます',
       });
     }
     throw err;
@@ -982,6 +1019,50 @@ export async function getQa(
   writeBackQa(docId, qa, options.dbPath);
 
   return qaResponse(qa, args.format, 'live');
+}
+
+/**
+ * 国税庁サイトから 1 件を取るときの失敗を code に分ける（v0.22.0、houki-nta-mcp #65、SPEC-NTA-COMMON-ERRORS-016）。
+ *
+ * - ページが無い（HTTP 404・410、`/error/404.htm` への転送。転送は nta-scraper が status 404 の NtaFetchError にする）
+ *   → `DOC_NOT_FOUND`・`retryable: false`。番号の誤りなので、検索ツールを案内する（SPEC-NTA-GET-QA-014、SPEC-NTA-GET-TAX-ANSWER-013）
+ * - それ以外（接続できない・時間切れ・5xx・429）→ `SOURCE_API_ERROR`・`retryable: true`（015・014）
+ */
+function liveFetchError(
+  err: NtaFetchError,
+  url: string,
+  o: {
+    tool: string;
+    missing: string;
+    searchTool: string;
+    example: Record<string, unknown>;
+    hint: string;
+  }
+): LawServiceError {
+  const detail = err.status !== undefined ? { status: err.status, url } : { url };
+  if (err.status === 404 || err.status === 410) {
+    return makeError('DOC_NOT_FOUND', `${o.missing}（HTTP ${err.status}）`, {
+      url,
+      hint: o.hint,
+      retryable: false,
+      next_actions: [
+        {
+          action: o.searchTool,
+          reason: 'キーワード検索で正しい番号を探せます',
+          example: o.example,
+        },
+      ],
+      detail,
+      tool: o.tool,
+    });
+  }
+  return makeError('SOURCE_API_ERROR', `国税庁サイトからの取得に失敗: ${err.message}`, {
+    url,
+    retryable: true,
+    next_actions: [NEXT_ACTIONS.retryLater()],
+    detail,
+    tool: o.tool,
+  });
 }
 
 /**
@@ -1166,6 +1247,14 @@ export async function handleNtaSearchTaxAnswer(
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
+  } catch (err) {
+    const unreadable = unreadableFetchedAt(
+      err,
+      'nta_search_tax_answer',
+      '--bulk-download-tax-answer'
+    );
+    if (unreadable) return unreadable;
+    throw err;
   } finally {
     closeDb(db);
   }
@@ -1238,11 +1327,12 @@ export async function getTaxAnswer(
     fetchedAt = fetched.fetchedAt;
   } catch (err) {
     if (err instanceof NtaFetchError) {
-      return makeError('SOURCE_API_ERROR', `国税庁サイトからの取得に失敗: ${err.message}`, {
-        url,
-        retryable: true,
-        next_actions: [NEXT_ACTIONS.retryLater()],
-        detail: err.status !== undefined ? { status: err.status, url } : { url },
+      return liveFetchError(err, url, {
+        tool: 'nta_get_tax_answer',
+        missing: `タックスアンサー no="${no}" のページは国税庁サイトにありません`,
+        searchTool: 'nta_search_tax_answer',
+        example: { keyword: '<探したい語>' },
+        hint: '番号を確かめてください。番号が分からないときは nta_search_tax_answer でキーワードから探せます',
       });
     }
     throw err;
@@ -1472,6 +1562,14 @@ export async function handleNtaSearchKaiseiTsutatsu(
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
+  } catch (err) {
+    const unreadable = unreadableFetchedAt(
+      err,
+      'nta_search_kaisei_tsutatsu',
+      '--bulk-download-kaisei'
+    );
+    if (unreadable) return unreadable;
+    throw err;
   } finally {
     closeDb(db);
   }
@@ -1491,14 +1589,7 @@ export async function handleNtaGetKaiseiTsutatsu(
   try {
     const stored = getDocumentFromDb(db, 'kaisei', docId);
     if (!stored) {
-      return explainDocIdNotFound(
-        db,
-        'kaisei',
-        docId,
-        'TSUTATSU_NOT_FOUND',
-        'nta_get_kaisei_tsutatsu',
-        options
-      );
+      return explainDocIdNotFound(db, 'kaisei', docId, 'nta_get_kaisei_tsutatsu', options);
     }
     // #73: kind の無い PDF（v0.6.0 期に投入した行）は nta_inspect_pdf_meta と同じく題名から kind を決める。
     // v0.20.0 (#44): 「別紙 N」だけの PDF は新旧対照表本体として comparison にする（DB は変えない）
@@ -1630,6 +1721,14 @@ export async function handleNtaSearchJimuUnei(
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
+  } catch (err) {
+    const unreadable = unreadableFetchedAt(
+      err,
+      'nta_search_jimu_unei',
+      '--bulk-download-jimu-unei'
+    );
+    if (unreadable) return unreadable;
+    throw err;
   } finally {
     closeDb(db);
   }
@@ -1649,14 +1748,7 @@ export async function handleNtaGetJimuUnei(
   try {
     const stored = getDocumentFromDb(db, 'jimu-unei', docId);
     if (!stored) {
-      return explainDocIdNotFound(
-        db,
-        'jimu-unei',
-        docId,
-        'TSUTATSU_NOT_FOUND',
-        'nta_get_jimu_unei',
-        options
-      );
+      return explainDocIdNotFound(db, 'jimu-unei', docId, 'nta_get_jimu_unei', options);
     }
     // #73（判断 3）: kind の無い添付 PDF は題名から kind を決める（SPEC-NTA-GET-JIMU-UNEI-008）。DB は書き換えない
     const doc = { ...stored, attachedPdfs: fillMissingKinds(stored.attachedPdfs) };
@@ -1806,6 +1898,14 @@ export async function handleNtaSearchBunshokaitou(
       // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
       legal_status: BUNSHOKAITOU_LEGAL_STATUS,
     };
+  } catch (err) {
+    const unreadable = unreadableFetchedAt(
+      err,
+      'nta_search_bunshokaitou',
+      '--bulk-download-bunshokaitou'
+    );
+    if (unreadable) return unreadable;
+    throw err;
   } finally {
     closeDb(db);
   }
@@ -1825,14 +1925,7 @@ export async function handleNtaGetBunshokaitou(
   try {
     const stored = getDocumentFromDb(db, 'bunshokaitou', docId);
     if (!stored) {
-      return explainDocIdNotFound(
-        db,
-        'bunshokaitou',
-        docId,
-        'DOC_NOT_FOUND',
-        'nta_get_bunshokaitou',
-        options
-      );
+      return explainDocIdNotFound(db, 'bunshokaitou', docId, 'nta_get_bunshokaitou', options);
     }
     // #73（判断 3）: kind の無い添付 PDF は題名から kind を決める（SPEC-NTA-GET-BUNSHOKAITOU-008）。DB は書き換えない
     const doc = { ...stored, attachedPdfs: fillMissingKinds(stored.attachedPdfs) };

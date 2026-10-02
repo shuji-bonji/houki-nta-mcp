@@ -40,6 +40,37 @@ export const FRESH_DAYS = STALENESS_THRESHOLDS.fresh_days;
  */
 export const STALE_DAYS = STALENESS_THRESHOLDS.stale_days;
 
+/**
+ * DB の取得時点（`document.fetched_at` / `section.fetched_at`）を日付・時刻として読めないときの例外（v0.22.0）。
+ *
+ * houki-abbreviations 0.7.0 の `computeDaysSince` は、読めない値に `RangeError`（文字列でなければ `TypeError`）を
+ * 投げる（0.6.1 までは 0 を返し、壊れた取得時点が fresh になっていた）。その例外をこの型に包み、
+ * ツールの側で INTERNAL_ERROR（retryable: false）にする（SPEC-NTA-COMMON-ERRORS-017）。
+ */
+export class UnreadableFetchedAtError extends Error {
+  /** 読めなかった fetched_at の値 */
+  readonly value: string;
+  /** computeDaysSince が投げた例外の文 */
+  readonly causeMessage: string;
+
+  constructor(value: string, cause: unknown) {
+    const causeMessage = cause instanceof Error ? cause.message : String(cause);
+    super(`取得時点を読めません: ${value}`);
+    this.name = 'UnreadableFetchedAtError';
+    this.value = value;
+    this.causeMessage = causeMessage;
+  }
+}
+
+/** computeDaysSince を呼び、読めない値なら UnreadableFetchedAtError にする */
+function daysSince(fetchedAt: string, nowMs: number): number {
+  try {
+    return computeDaysSince(fetchedAt, nowMs);
+  } catch (err) {
+    throw new UnreadableFetchedAtError(fetchedAt, err);
+  }
+}
+
 /** 検索範囲全体の freshness 情報（複数 doc を返す search 系で使用）*/
 export interface FreshnessRange {
   /** 範囲内の最古の fetched_at (ISO 8601) */
@@ -88,7 +119,7 @@ export function freshnessForFetchedAt(
   bulkDownloadHint?: string,
   nowMs: number = Date.now()
 ): FreshnessSingle {
-  const days_since = computeDaysSince(fetchedAt, nowMs);
+  const days_since = daysSince(fetchedAt, nowMs);
   const staleness = judgeStaleness(days_since);
   const result: FreshnessSingle = {
     fetched_at: fetchedAt,
@@ -127,9 +158,12 @@ export function summarizeFreshnessFromDocument(
     newest: string | null;
     cnt: number;
   };
-  if (!row || row.cnt === 0 || !row.oldest || !row.newest) return null;
+  // 空文字の fetched_at も読めない値として扱うので、null だけを「無い」とみなす
+  if (!row || row.cnt === 0 || row.oldest === null || row.newest === null) return null;
 
-  const days_since_oldest = computeDaysSince(row.oldest, nowMs);
+  // 文字列の最小・最大なので、読めない値は oldest か newest に出やすい。両方を確かめる
+  const days_since_oldest = daysSince(row.oldest, nowMs);
+  daysSince(row.newest, nowMs);
   const staleness = judgeStaleness(days_since_oldest);
   const result: FreshnessRange = {
     oldest_fetched_at: row.oldest,
@@ -166,9 +200,12 @@ export function summarizeFreshnessFromSection(
     newest: string | null;
     cnt: number;
   };
-  if (!row || row.cnt === 0 || !row.oldest || !row.newest) return null;
+  // 空文字の fetched_at も読めない値として扱うので、null だけを「無い」とみなす
+  if (!row || row.cnt === 0 || row.oldest === null || row.newest === null) return null;
 
-  const days_since_oldest = computeDaysSince(row.oldest, nowMs);
+  // 文字列の最小・最大なので、読めない値は oldest か newest に出やすい。両方を確かめる
+  const days_since_oldest = daysSince(row.oldest, nowMs);
+  daysSince(row.newest, nowMs);
   const staleness = judgeStaleness(days_since_oldest);
   const result: FreshnessRange = {
     oldest_fetched_at: row.oldest,
