@@ -69,7 +69,7 @@ export interface LawServiceError {
     status?: number;
     url?: string;
     cause?: string;
-    /** INVALID_ARGUMENT: inputSchema 違反の一覧 (path は `a.b` 形式、未特定なら空文字) */
+    /** INVALID_ARGUMENT: 引数の検査の問題の一覧。違反 1 件ごとに 1 要素（path は引数名、message は日本語の 1 文） */
     issues?: Array<{ path: string; message: string }>;
   };
   /** houki-nta-mcp 固有: 略称解決結果 */

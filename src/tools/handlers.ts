@@ -116,7 +116,81 @@ import {
   ntaSearchTsutatsuTool,
   resolveAbbreviationTool,
 } from './definitions.js';
-import { bindTool, type ToolHandler } from './tool-args.js';
+import {
+  badFormArgument,
+  bindTool,
+  blankArgument,
+  isBlank,
+  type ToolHandler,
+} from './tool-args.js';
+
+/* -------------------------------------------------------------------------- */
+/* 引数の検査のうち、inputSchema では書けないもの（v0.22.0、T1）                  */
+/* -------------------------------------------------------------------------- */
+
+/** 空白だけの keyword のときの hint（検索 6 ツール。SPEC-NTA-COMMON-ERRORS-014） */
+const BLANK_KEYWORD_HINT =
+  '探したい語を keyword に渡してください。例: "軽減税率"、"医療費控除"。空白だけでは検索できません';
+
+/** inputSchema の検査のエラーと同じ next_actions（nta_search_tsutatsu の空白だけの keyword。SPEC-NTA-SEARCH-TSUTATSU-002） */
+const LIST_TOOLS_ACTION: NextAction = {
+  action: 'list_tools',
+  reason: 'inputSchema で引数の型と必須項目を確認できます',
+};
+
+/** 取得系 3 ツールの docId の形（SPEC-NTA-COMMON-ERRORS-015 と各ツールの 010） */
+interface DocIdForm {
+  tool: string;
+  pattern: RegExp;
+  message: string;
+  blankHint: string;
+  formHint: string;
+}
+
+const KAISEI_DOC_ID: DocIdForm = {
+  tool: 'nta_get_kaisei_tsutatsu',
+  // 国税庁サイトの URL の `/kaisei/<フォルダー名>/index.htm` のフォルダー名。桁数と `-` の位置は見ない
+  pattern: /^[a-z0-9-]+$/,
+  message: '英小文字・数字・- だけで指定してください（例: 0026003-067、240401）',
+  blankHint: 'nta_search_kaisei_tsutatsu の結果の docId を渡してください',
+  formHint:
+    'nta_search_kaisei_tsutatsu の結果の docId（例: "0026003-067"、"240401"）をそのまま渡してください',
+};
+
+const JIMU_UNEI_DOC_ID: DocIdForm = {
+  tool: 'nta_get_jimu_unei',
+  // `/law/jimu-unei/<フォルダー>/…/index.htm` のフォルダーの並び。先頭は税目フォルダー
+  pattern: /^[a-z0-9-]+(\/[a-z0-9_-]+)+$/,
+  message:
+    '税目/…/フォルダー名 の形で、英小文字・数字・-・_ だけで指定してください（例: shotoku/shinkoku/170331）',
+  blankHint: 'nta_search_jimu_unei の結果か available_doc_ids の docId を渡してください',
+  formHint:
+    'nta_search_jimu_unei の結果か available_doc_ids の docId（例: "shotoku/shinkoku/170331"、"sozoku/170111_1"）をそのまま渡してください',
+};
+
+const BUNSHOKAITOU_DOC_ID: DocIdForm = {
+  tool: 'nta_get_bunshokaitou',
+  // 本庁は `税目/フォルダー名`、国税局は `局/税目/フォルダー名`
+  pattern: /^([a-z0-9_-]+\/)?[a-z0-9_-]+\/[a-z0-9_-]+$/,
+  message:
+    '税目/フォルダー名 か 局/税目/フォルダー名 の形で、英小文字・数字・-・_ だけで指定してください（例: shotoku/250416、tokyo/shotoku/260218）',
+  blankHint: 'nta_search_bunshokaitou の結果の docId を渡してください',
+  formHint:
+    'nta_search_bunshokaitou の結果の docId（例: "shotoku/250416"、"tokyo/shotoku/260218"）をそのまま渡してください',
+};
+
+/**
+ * 取得系 3 ツールの docId を確かめる。空白だけなら SPEC-NTA-COMMON-ERRORS-014、形が合わなければ 015 のエラーを返し、
+ * 合えば DB を引く値（前後の空白を除いた値）を返す。DB を開く前に呼ぶ
+ */
+function guardDocId(form: DocIdForm, docId: string): LawServiceError | { docId: string } {
+  if (isBlank(docId)) return blankArgument(form.tool, 'docId', form.blankHint);
+  const value = docId.trim();
+  if (!form.pattern.test(value)) {
+    return badFormArgument(form.tool, 'docId', docId, form.message, form.formHint);
+  }
+  return { docId: value };
+}
 
 // NOT_IMPLEMENTED は v0.5.0-alpha.1 で全 search 系ハンドラが本実装になり、未使用に。
 // 将来また「未実装スタブ」を作る際は復活させる。
@@ -137,12 +211,10 @@ export async function handleNtaSearchTsutatsu(args: SearchTsutatsuArgs) {
  * `dbPath` を `:memory:` などにしてテストから呼べる。
  */
 export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath?: string } = {}) {
-  const keyword = args.keyword?.trim();
-  if (!keyword) {
-    return makeError('INVALID_ARGUMENT', 'keyword を指定してください', {
-      tool: 'nta_search_tsutatsu',
-    });
+  if (isBlank(args.keyword)) {
+    return blankArgument('nta_search_tsutatsu', 'keyword', BLANK_KEYWORD_HINT, [LIST_TOOLS_ACTION]);
   }
+  const keyword = args.keyword.trim();
 
   const db = openDb(options.dbPath);
   try {
@@ -154,7 +226,8 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
       });
     }
 
-    const limit = Math.min(Math.max(args.limit ?? 10, 1), 50);
+    // limit の範囲は inputSchema で確かめてある（SPEC-NTA-SEARCH-TSUTATSU-011）。丸めない
+    const limit = args.limit ?? 10;
     const { hits, expansion } = searchClauseFtsWithExpansion(db, keyword, { limit });
     // Issue #18: 3 文字未満の語を LIKE で補完した / 外した ことを応答に明示する
     // Issue #21: 通称を 0 件のため法令名に広げたときも明示する
@@ -226,6 +299,15 @@ export async function getTsutatsu(
   args: GetTsutatsuArgs,
   options: LiveFetchOptions & { dbPath?: string } = {}
 ) {
+  // 0. 空白だけの name は略称辞書を引かずに返す（SPEC-NTA-GET-TSUTATSU-017）
+  if (isBlank(args.name)) {
+    return blankArgument(
+      'nta_get_tsutatsu',
+      'name',
+      '通達名（略称の "消基通" か正式名の "消費税法基本通達" など）を渡してください'
+    );
+  }
+
   // 1. 略称解決
   const resolved = resolveAbbreviation(args.name);
   if (!resolved) {
@@ -726,6 +808,7 @@ function withFreshness(freshness: FreshnessRange | undefined): { freshness?: Fre
  * nta_search_qa — 質疑応答事例の FTS5 検索。事前に `--bulk-download-qa` で DB 投入が必要。
  */
 export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: string } = {}) {
+  if (isBlank(args.keyword)) return blankArgument('nta_search_qa', 'keyword', BLANK_KEYWORD_HINT);
   const limit = args.limit ?? 10;
   // Issue #23: v0.12.0 までは domain（tax / labor / …）を taxonomy（shotoku / shohi / …）と比べていたため、
   // domain を付けると必ず 0 件だった。質疑応答事例はすべて税務なので、"tax" は絞り込まず、
@@ -825,15 +908,27 @@ export async function getQa(
       hint: '対応税目: shotoku, gensen, joto, sozoku, hyoka, hojin, shohi, inshi, hotei',
     });
   }
-  if (!args.category || !args.id) {
-    return makeError('INVALID_ARGUMENT', 'category と id を両方指定してください', {
-      hint: '/law/shitsugi/{topic}/01.htm の TOC ページで category 番号と事例番号を確認',
-    });
+  // category と id は空白だけ（SPEC-NTA-GET-QA-002）と形（013）を、DB と国税庁サイトを引く前に確かめる
+  const tocHint = `税目の目次ページ（/law/shitsugi/${topic}/01.htm）でカテゴリ番号と事例番号を確かめてください`;
+  for (const [path, value] of [
+    ['category', args.category],
+    ['id', args.id],
+  ] as const) {
+    if (isBlank(value)) return blankArgument('nta_get_qa', path, tocHint);
+    if (!/^[0-9]{1,2}$/.test(value.trim())) {
+      return badFormArgument(
+        'nta_get_qa',
+        path,
+        value,
+        '1 桁か 2 桁の数字で指定してください',
+        `category と id は "02"、"19" のような 1 桁か 2 桁の数字です。${tocHint}`
+      );
+    }
   }
 
   // パディングを綺麗に: "2" → "02" に揃える（実 URL は 2 桁ゼロ埋めが多い）
-  const category = args.category.padStart(2, '0');
-  const id = args.id.padStart(2, '0');
+  const category = args.category.trim().padStart(2, '0');
+  const id = args.id.trim().padStart(2, '0');
   const url = `${QA_BASE_URL}${topic}/${category}/${id}.htm`;
   const docId = `${topic}/${category}/${id}`;
 
@@ -1015,6 +1110,9 @@ export async function handleNtaSearchTaxAnswer(
   args: SearchTaxAnswerArgs,
   options: { dbPath?: string } = {}
 ) {
+  if (isBlank(args.keyword)) {
+    return blankArgument('nta_search_tax_answer', 'keyword', BLANK_KEYWORD_HINT);
+  }
   const limit = args.limit ?? 10;
   const db = openDb(options.dbPath);
   try {
@@ -1095,14 +1193,22 @@ export async function getTaxAnswer(
   args: GetTaxAnswerArgs,
   options: { fetchImpl?: typeof fetch; dbPath?: string } = {}
 ) {
-  const no = args.no?.trim();
-  if (!no || !/^\d+$/.test(no)) {
-    return makeError(
-      'INVALID_ARGUMENT',
-      `タックスアンサー番号は数字で指定してください: "${args.no}" は不正`,
-      {
-        hint: '例: "6101" (消費税の基本的なしくみ), "1120" (医療費控除)',
-      }
+  // 空白だけ（SPEC-NTA-GET-TAX-ANSWER-001）、数字以外（001）、4 桁でない（012）は、先頭の桁で税目を決める前に返す
+  if (isBlank(args.no)) {
+    return blankArgument(
+      'nta_get_tax_answer',
+      'no',
+      'タックスアンサー番号（"6101"、"1120" のような 4 桁の数字）を渡してください'
+    );
+  }
+  const no = args.no.trim();
+  if (!/^[0-9]{4}$/.test(no)) {
+    return badFormArgument(
+      'nta_get_tax_answer',
+      'no',
+      args.no,
+      '半角の数字 4 桁で指定してください',
+      'タックスアンサー番号は "6101"（消費税の基本的なしくみ）、"1120"（医療費控除）のような 4 桁の数字です。番号が分からないときは nta_search_tax_answer で探してください'
     );
   }
   const folder = TAX_ANSWER_FOLDER_MAP[no[0]];
@@ -1248,6 +1354,14 @@ function taxAnswerResponse(
  * 「正しい MCP に誘導するヒント」と共に返す。
  */
 export async function handleResolveAbbreviation(args: ResolveAbbreviationArgs) {
+  // 空白だけの abbr は辞書に無い名前ではなく引数の誤り（SPEC-NTA-RESOLVE-ABBREVIATION-007）
+  if (isBlank(args.abbr)) {
+    return blankArgument(
+      'resolve_abbreviation',
+      'abbr',
+      '略称・正式名称・別名（例: "消基通"、"消費税法基本通達"）を渡してください'
+    );
+  }
   const result = resolveAbbreviation(args.abbr);
 
   if (!result) {
@@ -1297,6 +1411,9 @@ export async function handleNtaSearchKaiseiTsutatsu(
   args: SearchKaiseiTsutatsuArgs,
   options: { dbPath?: string } = {}
 ) {
+  if (isBlank(args.keyword)) {
+    return blankArgument('nta_search_kaisei_tsutatsu', 'keyword', BLANK_KEYWORD_HINT);
+  }
   const limit = args.limit ?? 10;
   const db = openDb(options.dbPath);
   try {
@@ -1367,14 +1484,17 @@ export async function handleNtaGetKaiseiTsutatsu(
   args: GetKaiseiTsutatsuArgs,
   options: { dbPath?: string } = {}
 ) {
+  const guarded = guardDocId(KAISEI_DOC_ID, args.docId);
+  if (isLawServiceError(guarded)) return guarded;
+  const { docId } = guarded;
   const db = openDb(options.dbPath);
   try {
-    const stored = getDocumentFromDb(db, 'kaisei', args.docId);
+    const stored = getDocumentFromDb(db, 'kaisei', docId);
     if (!stored) {
       return explainDocIdNotFound(
         db,
         'kaisei',
-        args.docId,
+        docId,
         'TSUTATSU_NOT_FOUND',
         'nta_get_kaisei_tsutatsu',
         options
@@ -1449,6 +1569,9 @@ export async function handleNtaSearchJimuUnei(
   args: SearchJimuUneiArgs,
   options: { dbPath?: string } = {}
 ) {
+  if (isBlank(args.keyword)) {
+    return blankArgument('nta_search_jimu_unei', 'keyword', BLANK_KEYWORD_HINT);
+  }
   const limit = args.limit ?? 10;
   const db = openDb(options.dbPath);
   try {
@@ -1519,14 +1642,17 @@ export async function handleNtaGetJimuUnei(
   args: GetJimuUneiArgs,
   options: { dbPath?: string } = {}
 ) {
+  const guarded = guardDocId(JIMU_UNEI_DOC_ID, args.docId);
+  if (isLawServiceError(guarded)) return guarded;
+  const { docId } = guarded;
   const db = openDb(options.dbPath);
   try {
-    const stored = getDocumentFromDb(db, 'jimu-unei', args.docId);
+    const stored = getDocumentFromDb(db, 'jimu-unei', docId);
     if (!stored) {
       return explainDocIdNotFound(
         db,
         'jimu-unei',
-        args.docId,
+        docId,
         'TSUTATSU_NOT_FOUND',
         'nta_get_jimu_unei',
         options
@@ -1610,6 +1736,9 @@ export async function handleNtaSearchBunshokaitou(
   args: SearchBunshokaitouArgs,
   options: { dbPath?: string } = {}
 ) {
+  if (isBlank(args.keyword)) {
+    return blankArgument('nta_search_bunshokaitou', 'keyword', BLANK_KEYWORD_HINT);
+  }
   const limit = args.limit ?? 10;
   const db = openDb(options.dbPath);
   try {
@@ -1689,14 +1818,17 @@ export async function handleNtaGetBunshokaitou(
   args: GetBunshokaitouArgs,
   options: { dbPath?: string } = {}
 ) {
+  const guarded = guardDocId(BUNSHOKAITOU_DOC_ID, args.docId);
+  if (isLawServiceError(guarded)) return guarded;
+  const { docId } = guarded;
   const db = openDb(options.dbPath);
   try {
-    const stored = getDocumentFromDb(db, 'bunshokaitou', args.docId);
+    const stored = getDocumentFromDb(db, 'bunshokaitou', docId);
     if (!stored) {
       return explainDocIdNotFound(
         db,
         'bunshokaitou',
-        args.docId,
+        docId,
         'DOC_NOT_FOUND',
         'nta_get_bunshokaitou',
         options
@@ -1739,6 +1871,14 @@ export async function handleNtaInspectPdfMeta(
   args: InspectPdfMetaArgs,
   options: { dbPath?: string; filesDir?: string; fetchImpl?: typeof fetch } = {}
 ) {
+  // 空白だけの docId は DB を引かずに返す（SPEC-NTA-INSPECT-PDF-META-019）
+  if (isBlank(args.docId)) {
+    return blankArgument(
+      'nta_inspect_pdf_meta',
+      'docId',
+      'nta_search_* か nta_get_* の結果の docId を渡してください'
+    );
+  }
   const db = openDb(options.dbPath);
   try {
     const doc = getDocumentFromDb(db, args.docType, args.docId);

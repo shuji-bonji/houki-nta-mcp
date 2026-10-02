@@ -24,12 +24,15 @@ export const ntaSearchTsutatsuTool = {
     properties: {
       keyword: {
         type: 'string',
+        minLength: 1,
         description:
           '検索キーワード。例: "軽減税率", "電子帳簿", "棚卸資産"。略称も可（例: "電帳法"）。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
       },
       limit: {
-        type: 'number',
-        description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
+        type: 'integer',
+        minimum: 1,
+        maximum: LIMITS.searchMax,
+        description: `取得件数。1 以上 ${LIMITS.searchMax} 以下の整数（デフォルト: ${LIMITS.searchDefault}）。範囲の外は丸めずに INVALID_ARGUMENT`,
         default: LIMITS.searchDefault,
       },
     },
@@ -47,6 +50,7 @@ export const ntaGetTsutatsuTool = {
     properties: {
       name: {
         type: 'string',
+        minLength: 1,
         description:
           '通達名または略称。例: "消費税法基本通達", "消基通", "所得税基本通達", "所基通"',
       },
@@ -76,6 +80,7 @@ export const ntaSearchQaTool = {
     properties: {
       keyword: {
         type: 'string',
+        minLength: 1,
         description:
           '検索キーワード。例: "社内会議 軽減税率", "テレワーク 必要経費"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
       },
@@ -92,8 +97,10 @@ export const ntaSearchQaTool = {
           '税目で絞り込み。shotoku=所得税 / gensen=源泉所得税 / joto=譲渡所得 / sozoku=相続税・贈与税 / hyoka=財産の評価 / hojin=法人税 / shohi=消費税 / inshi=印紙税 / hotei=法定調書',
       },
       limit: {
-        type: 'number',
-        description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
+        type: 'integer',
+        minimum: 1,
+        maximum: LIMITS.searchMax,
+        description: `取得件数。1 以上 ${LIMITS.searchMax} 以下の整数（デフォルト: ${LIMITS.searchDefault}）。範囲の外は丸めずに INVALID_ARGUMENT`,
         default: LIMITS.searchDefault,
       },
       hasPdf: {
@@ -122,11 +129,13 @@ export const ntaGetQaTool = {
       },
       category: {
         type: 'string',
+        minLength: 1,
         description:
           'カテゴリ番号（章相当）。例: "01", "02"。/law/shitsugi/{topic}/01.htm の TOC で確認できる',
       },
       id: {
         type: 'string',
+        minLength: 1,
         description: '事例番号。例: "19"',
       },
       format: {
@@ -150,12 +159,15 @@ export const ntaSearchTaxAnswerTool = {
     properties: {
       keyword: {
         type: 'string',
+        minLength: 1,
         description:
           '検索キーワード。例: "ふるさと納税", "医療費控除"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
       },
       limit: {
-        type: 'number',
-        description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
+        type: 'integer',
+        minimum: 1,
+        maximum: LIMITS.searchMax,
+        description: `取得件数。1 以上 ${LIMITS.searchMax} 以下の整数（デフォルト: ${LIMITS.searchDefault}）。範囲の外は丸めずに INVALID_ARGUMENT`,
         default: LIMITS.searchDefault,
       },
       hasPdf: {
@@ -178,6 +190,7 @@ export const ntaGetTaxAnswerTool = {
     properties: {
       no: {
         type: 'string',
+        minLength: 1,
         description:
           'タックスアンサー番号。先頭桁で税目決定: 1xxx=所得税, 2xxx=源泉, 3xxx=譲渡, 4xxx=相続・贈与, 5xxx=法人税, 6xxx=消費税, 7xxx=印紙税, 9xxx=お知らせ。例: "6101", "1120"',
       },
@@ -202,17 +215,20 @@ export const ntaSearchKaiseiTsutatsuTool = {
     properties: {
       keyword: {
         type: 'string',
+        minLength: 1,
         description:
           '検索キーワード。例: "電子帳簿", "インボイス", "軽減税率"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
       },
       taxonomy: {
         type: 'string',
         description:
-          '税目フォルダで絞り込み。"shohi" / "shotoku" / "hojin" / "sisan/sozoku" のいずれか',
+          '税目フォルダで絞り込み。例: "shohi" / "shotoku" / "hojin" / "sisan/sozoku"。値は列挙で検査しない。DB に無い値のときは available_taxonomies で正しい値を返す',
       },
       limit: {
-        type: 'number',
-        description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
+        type: 'integer',
+        minimum: 1,
+        maximum: LIMITS.searchMax,
+        description: `取得件数。1 以上 ${LIMITS.searchMax} 以下の整数（デフォルト: ${LIMITS.searchDefault}）。範囲の外は丸めずに INVALID_ARGUMENT`,
         default: LIMITS.searchDefault,
       },
       hasPdf: {
@@ -235,6 +251,7 @@ export const ntaGetKaiseiTsutatsuTool = {
     properties: {
       docId: {
         type: 'string',
+        minLength: 1,
         description:
           '文書 ID。新形式 "0026003-067" または旧形式 "240401" 等。`nta_search_kaisei_tsutatsu` 結果や DB hint で取得',
       },
@@ -259,16 +276,20 @@ export const ntaSearchJimuUneiTool = {
     properties: {
       keyword: {
         type: 'string',
+        minLength: 1,
         description:
           '検索キーワード。例: "書面添付", "重加算税"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
       },
       taxonomy: {
         type: 'string',
-        description: '税目で絞り込み。"shotoku" / "hojin" / "sozoku" / "shohi" 等',
+        description:
+          '税目で絞り込み。例: "shotoku" / "hojin" / "sozoku" / "shohi"。値は列挙で検査しない。DB に無い値のときは available_taxonomies で正しい値を返す',
       },
       limit: {
-        type: 'number',
-        description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
+        type: 'integer',
+        minimum: 1,
+        maximum: LIMITS.searchMax,
+        description: `取得件数。1 以上 ${LIMITS.searchMax} 以下の整数（デフォルト: ${LIMITS.searchDefault}）。範囲の外は丸めずに INVALID_ARGUMENT`,
         default: LIMITS.searchDefault,
       },
       hasPdf: {
@@ -291,6 +312,7 @@ export const ntaGetJimuUneiTool = {
     properties: {
       docId: {
         type: 'string',
+        minLength: 1,
         description:
           '文書 ID。例: "shotoku/shinkoku/170331" / "sozoku/170111_1"。`nta_search_jimu_unei` 結果や DB hint で取得',
       },
@@ -315,17 +337,20 @@ export const ntaSearchBunshokaitouTool = {
     properties: {
       keyword: {
         type: 'string',
+        minLength: 1,
         description:
           '検索キーワード。例: "電子帳簿", "適格請求書", "災害損失"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
       },
       taxonomy: {
         type: 'string',
         description:
-          '税目で絞り込み。"shotoku" / "hojin" / "sozoku" / "gensen" / "joto-sanrin" / "shohi" 等（URL の税目フォルダ名）。国税局のページの別表記（"souzoku" / "gensenshotoku" / "joto_sanrin"）は、同じ税目としてまとめて検索する。DB にある値は、該当が無いときの応答の available_taxonomies で分かる',
+          '税目で絞り込み。"shotoku" / "hojin" / "sozoku" / "gensen" / "joto-sanrin" / "shohi" 等（URL の税目フォルダ名）。国税局のページの別表記（"souzoku" / "gensenshotoku" / "joto_sanrin"）は、同じ税目としてまとめて検索する。値は列挙で検査しない。DB に無い値のときは available_taxonomies で正しい値を返す',
       },
       limit: {
-        type: 'number',
-        description: `取得件数（デフォルト: ${LIMITS.searchDefault}、最大: ${LIMITS.searchMax}）`,
+        type: 'integer',
+        minimum: 1,
+        maximum: LIMITS.searchMax,
+        description: `取得件数。1 以上 ${LIMITS.searchMax} 以下の整数（デフォルト: ${LIMITS.searchDefault}）。範囲の外は丸めずに INVALID_ARGUMENT`,
         default: LIMITS.searchDefault,
       },
       hasPdf: {
@@ -348,6 +373,7 @@ export const ntaGetBunshokaitouTool = {
     properties: {
       docId: {
         type: 'string',
+        minLength: 1,
         description: '文書 ID。例: "shotoku/250416" (本庁) / "tokyo/shotoku/260218" (東京国税局)',
       },
       format: {
@@ -377,6 +403,7 @@ export const ntaInspectPdfMetaTool = {
       },
       docId: {
         type: 'string',
+        minLength: 1,
         description:
           '文書 ID。各 docType の `nta_search_*` 結果や `nta_get_*` のレスポンスから得られる',
       },
@@ -406,6 +433,7 @@ export const resolveAbbreviationTool = {
     properties: {
       abbr: {
         type: 'string',
+        minLength: 1,
         description: '略称。例: "消基通", "所基通", "電帳法"',
       },
     },
