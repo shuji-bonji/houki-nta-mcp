@@ -3,9 +3,9 @@
 - 機能 ID: NTA
 - 種類: 共通
 - 版: current
-- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）
+- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）
 - 起こした元: v0.21.0 の `src/server.ts`、`src/tools/tool-args.ts`、`src/errors.ts`、`src/tools/definitions.ts`、`src/tools/handlers.ts`（ツールの登録の表）、`src/server.test.ts`、`src/tools/handlers.test.ts`
-- 関連する Issue:
+- 関連する Issue: houki-nta-mcp #120（通信の失敗の code）
 
 この文書は、複数のツールに共通する、tools/call のエラー応答の形と引数の検査を書きます。どう実装しているか（関数名・テーブル名）は書きません。
 
@@ -62,9 +62,11 @@
 | `ABBREVIATION_NOT_FOUND`                 | 略称辞書に無い名前を指定した                                                                                             |
 | `TSUTATSU_NOT_FOUND`                     | 求めた基本通達、または検索の対象になる基本通達が、ローカル DB に無く国税庁サイトから取る先も無い（`nta_get_tsutatsu` / `nta_search_tsutatsu`） |
 | `ARTICLE_NOT_FOUND`                      | 通達はあるが、求めた条項が無い                                                                                           |
-| `DOC_NOT_FOUND`                          | 求めた文書（または検索の対象になる文書）がローカル DB に無い（質疑応答事例・タックスアンサー・改正通達・事務運営指針・文書回答事例）。国税庁サイトから取るときに、そのページが無い（404・410・404 ページへの転送）ときも同じ |
-| `SOURCE_API_ERROR`                       | 国税庁サイトとの通信が失敗した（接続できない・時間切れ・5xx・429）。ページが無い（404）ことは含まない |
-| `SOURCE_TIMEOUT` / `SOURCE_RATE_LIMITED` | 取得の時間切れ / 取得の回数制限。v0.21.0 ではどのツールも返さない                                                        |
+| `DOC_NOT_FOUND`                          | 求めた文書（または検索の対象になる文書）がローカル DB に無い（質疑応答事例・タックスアンサー・改正通達・事務運営指針・文書回答事例）。国税庁サイトから取るときに、そのページが無い（404・410・404 ページへの転送）ときも同じ。`nta_get_tax_answer` で国税庁の索引にその番号が無いときも同じ |
+| `SOURCE_API_ERROR`                       | 国税庁サイトとの通信が失敗した（HTTP 5xx、404・410・429 以外の 4xx、`SOURCE_UNAVAILABLE` に当たらないネットワークの失敗）。ページが無い（404）ことは含まない（SPEC-NTA-COMMON-ERRORS-018） |
+| `SOURCE_TIMEOUT`                         | 国税庁サイトが 30 秒以内に応答しなかった（018）                                                                          |
+| `SOURCE_RATE_LIMITED`                    | 国税庁サイトが HTTP 429 を返した（018）                                                                                  |
+| `SOURCE_UNAVAILABLE`                     | 国税庁サイトに接続できなかった（DNS の失敗・接続の拒否など。019）                                                        |
 | `INTERNAL_ERROR`                         | サーバー内部の失敗（ページの解析の失敗や、処理中の想定外の例外）。再試行しても結果は変わらない（`retryable: false`） |
 
 ## 処理の流れ
@@ -160,6 +162,7 @@ SPEC-NTA-COMMON-ERRORS-003・004 のエラーを返すときは、ツールの�
 | `nta_get_tsutatsu` | 条項のある節のページ、または目次のページ（SPEC-NTA-GET-TSUTATSU-006・014） | `通達ページのパースに失敗: <理由>` |
 | `nta_get_qa` | 事例のページ（SPEC-NTA-GET-QA-005） | `質疑応答事例ページのパースに失敗: <理由>` |
 | `nta_get_tax_answer` | 記事のページ（SPEC-NTA-GET-TAX-ANSWER-005） | `タックスアンサーページのパースに失敗: <理由>` |
+| `nta_get_tax_answer` | タックスアンサーの索引のページ（SPEC-NTA-GET-TAX-ANSWER-016）から記事の URL が 1 件も読み取れない | `タックスアンサーの索引のパースに失敗: <理由>` |
 
 - `retryable` は `false`（ページの構造が変わったか、パーサの不具合で、時間をおいても結果は変わらない。SPEC-NTA-COMMON-ERRORS-006 と同じ）
 - `hint` は `パーサのバグまたは国税庁ページの構造変更の可能性。報告してください`
@@ -167,7 +170,7 @@ SPEC-NTA-COMMON-ERRORS-003・004 のエラーを返すときは、ツールの�
 - `detail` は `{ url: <同じ URL>, cause: <理由> }`
 - 読み取れなかったページの内容は DB に書き戻さない
 
-ページの取得そのものに失敗したとき（`SOURCE_API_ERROR`）と、処理中の想定外の例外（SPEC-NTA-COMMON-ERRORS-006）は、この ID に当たらない。
+ページの取得そのものに失敗したとき（SPEC-NTA-COMMON-ERRORS-018 の `SOURCE_*`）と、処理中の想定外の例外（SPEC-NTA-COMMON-ERRORS-006）は、この ID に当たらない。
 
 例: `nta_get_qa` が取った事例のページから照会要旨を読み取れなかったとき、`code: "INTERNAL_ERROR"`、`retryable: false`、`hint` は上の文（v0.22.0 では `retryable` が無かった）。
 
@@ -247,9 +250,9 @@ SPEC-NTA-COMMON-ERRORS-003・004 のエラーの `message` は、次の表の文
 
 例: `nta_get_bunshokaitou` に `docId: "250416"` を渡すと `code: "INVALID_ARGUMENT"`、`tool: "nta_get_bunshokaitou"`、`detail.issues[0].path: "docId"` で、DB は引かない。`nta_get_qa` に `topic: "shohi", category: "1a", id: "01"` を渡すと `detail.issues[0].path: "category"`。
 
-### SPEC-NTA-COMMON-ERRORS-016 `SOURCE_API_ERROR` は国税庁サイトとの通信が失敗したときだけ返し、`*_NOT_FOUND` は問い合わせが成功して求めたものが無かったときだけ返す
+### SPEC-NTA-COMMON-ERRORS-016 `SOURCE_*` は国税庁サイトとの通信が失敗したときだけ返し、`*_NOT_FOUND` は問い合わせが成功して求めたものが無かったときだけ返す
 
-`SOURCE_API_ERROR` は、国税庁サイトへの要求が、接続できない・応答を待ちきれなかった・HTTP 5xx・HTTP 429 のどれかで終わったときだけ返す（`retryable: true`、`next_actions` に `retry_later`、`detail.status` に HTTP ステータス（あれば）と `detail.url`）。`DOC_NOT_FOUND` / `TSUTATSU_NOT_FOUND` / `ARTICLE_NOT_FOUND` は、ローカル DB を引いて求めたものが無かったとき、または国税庁サイトへの要求が「そのページは無い」という答え（HTTP 404・410、`https://www.nta.go.jp/error/404.htm` への転送）で終わったときに返す。ページが無いことは番号や docId の誤りなので `retryable: false` にし、`next_actions` には時間をおいて取り直す案内（`retry_later`）を入れず、正しい番号を探すツールを入れる。
+`SOURCE_API_ERROR` / `SOURCE_TIMEOUT` / `SOURCE_RATE_LIMITED` / `SOURCE_UNAVAILABLE` は、国税庁サイトへの要求が SPEC-NTA-COMMON-ERRORS-018 の表の「ページが無い」以外の行で終わったときだけ返す。`DOC_NOT_FOUND` / `TSUTATSU_NOT_FOUND` / `ARTICLE_NOT_FOUND` は、ローカル DB を引いて求めたものが無かったとき、国税庁の索引を引いて求めた番号が無かったとき（`nta_get_tax_answer`。SPEC-NTA-GET-TAX-ANSWER-013）、または国税庁サイトへの要求が「そのページは無い」という答え（HTTP 404・410、`https://www.nta.go.jp/error/404.htm` への転送）で終わったときに返す。ページが無いことは番号や docId の誤りなので `retryable: false` にし、`next_actions` には時間をおいて取り直す案内（`retry_later`）を入れず、正しい番号を探すツールを入れる。
 
 「DB にその種別が 1 件も無い」と「DB にはあるがその docId が無い」は、どちらも DB を引いて 0 件なので同じ code（`DOC_NOT_FOUND`）で、見分けは `error` の文・`available_doc_ids`・`next_actions`（`cli_bulk_download` か検索ツールか）で付ける。
 
@@ -257,12 +260,13 @@ SPEC-NTA-COMMON-ERRORS-003・004 のエラーの `message` は、次の表の文
 | --------------------------------------------------------------- | --------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------- |
 | 文書系 3 ツールで、DB にその種別が無い・その docId が無い       | `DOC_NOT_FOUND`                               | 付けない    | SPEC-NTA-GET-BUNSHOKAITOU-002・003、SPEC-NTA-GET-JIMU-UNEI-001・002、SPEC-NTA-GET-KAISEI-TSUTATSU-001・002 |
 | `nta_get_qa` / `nta_get_tax_answer` で、国税庁サイトにページが無い | `DOC_NOT_FOUND`                               | `false`     | SPEC-NTA-GET-QA-014、SPEC-NTA-GET-TAX-ANSWER-013                                                          |
+| `nta_get_tax_answer` で、国税庁の索引にその番号が無い             | `DOC_NOT_FOUND`                               | `false`     | SPEC-NTA-GET-TAX-ANSWER-013                                                                               |
 | `nta_get_tsutatsu` で、候補ページが無い                          | `ARTICLE_NOT_FOUND`                           | 付けない    | SPEC-NTA-GET-TSUTATSU-009・010                                                                             |
-| 国税庁サイトとの通信の失敗                                      | `SOURCE_API_ERROR`                            | `true`      | SPEC-NTA-GET-QA-015、SPEC-NTA-GET-TAX-ANSWER-014、SPEC-NTA-GET-TSUTATSU-009                               |
+| 国税庁サイトとの通信の失敗                                      | `SOURCE_*`（SPEC-NTA-COMMON-ERRORS-018 の表） | 018 の表    | SPEC-NTA-GET-QA-015、SPEC-NTA-GET-TAX-ANSWER-014・017、SPEC-NTA-GET-TSUTATSU-009                          |
 
-houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ規則である（egov は通信の失敗を `SOURCE_*` の 4 つに分けるが、nta は `SOURCE_API_ERROR` の 1 つ）。
+houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ規則である。
 
-例: `nta_get_tax_answer` に `{ no: "6999" }` を渡し、DB に無く、国税庁サイトが `https://www.nta.go.jp/error/404.htm` に転送したときは `DOC_NOT_FOUND`・`retryable: false`。同じ引数で国税庁サイトが 503 を返したときは `SOURCE_API_ERROR`・`retryable: true`。`nta_get_jimu_unei` に DB に無い docId を渡したときは `DOC_NOT_FOUND`（v0.21.3 では `TSUTATSU_NOT_FOUND` だった）。
+例: `nta_get_tax_answer` に `{ no: "6999" }` を渡し、DB に無く、国税庁の索引にも無いときは `DOC_NOT_FOUND`・`retryable: false` で、記事のページは取りに行かない。索引にある番号で、国税庁サイトが記事のページを 503 で返し続けたときは `SOURCE_API_ERROR`・`retryable: true`。`nta_get_jimu_unei` に DB に無い docId を渡したときは `DOC_NOT_FOUND`（v0.21.3 では `TSUTATSU_NOT_FOUND` だった）。
 
 ### SPEC-NTA-COMMON-ERRORS-017 DB の取得時点を解釈できないときは `INTERNAL_ERROR`（`retryable: false`）にし、その種別の投入をやり直す案内を付ける
 
@@ -280,6 +284,53 @@ houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ規則である（egov �
 取り込みが書く `fetched_at` は `new Date().toISOString()` の形（`2026-10-01T00:30:00.000Z`）なので、取り込みを通した DB ではこのエラーは起きない。houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-031 と同じ形である。
 
 例: `document.fetched_at` を `2026/05/08` に書き換えた質疑応答事例だけがある DB で `nta_search_qa` に `{ keyword: "軽減税率" }` を渡すと、`code: "INTERNAL_ERROR"`、`retryable: false`、`error` に `2026/05/08` を含み、`hint` に `--bulk-download-qa` を含み、`results` は返さない（v0.22.0 の本文は対象に「取得 6 ツール」を含めていたが、0.22.0 の実装と受入テストは検索 6 ツールだけだった。houki-nta-mcp #71 の 2026-10-02 のコメント）。
+
+### SPEC-NTA-COMMON-ERRORS-018 国税庁サイトへの要求の終わり方で、取り直すか・どの code にするか・`retryable` を決める
+
+国税庁サイトから 1 ページを取るツール（`nta_get_qa`・`nta_get_tax_answer`・`nta_get_tsutatsu`）は、要求が次の表のどれで終わったかで、取り直すか、どのエラーを返すかを決める。取り直すときは、1 回目の失敗から 1 秒・2 秒・4 秒あけて、合わせて 4 回まで要求する。1 回の要求で応答を待つのは 30 秒までで、それを過ぎたら打ち切る。
+
+| 国税庁サイトへの要求の終わり方 | 取り直し | `code` | `retryable` | `next_actions` | `detail` |
+|---|---|---|---|---|---|
+| HTTP 404・410、`https://www.nta.go.jp/error/404.htm` への転送（ページが無い） | しない | 各ツールの spec.md（`DOC_NOT_FOUND`。`nta_get_tsutatsu` は次の候補ページへ進む） | `false` | 各ツールの spec.md（正しい番号を探す検索ツール） | `status`（転送は 404）、`url` |
+| HTTP 429 | しない | `SOURCE_RATE_LIMITED` | `true` | `retry_later` | `status: 429`、`url` |
+| 応答を待ちきれなかった（30 秒で打ち切った） | する | `SOURCE_TIMEOUT` | `true` | `retry_later` | `url` |
+| HTTP 5xx | する | `SOURCE_API_ERROR` | `true` | `retry_later` | `status`、`url` |
+| HTTP 4xx（404・410・429 を除く。403・400 など） | しない | `SOURCE_API_ERROR` | `false` | 付けない | `status`、`url` |
+| 接続できない（SPEC-NTA-COMMON-ERRORS-019） | する | `SOURCE_UNAVAILABLE` | `true` | `retry_later` | `cause`（`ENOTFOUND` などの code）、`url` |
+| そのほかのネットワークの失敗（例外の `cause.code` が 019 の表に無いもの） | する | `SOURCE_API_ERROR` | `true` | `retry_later` | `cause`（例外の文）、`url` |
+
+- 4 つの `SOURCE_*` のエラーの `error` は `国税庁サイトからの取得に失敗: <失敗の説明>`、`tool` は呼んだツールの名前
+- `hint` は code ごとに次の内容を書く。`SOURCE_RATE_LIMITED`: 国税庁サイトが要求の回数を制限していること、間隔をあけて呼び直すこと。`SOURCE_TIMEOUT`: 国税庁サイトが 30 秒以内に応答しなかったこと、時間をおいて呼び直すこと。`SOURCE_UNAVAILABLE`: 国税庁サイトに接続できなかったこと、ネットワークか DNS を確かめること。`SOURCE_API_ERROR`（5xx・そのほかのネットワークの失敗）: 時間をおいて呼び直すこと。`SOURCE_API_ERROR`（4xx）: 国税庁サイトがこの要求を受け付けなかったこと（HTTP <status>）、時間をおいても変わらない見込みで、続くときは報告してほしいこと
+- 429 を取り直さないのは、取り直すと国税庁サイトへの要求をさらに増やすためである。取り直すかどうかは呼び出し側（LLM）が `retryable` と `next_actions` で決める
+- 403・400 など（404・410・429 を除く 4xx）を `retryable: false` にするのは、取り直しても結果が変わりにくいためである。URL はこのサーバーが組み立て、識別子の形は国税庁サイトを引く前に確かめる（SPEC-NTA-COMMON-ERRORS-015）ので、400 は引数の誤りではなく URL の組み立ての誤りか国税庁サイトの変更であり、403 はアクセスの拒否と考えられる
+
+houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ code・`retryable` である。違いは 2 つで、houki-egov-mcp は 429 を取り直すが houki-nta-mcp は取り直さない（v0.21.x からの国税庁サイトへの取得の決まり）、houki-egov-mcp は e-Gov の応答本文の `code` で 4xx をさらに分ける（`404004` を `LAW_NOT_FOUND` など。SPEC-EGOV-COMMON-ERRORS-033）が、国税庁サイトの 4xx の応答本文には分けられる値が無い。
+
+例: `nta_get_qa` に `{ topic: "shohi", category: "02", id: "19" }` を渡し、事例が DB に無いとき、国税庁サイトの応答が次のとおりなら、返す code は次のとおり（v0.23.0 では 404・410・転送以外はどれも `SOURCE_API_ERROR`・`retryable: true`・`next_actions: [retry_later]` だった）。
+
+| 国税庁サイト | `code` | `retryable` |
+|---|---|---|
+| 429 | `SOURCE_RATE_LIMITED` | `true` |
+| 30 秒を過ぎても応答しない（4 回とも） | `SOURCE_TIMEOUT` | `true` |
+| 503（4 回とも） | `SOURCE_API_ERROR` | `true` |
+| 403 | `SOURCE_API_ERROR` | `false` |
+| `fetch failed`、`cause.code: "ENOTFOUND"`（4 回とも） | `SOURCE_UNAVAILABLE` | `true` |
+
+### SPEC-NTA-COMMON-ERRORS-019 国税庁サイトに接続できないときは、例外の `cause.code` を見て `SOURCE_UNAVAILABLE` を返す
+
+国税庁サイトへの要求で、HTTP の応答を受け取る前に接続の失敗で例外が起きたときは、例外の `message` だけでなく `cause.code`（Node の `fetch` が投げる `TypeError: fetch failed` の `cause` に入る、`ENOTFOUND` のような文字列）も見て、次の表の code のどれかなら `SOURCE_UNAVAILABLE`（`retryable: true`）を返す。`detail.cause` にその code を入れる。取り直しは SPEC-NTA-COMMON-ERRORS-018 のとおり（合わせて 4 回）で、取り直しても接続できなかったときにこのエラーになる。
+
+| `cause.code`   | 意味                       |
+| -------------- | -------------------------- |
+| `ENOTFOUND`    | ホスト名を解決できない     |
+| `EAI_AGAIN`    | DNS が一時的に答えない     |
+| `ECONNREFUSED` | 接続を拒否された           |
+| `ECONNRESET`   | 接続が途中で切れた         |
+| `ETIMEDOUT`    | TCP の接続が時間切れになった |
+
+表は houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-028 と同じである。`cause.code` がこの表に無いネットワークの失敗は、SPEC-NTA-COMMON-ERRORS-018 の表の最後の行（`SOURCE_API_ERROR`、`retryable: true`）のままである。このサーバーが 30 秒で打ち切った要求は、この ID ではなく `SOURCE_TIMEOUT` になる。
+
+例: `fetch` が `TypeError("fetch failed")` を投げ、その `cause` が `{ code: "ENOTFOUND", hostname: "www.nta.go.jp" }` のとき、DB に無い記事を `nta_get_tax_answer` に `{ no: "6101" }` で求めると、`code: "SOURCE_UNAVAILABLE"`、`retryable: true`、`detail.cause: "ENOTFOUND"`（v0.23.0 では `SOURCE_API_ERROR`、`detail.status` 無し）。
 
 ## できないこと
 
@@ -301,4 +352,3 @@ houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ規則である（egov �
 6. **処理中の想定外の例外で返す `INTERNAL_ERROR` の `hint`・`next_actions`・`tool`・`error`。** → SPEC-NTA-COMMON-ERRORS-006
 7. **`INTERNAL_ERROR` の `retryable` がツールと場面で揃わない。** → SPEC-NTA-COMMON-ERRORS-006・SPEC-NTA-COMMON-ERRORS-009
 8. **値の無いフィールドを付けない規則。** `hint` が空文字のとき、`next_actions` が空の配列のときは付けない。`retryable` は値を決めたエラーにだけ付き、付かないエラーを「再試行しても変わらない」と読んでよいかは決めていない。テストが無い。ID を振るのは受入テストを書いてから。
-9. **`SOURCE_TIMEOUT` と `SOURCE_RATE_LIMITED`。** code の一覧にはあるが、v0.21.0 ではどのツールも返さない（取得の時間切れも `SOURCE_API_ERROR` になる）。一覧に残すか、取得の失敗を分けて返すかは人が決める。

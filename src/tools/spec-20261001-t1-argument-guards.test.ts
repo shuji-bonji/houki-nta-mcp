@@ -822,7 +822,7 @@ describe('SPEC-NTA-GET-TAX-ANSWER-012 番号は 4 桁で、桁数が違えば取
     });
   }
 
-  // 差分 20261003-source-paths（#128）で SPEC-NTA-GET-TAX-ANSWER-002（先頭の桁で断る）を外し、012 の例を "8001" に直した
+  // 差分 20261003-source-paths（#128）で先頭の桁で断る仕様（REMOVED）を外し、012 の例を "8001" に直した
   it('SPEC-NTA-GET-TAX-ANSWER-012 no: "8001" は 4 桁なので検査を通り、先頭の桁では断らずに国税庁の索引で URL を決めて取る（v0.23.0 では先頭の桁が未対応の INVALID_ARGUMENT）', async () => {
     const html = readFileSync(
       join(FIXTURES, 'www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')

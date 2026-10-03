@@ -3,9 +3,9 @@
 - 機能 ID: NTA
 - 種類: CLI
 - 版: current
-- 承認日: 2026-09-29（PR #103）
+- 承認日: 2026-09-29（PR #103）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261003-db-cli` は 2026-10-04（PR #135）
 - 起こした元: v0.21.2 の `src/cli.ts`、`src/constants.ts`（`TSUTATSU_URL_ROOTS`・`QA_TOPICS`・`TAX_ANSWER_FOLDER_MAP`・`BUNSHO_MAIN_TAXONOMIES`・`BUNSHO_TAXONOMY_GROUPS`）、`src/services/bulk-downloader.ts`、`src/services/kaisei-bulk-downloader.ts`、`src/services/jimu-unei-bulk-downloader.ts`、`src/services/bunshokaitou-bulk-downloader.ts`、`src/services/tax-answer-bulk-downloader.ts`、`src/services/qa-bulk-downloader.ts`、`src/services/index-status.ts`、`src/cli.test.ts`
-- 関連する Issue: houki-nta-mcp #23（投入していない種別の検索は `DOC_NOT_FOUND`）、#25（税目フラグの値の検査）、#30（索引から消えた文書の印）、#35（`--quickstart`）、#54（`bulk_completed_at`）
+- 関連する Issue: houki-nta-mcp #23（投入していない種別の検索は `DOC_NOT_FOUND`）、#25（税目フラグの値の検査）、#30（索引から消えた文書の印）、#35（`--quickstart`）、#54（`bulk_completed_at`）、#106（--tsutatsu の値と終了コード）、#110（税目を絞った投入での索引から消えた文書の印）、#128（タックスアンサーの索引の保存）
 
 この文書は「このコマンドは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。DB に入った後の約束は db_schema、取り直し（`--refresh`）は cli_refresh の spec.md に書きます。
 
@@ -26,12 +26,14 @@
 | `--bulk-download-tax-answer`   | どれか 1 つ | タックスアンサーを投入する                                                                                                                                                                                               |
 | `--bulk-download-qa`           | どれか 1 つ | 質疑応答事例を投入する                                                                                                                                                                                                   |
 | `--bulk-download-everything`   | どれか 1 つ | 通達本体（4 種）→ 改正通達 → 事務運営指針 → 文書回答事例 → タックスアンサー → 質疑応答事例 の 6 種別を順に投入する                                                                                                       |
-| `--tsutatsu=<正式名>`          | 任意        | `--quickstart` / `--bulk-download` の通達。既定は `消費税法基本通達`。投入できるのは基本通達 4 種の正式名（未決 3）                                                                                                      |
+| `--tsutatsu=<正式名>`          | 任意        | `--quickstart` / `--bulk-download` の通達。既定は `消費税法基本通達`。投入できるのは基本通達 4 種の正式名（ほかの値は SPEC-NTA-CLI-BULK-DOWNLOAD-011）                                                                                                      |
 | `--bunsho-taxonomy=<csv>`      | 任意        | 文書回答事例の税目の絞り込み。値は `shotoku` / `gensen` / `joto-sanrin` / `sozoku` / `zoyo` / `hyoka` / `hojin` / `shohi` / `shozei` / `sonota`。国税局の別表記 `souzoku` / `gensenshotoku` / `joto_sanrin` も受け付ける |
-| `--tax-answer-taxonomy=<csv>`  | 任意        | タックスアンサーの税目の絞り込み。値は `shotoku` / `gensen` / `joto` / `sozoku` / `hojin` / `shohi` / `inshi` / `osirase`                                                                                                |
+| `--tax-answer-taxonomy=<csv>`  | 任意        | タックスアンサーの税目の絞り込み。値は国税庁のタックスアンサーの索引にある税目フォルダ 13 個: `shotoku` / `gensen` / `joto` / `sozoku` / `zoyo` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei` / `fufuku` / `saigai` / `osirase`（2026-10-03 JST の索引で確かめた値）。国税庁の索引にこの一覧に無い税目フォルダが現れても、`--tax-answer-taxonomy` を付けない投入では取り込む。絞り込みに使えるのはこの一覧の値だけ |
 | `--qa-topic=<csv>`             | 任意        | 質疑応答事例の税目の絞り込み。値は `shotoku` / `gensen` / `joto` / `sozoku` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei`                                                                                            |
 | `--refresh`                    | 任意        | 条件付き取得を使わずに全部取り直す（cli_refresh）                                                                                                                                                                        |
 | `--db-path=<path>`             | 任意        | 投入先の DB ファイル（cli_entry）                                                                                                                                                                                        |
+
+投入のフラグは 1 回の実行で 1 つだけ。一緒に使えるフラグは cli_entry の SPEC-NTA-CLI-ENTRY-007。DB の版による扱いは SPEC-NTA-DB-SCHEMA-021
 
 ## 処理の流れ
 
@@ -39,9 +41,11 @@
 
 ```mermaid
 flowchart TD
-  A["--quickstart / --bulk-download* を実行"] --> B{"税目フラグの値はすべて一覧にあるか（008・009）"}
-  B -- ない値がある --> E["使えない値と使える値を標準エラー出力に出し、何も投入せず exit 1（010）"]
-  B -- ある --> C{"どのフラグか"}
+  A["--quickstart / --bulk-download* を実行"] --> B{"税目フラグと --tsutatsu の値はすべて一覧にあるか（008・009・011）"}
+  B -- ない値がある --> E["使えない値と使える値を標準エラー出力に出し、何も投入せず exit 2（010・011）"]
+  B -- ある --> DB{"DB の状態（SPEC-NTA-DB-SCHEMA-021）"}
+  DB -- "新しい版・読めない版・開けない" --> DBX["国税庁サイトに接続せず exit 1"]
+  DB -- "無い・同じ・移行できる・作り直す" --> C{"どのフラグか"}
   C -- "--quickstart" --> Q["投入の前に所要時間と DB の場所を出す（007）"] --> T1["--tsutatsu の通達 1 つを投入する（006）"] --> Q2["次の一手を出す（007）"]
   C -- "--bulk-download" --> T2["--tsutatsu の通達 1 つを投入する（002）"]
   C -- "--bulk-download-all" --> T4["基本通達 4 種を順に投入する。1 つ失敗しても次へ進む（001）"]
@@ -52,6 +56,7 @@ flowchart TD
   T4 --> R
   D --> R
   S --> R
+  R --> OR["税目を絞らずに、または絞った税目の索引をすべて取れたら、索引から消えた文書の印を付け直す（012）"]
 ```
 
 ## できること
@@ -94,15 +99,38 @@ flowchart TD
 
 `--bunsho-taxonomy` に国税局の別表記を渡すと、本庁の表記に直してから絞り込みに使う。`souzoku` → `sozoku`、`gensenshotoku` → `gensen`、`joto_sanrin` → `joto-sanrin`。例: `--bunsho-taxonomy=souzoku,gensenshotoku,joto_sanrin` は `sozoku`・`gensen`・`joto-sanrin` に絞る。
 
-### SPEC-NTA-CLI-BULK-DOWNLOAD-010 税目フラグに一覧に無い値があれば、何も投入せずに exit 1 で終わる
+### SPEC-NTA-CLI-BULK-DOWNLOAD-010 税目フラグに一覧に無い値があれば、何も投入せずに exit 2 で終わる
 
-税目フラグの値に一覧に無いものが 1 つでもあれば（複数指定で 1 つだけ誤っているときを含む）、国税庁サイトを取りに行かず、DB に何も入れず、MCP サーバーも起動せずに、終了コード 1 で終わる。標準エラー出力に、使えない値 1 つにつき 1 行、`[houki-nta-mcp] <フラグ>="<値>" は使えません。使える値: <一覧>` を出す。`--bunsho-taxonomy` では続けて `（国税局の別表記 souzoku・gensenshotoku・joto_sanrin も使えます）` を付ける。
+税目フラグの値に一覧に無いものが 1 つでもあれば（複数指定で 1 つだけ誤っているときを含む）、国税庁サイトを取りに行かず、DB を開かず、MCP サーバーも起動せずに、終了コード 2 で終わる。標準エラー出力に、使えない値 1 つにつき 1 行、`[houki-nta-mcp] <フラグ>="<値>" は使えません。使える値: <一覧>` を出す。`--bunsho-taxonomy` では続けて `（国税局の別表記 souzoku・gensenshotoku・joto_sanrin も使えます）` を付ける。終了コード 2 は、cli_entry の引数の誤り（SPEC-NTA-CLI-ENTRY-006〜008）と同じである（v0.23.x までは 1。#106）。
 
-例: `--bulk-download-bunshokaitou --bunsho-taxonomy=zzz` は `--bunsho-taxonomy="zzz" は使えません` と `shotoku` を含む一覧を出して終了コード 1。`--bulk-download-qa --qa-topic=shohi,zzz` も投入せず終了コード 1。
+例: `--bulk-download-bunshokaitou --bunsho-taxonomy=zzz` は `--bunsho-taxonomy="zzz" は使えません` と `shotoku` を含む一覧を出して終了コード 2。`--bulk-download-qa --qa-topic=shohi,zzz` も投入せず終了コード 2。
+
+### SPEC-NTA-CLI-BULK-DOWNLOAD-011 `--tsutatsu` が基本通達 4 種の正式名でなければ、何も投入せずに exit 2 で終わる
+
+`--tsutatsu=<値>` の値が `消費税法基本通達`・`所得税基本通達`・`法人税基本通達`・`相続税法基本通達` のどれでもないときは、国税庁サイトを取りに行かず、DB を開かず、MCP サーバーも起動せずに、標準エラー出力に `[houki-nta-mcp] --tsutatsu="<値>" は使えません。使える値: 消費税法基本通達, 所得税基本通達, 法人税基本通達, 相続税法基本通達` を出して終了コード 2 で終わる（SPEC-NTA-CLI-BULK-DOWNLOAD-010 と同じ形）。略称（`消基通` など）も使えない値として扱う。
+
+例: `--bulk-download --tsutatsu=国税通則法基本通達` は上の文を出して終了コード 2 で、DB のファイルはできない（v0.23.x では DB を開いた後に `[server] fatal error` のログを出して終了コード 1 だった。#106）。`--quickstart --tsutatsu=消基通` も同じ。
+
+### SPEC-NTA-CLI-BULK-DOWNLOAD-012 税目を絞った投入でも、絞った税目の索引をすべて取れたときは、その税目の文書に限って索引から消えた文書の印を付け直す
+
+`--bulk-download-bunshokaitou --bunsho-taxonomy=<csv>`・`--bulk-download-tax-answer --tax-answer-taxonomy=<csv>`・`--bulk-download-qa --qa-topic=<csv>`（`--bulk-download-everything` に付けたときを含む）は、絞った税目の索引をすべて取れたときは、DB のその種別の行のうち `taxonomy` が絞った税目の行についてだけ、索引から消えた文書の印（`orphaned_at`。SPEC-NTA-SEARCH-RULES-011）を付け直す。印の付け方（索引にある・この実行で取った・題名が同じなら移動）は税目を絞らない投入と同じである。
+
+- 文書回答事例は、絞った税目の国税局の別表記（`sozoku` に対する `souzoku` など。SPEC-NTA-CLI-BULK-DOWNLOAD-009）の行も対象にする
+- 絞った税目の索引を 1 つでも取れなかったときは、印を付け直さない（税目を絞らない投入と同じ）
+- 絞らなかった税目の行の `orphaned_at` は変えない
+- 種別ごとの件数の記録（baseline ファイル、SPEC-NTA-CLI-HEALTH-CHECK-006）と `⚠ health warning` は、今までどおり税目を絞らない投入だけが行う。絞った実行の件数を全体の履歴と比べると警告が誤って出るためである
+
+例: DB に質疑応答事例の `shohi` の行 A・B と `hojin` の行 C があり、国税庁の `shohi` の索引に A だけがあるとき、`--bulk-download-qa --qa-topic=shohi` を実行すると、B に `orphaned_at` が付き、A と C は NULL のまま（v0.23.x では税目を絞った投入は印を付け直さなかったので、B も NULL のままだった。#110）。
+
+### SPEC-NTA-CLI-BULK-DOWNLOAD-013 `--bulk-download-tax-answer` は、取ったタックスアンサーの索引を DB に保存する
+
+`--bulk-download-tax-answer`（`--bulk-download-everything` のタックスアンサーを含む）は、国税庁のタックスアンサーの索引を取って読み取れたら、SPEC-NTA-DB-SCHEMA-025 のとおり `tax_answer_index` と `tax_answer_index_page` に保存する。`--tax-answer-taxonomy` で絞ったときも、絞る前の索引のすべての記事を保存する。`--refresh` の有無によらず、取った索引で置き換える。保存した後の `nta_get_tax_answer` は、この索引を使う（SPEC-NTA-GET-TAX-ANSWER-016）。
+
+例: `--bulk-download-tax-answer --tax-answer-taxonomy=saigai` を実行すると、投入する記事は `saigai` の記事だけだが、`tax_answer_index` には索引の全記事（2026-10-03 JST の索引では 755 行）が入る。
 
 ## できないこと
 
-- 基本通達 4 種以外の通達を投入すること（`--tsutatsu` に 4 種以外の正式名を渡したときは未決 3）
+- 基本通達 4 種以外の通達を投入すること（`--tsutatsu` に 4 種以外の値を渡すと SPEC-NTA-CLI-BULK-DOWNLOAD-011 のエラー）
 - 通達の章や節を絞って投入すること（CLI にはフラグが無い。章を絞った実行は `bulk_completed_at` を書かない。SPEC-NTA-DB-SCHEMA-015）
 - 投入する前に、国税庁サイト側に更新があるかだけを確かめること（`--refresh-stale` は DB の取得日時で見る。cli_refresh）
 - 国税庁の索引から消えた文書を DB から消すこと（印を付けて残す。SPEC-NTA-SEARCH-RULES-011）
@@ -116,7 +144,5 @@ flowchart TD
 
 1. **進捗の表示と結果の JSON、終了コード。** 各種別は標準エラー出力に `[<種別>] DB: <DB の場所>`、索引や節ごとの進捗（`[<n>/<N>] …`）、終わりに `完了: <取れた数>/<全体> …` を出し、標準出力に結果の JSON（通達は `sections`・`sectionsFetched`・`sectionsFailed`・`clauses`・`sectionsNotModified`・`sectionsContentSame`・`sectionsContentChanged`、文書系は `totalEntries`・`documentsFetched`・`documentsFailed`・種別ごとの内訳・`aggregation`・`health`）を出す。`--bulk-download-all` / `--bulk-download-kaisei` は通達ごとの `summary` を、`--bulk-download-everything` は種別ごとの JSON を続けて出す。終了コードは、種別の中で節や文書の取得に失敗しても 0 である。どれもテストが無い（houki-egov-mcp の SPEC-EGOV-CLI-BULK-DOWNLOAD-019〜021 に当たる）。ID を振るのは受入テストを書いてから。
 2. **取得の順序と間隔。** 節・文書は 1 件ずつ順に取り、間に約 1.1 秒あける。取得や解析に失敗した節・文書は数えて飛ばし、残りを続ける。テストは通達の失敗数（`sectionsFailed`）だけを確かめている。ID を振るのは受入テストを書いてから。
-3. **`--tsutatsu` に基本通達 4 種以外の正式名を渡すと、想定外の例外で終わる。** → houki-nta-mcp #106
-4. **税目を絞らずに取り終えた実行だけが baseline を書き、索引から消えた文書に印を付ける。** → houki-nta-mcp #110
 5. **`--bulk-download-everything` に渡した税目フラグは、その種別にだけ効く。** `--bunsho-taxonomy` は文書回答事例、`--tax-answer-taxonomy` はタックスアンサー、`--qa-topic` は質疑応答事例にだけ渡り、`bunshokaitou は <税目> に絞り込み` を出す。絞り込みを渡さないと `bunshokaitou は全税目（30 分超）…` の案内を出す。テストが無い。ID を振るのは受入テストを書いてから。
 6. **投入した節・文書の文字列の揃え方。** DB に入れる題名・本文は SPEC-NTA-SEARCH-RULES-007 の揃え方で入る。種別ごとの証拠は search_rules の未決 7 と同じ。

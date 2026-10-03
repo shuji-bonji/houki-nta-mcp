@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaInspectPdfMeta`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/pdf-meta.ts`、`src/services/pdf-files.ts`、`src/constants.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #36（読み方の事実と `save: true`）、#44（改正通達の「別紙 N」を新旧対照表として扱う）、#1（docType 別の `legal_status`）
 
@@ -188,11 +188,14 @@ SPEC-NTA-INSPECT-PDF-META-011 の HTTP の失敗のほかに、次の場合も P
 
 応答の `legal_status` は `docType` で決まる。
 
-| `docType` | `binds_citizens` | `binds_courts` | `binds_tax_office` | `note` の要点 |
+| `docType` | `binds_citizens` | `binds_courts` | `binds_tax_office` | `note` |
 |---|---|---|---|---|
-| `kaisei` / `jimu-unei` | `false` | `false` | `true` | 通達は行政内部文書で納税者・裁判所を直接は拘束しないが、税務署員は職務として守る（最高裁 昭和43.12.24） |
-| `bunshokaitou` | `false` | `false` | `false` | 個別事案への回答で一般的な法的拘束力はなく、実務判断は通達・法令本文に基づく必要がある |
-| `tax-answer` | `false` | `false` | `false` | 国税庁の参考解説資料で法的拘束力はなく、実務判断は通達・法令本文に基づく必要がある |
+| `kaisei` | `false` | `false` | `true` | 要点: 通達は行政内部文書で納税者・裁判所を直接は拘束しないが、税務署員は職務として守る（最高裁 昭和43.12.24） |
+| `jimu-unei` | `false` | `false` | `true` | `通達・事務運営指針は行政内部文書であり、納税者・裁判所には直接的拘束力なし。ただし税務署員は職務として守る義務あり（最高裁 昭和43.12.24）`。`nta_get_jimu_unei` の json（SPEC-NTA-GET-JIMU-UNEI-005）と同じ値 |
+| `bunshokaitou` | `false` | `false` | `false` | 要点: 個別事案への回答で一般的な法的拘束力はなく、実務判断は通達・法令本文に基づく必要がある |
+| `tax-answer` | `false` | `false` | `false` | 要点: 国税庁の参考解説資料で法的拘束力はなく、実務判断は通達・法令本文に基づく必要がある |
+
+例: `{ docType: "jimu-unei", docId: "shozei/090401" }` の `legal_status.note` は `通達・事務運営指針は行政内部文書であり、` で始まる（v0.23.0 では `kaisei` と同じ `通達は行政内部文書。` で始まる文だった。houki-nta-mcp #131）。`{ docType: "kaisei", … }` の `note` は今までどおり。
 
 ### SPEC-NTA-INSPECT-PDF-META-017 DB の添付 PDF の記録が読めない文書は、PDF が無い文書として返す
 

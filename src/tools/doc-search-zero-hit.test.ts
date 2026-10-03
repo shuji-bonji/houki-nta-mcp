@@ -213,25 +213,6 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(miss.hint).toContain('該当なし');
   });
 
-  it('SPEC-NTA-SEARCH-QA-003 nta_search_qa: domain="tax" は絞り込まない（v0.12.0 までは必ず 0 件だった）', async () => {
-    const r = (await handleNtaSearchQa(
-      { keyword: '軽減税率', domain: 'tax' },
-      { dbPath }
-    )) as ZeroHitResponse;
-    expect(r.results).toHaveLength(1);
-  });
-
-  it('SPEC-NTA-SEARCH-QA-002 nta_search_qa: domain が tax 以外なら 0 件で、topic を案内する', async () => {
-    const r = (await handleNtaSearchQa(
-      { keyword: '軽減税率', domain: 'labor' },
-      { dbPath }
-    )) as ZeroHitResponse;
-    expect(r.code).toBeUndefined();
-    expect(r.results).toEqual([]);
-    expect(r.hint).toContain('domain="labor"');
-    expect(r.hint).toContain('topic');
-  });
-
   it('SPEC-NTA-SEARCH-QA-006 nta_search_qa: hasPdf=true は PDF 付きの文書が無いことを伝える（エラーにしない）', async () => {
     const r = (await handleNtaSearchQa(
       { keyword: '軽減税率', hasPdf: true },

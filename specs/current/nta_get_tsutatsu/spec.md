@@ -2,7 +2,7 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-22（初版。PR #49 のマージ）。差分 `20260924-tsutatsu-clause-forms` は 2026-09-24（PR #53 のマージ）。差分 `20260925-tsutatsu-live-toc` は 2026-09-25（PR #59）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）
+- 承認日: 2026-09-22（初版。PR #49 のマージ）。差分 `20260924-tsutatsu-clause-forms` は 2026-09-24（PR #53 のマージ）。差分 `20260925-tsutatsu-live-toc` は 2026-09-25（PR #59）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）
 - 起こした元: v0.20.2 の `src/tools/handlers.ts`（`getTsutatsu`）、`src/tools/definitions.ts`、`src/tools/handlers.test.ts`
 - 関連する判断: houki-hub `docs/DECISIONS.md`（2026-09-21 の行）
 - 取り込んだ差分: `specs/releases/v0.20.3/20260924-tsutatsu-clause-forms/`（入力の `clause`。2026-09-24 JST）
@@ -126,11 +126,13 @@ flowchart TD
 
 消費税法基本通達で番号から組み立てたページ（SPEC-NTA-GET-TSUTATSU-006）を取ったあとに目次から候補ページを決められないときは、候補ページを取っているので SPEC-NTA-GET-TSUTATSU-010 の `ARTICLE_NOT_FOUND` を返す。
 
-### SPEC-NTA-GET-TSUTATSU-009 国税庁サイトから取れなかったときは再試行できるエラーにする
+### SPEC-NTA-GET-TSUTATSU-009 国税庁サイトから取れなかったときは、失敗の種類ごとの `SOURCE_*` を返す
 
-目次または候補ページの取得が通信の失敗やサイトのエラーで失敗したときは、エラー `SOURCE_API_ERROR` を返す。`retryable` は `true`、`detail.status` に HTTP ステータス（あれば）、`next_actions` に時間をおいて再試行する案内を入れる。
+目次または候補ページの取得が、ページが無い（404・410、国税庁サイトの 404 ページへの転送）以外の形で失敗したときは、SPEC-NTA-COMMON-ERRORS-018 の表の code・`retryable`・`next_actions`・`detail` のエラーを返す（`SOURCE_RATE_LIMITED`・`SOURCE_TIMEOUT`・`SOURCE_UNAVAILABLE`・`SOURCE_API_ERROR`）。`url` と `detail.url` に、取れなかった目次か候補ページの URL を入れ、`tool` に `nta_get_tsutatsu` を入れる（v0.23.0 では `tool` が無かった）。
 
-候補ページが存在しない（404、または国税庁サイトの 404 ページへの転送）ことは、再試行できるエラーにしない。目次を取り直しても候補ページがどれも存在しなければ、SPEC-NTA-GET-TSUTATSU-010 の `ARTICLE_NOT_FOUND` を返す。
+候補ページが存在しない（404・410、または国税庁サイトの 404 ページへの転送）ことは、エラーにせず次の候補ページへ進む。目次を取り直しても候補ページがどれも存在しなければ、SPEC-NTA-GET-TSUTATSU-010 の `ARTICLE_NOT_FOUND` を返す。目次のページそのものが 404・410・転送で終わったときは、目次の URL はこのサーバーが決めた値なので番号の誤りではなく、`SOURCE_API_ERROR`（`retryable: false`、`detail.status`）にする。
+
+例: 国税庁サイトが候補ページに 503 を返し続けると `code: "SOURCE_API_ERROR"`、`retryable: true`、`detail.status: 503`、`tool: "nta_get_tsutatsu"`。403 なら `SOURCE_API_ERROR`・`retryable: false`・`next_actions` 無し（v0.23.0 では `retryable: true`・`retry_later`）。接続できない（`cause.code: "ENOTFOUND"`）なら `SOURCE_UNAVAILABLE`。
 
 ### SPEC-NTA-GET-TSUTATSU-010 候補ページのどれにも条項が無いときは、見たページの番号（最大 50 件）と URL を返す
 

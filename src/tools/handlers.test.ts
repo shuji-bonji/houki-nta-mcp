@@ -923,12 +923,6 @@ describe('getTaxAnswer — 引数バリデーション', () => {
       { path: 'no', message: '半角の数字 4 桁で指定してください' },
     ]);
   });
-
-  it('SPEC-NTA-GET-TAX-ANSWER-002 8xxx 番台（未対応）はエラー + hint', async () => {
-    const r = (await getTaxAnswer({ no: '8001' })) as { error?: string; hint?: string };
-    expect(r.error).toContain('未対応');
-    expect(r.hint).toContain('1xxx');
-  });
 });
 
 describe('getTaxAnswer — 6101 (消費税) を取得', () => {

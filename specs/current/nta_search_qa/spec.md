@@ -2,9 +2,9 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-search-rules` は 2026-10-03（PR #133）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaSearchQa`・`explainDocZeroHits`）、`src/tools/definitions.ts`、`src/services/db-search.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/tools/doc-search-zero-hit.test.ts`、`src/tools/handlers.test.ts`
-- 関連する Issue: houki-nta-mcp #18（短い語の扱い）、#21（通称の展開）、#23（0 件の理由を分ける・`topic` の追加）、#30（索引から消えた文書の印）
+- 関連する Issue: houki-nta-mcp #18（短い語の扱い）、#21（通称の展開）、#23（0 件の理由を分ける・`topic` の追加）、#30（索引から消えた文書の印）、#72（domain 引数を外す）
 
 この文書は「このツールは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。
 
@@ -17,7 +17,6 @@
 | 引数      | 必須 | 内容                                                                                                                                                                                                           |
 | --------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `keyword` | 必須 | 検索キーワード。例: `"社内会議 軽減税率"`、`"テレワーク 必要経費"`。空白で区切った語をすべて含む事例を探す。3 文字以上の語を推奨する。空文字・空白だけは不可 |
-| `domain`  | 任意 | 分野。質疑応答事例はすべて税務なので、`tax` は絞り込まず、それ以外の値は 0 件になる。税目で絞るときは `topic` を使う                                                                                           |
 | `topic`   | 任意 | 税目。`shotoku`（所得税）/ `gensen`（源泉所得税）/ `joto`（譲渡所得）/ `sozoku`（相続税・贈与税）/ `hyoka`（財産の評価）/ `hojin`（法人税）/ `shohi`（消費税）/ `inshi`（印紙税）/ `hotei`（法定調書）のどれか |
 | `limit`   | 任意 | 返す件数。既定 10。1 以上 50 以下の整数 |
 | `hasPdf`  | 任意 | 添付 PDF の有無で絞る（`true` = PDF 付き / `false` = PDF 無し / 省略 = 絞らない）。質疑応答事例は PDF を持たないので、`true` にすると 0 件になる                                                               |
@@ -30,14 +29,11 @@
 
 ```mermaid
 flowchart TD
-  A["呼び出し（keyword・domain・topic・limit・hasPdf）"] --> W{"keyword が空白だけか"}
+  A["呼び出し（keyword・topic・limit・hasPdf）"] --> W{"keyword が空白だけか"}
   W -- はい --> E0["DB を引かずに INVALID_ARGUMENT を返す（009）"]
-  W -- いいえ --> B{"domain が tax 以外か"}
-  B -- はい --> E1["DB を引かずに results: [] と hint を返す（002）"]
-  B -- "いいえ（tax または省略）" --> C["domain では絞らない（003）"]
-  C --> D["topic があればその税目に絞って DB を検索する（004）"]
+  W -- いいえ --> D["topic があればその税目に絞って DB を検索する（004）"]
   D --> F{"キーワードに合う事例があるか"}
-  F -- ある --> G["results に合う事例を返す（003・004・015）"]
+  F -- ある --> G["results に合う事例を返す（004・015）"]
   F -- 無い --> H{"DB に質疑応答事例があるか"}
   H -- 無い --> E2["DOC_NOT_FOUND を返す（001）"]
   H -- ある --> I{"topic の範囲に事例があるか"}
@@ -57,14 +53,6 @@ flowchart TD
 - `hint` に、MCP サーバーが開いている DB ファイルのパス、投入コマンド `houki-nta-mcp --bulk-download-qa`、投入したはずなら環境変数 `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` が bulk download を実行した環境と同じか確かめるよう書く
 - `next_actions` の先頭は `action: "cli_bulk_download"`、`example.command` は `houki-nta-mcp --bulk-download-qa`
 - `tool` は `nta_search_qa`
-
-### SPEC-NTA-SEARCH-QA-002 `domain` が `tax` 以外なら DB を引かずに 0 件を返す
-
-`domain` を `tax` 以外の値（例: `labor`）にしたときは、DB を開かずに `results: []` を返す。エラーにはしない。`hint` に、質疑応答事例はすべて税務（`domain="tax"`）の資料なので `domain="labor"` に当たる文書は無いこと、税目で絞るときは `topic` を使うことを書く。応答には `keyword` と `legal_status` も付く。
-
-### SPEC-NTA-SEARCH-QA-003 `domain="tax"` は絞り込まない
-
-`domain` を `tax` にしたときは、`domain` を省いたときと同じ範囲を検索する。例: DB に消費税の事例「会議費と軽減税率」が 1 件あるとき、`keyword: "軽減税率", domain: "tax"` は `results` にその 1 件を返す。
 
 ### SPEC-NTA-SEARCH-QA-004 `topic` で税目を絞る
 
@@ -104,12 +92,18 @@ tools/list の inputSchema の `limit` は `type: "integer"`、`minimum: 1`、`m
 
 v0.21.3 では空の `keyword` に `results: []` と「該当なし」の `hint`（SPEC-NTA-SEARCH-QA-007 の形）を返していたが、空の `keyword` は探していないので、007 の対象から外れる。1 文字の語だけ・記号だけの `keyword` は、今までどおり SPEC-NTA-SEARCH-RULES-005・006 に従って語を外し、エラーにしない。
 
+### SPEC-NTA-SEARCH-QA-010 `domain` は受け付けず、渡すと DB を引かずに `INVALID_ARGUMENT` を返す
+
+tools/list の inputSchema の `properties` に `domain` は無い。`domain` を渡すと、どの値（`tax` を含む）でも SPEC-NTA-COMMON-ERRORS-004 の `INVALID_ARGUMENT`（`tool: "nta_search_qa"`、`detail.issues: [{ path: "domain", message: "inputSchema に無い引数です" }]`）を返し、DB を引かない。税目で絞るときは `topic`（SPEC-NTA-SEARCH-QA-004）を使う。`nta_search_tsutatsu`（SPEC-NTA-SEARCH-TSUTATSU-001）と houki-egov-mcp の `search_law` / `search_fulltext`（0.18.0、houki-egov-mcp #55）と同じ扱いである。
+
+例: `{ keyword: "軽減税率", domain: "tax" }` は `code: "INVALID_ARGUMENT"`、`error: "引数が tools/list の inputSchema に合いません: domain: inputSchema に無い引数です"`、`detail.issues[0].path: "domain"`（v0.23.0 では `domain` を省いたときと同じ検索結果だった）。`{ keyword: "軽減税率", domain: "labor" }` も同じエラー（v0.23.0 では DB を引かずに `results: []` と `hint`）。`{ keyword: "軽減税率" }` と `{ keyword: "軽減税率", topic: "shohi" }` は今までどおり検索する。
+
 ## できないこと
 
 - 事例の本文（照会要旨・回答要旨・関係法令通達）を返すこと（`results` の `docId` を `nta_get_qa` の `topic` / `category` / `id` に分けて読む）
 - 国税庁サイトを直接検索すること（DB に無い事例は見つからない。`--bulk-download-qa` で取り込む）
 - 件数の合計（`total`）やページ送りを返すこと（`limit` 件までを返す）
-- `domain` で税目を絞ること（税目は `topic`。`domain` は `tax` かそれ以外かだけを見る）
+- 分野（`domain`）を指定すること（質疑応答事例はすべて税務。税目は `topic` で絞る）
 - 添付 PDF 付きの事例を返すこと（質疑応答事例は PDF を持たない）
 
 ## 未決
@@ -117,6 +111,3 @@ v0.21.3 では空の `keyword` に `results: []` と「該当なし」の `hint`
 初版起こしで見つけた、意図か不具合かを人が決める項目です。決まったら「できること」に ID を振るか、`specs/changes/` の差分にします。
 
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
-
-8. **`domain` が `tax` 以外のとき DB を開かない** → houki-nta-mcp #72
-9. **`domain` の値の範囲。** → houki-nta-mcp #72

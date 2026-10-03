@@ -3,7 +3,7 @@
 - 対象: `db_schema` / `cli_entry` / `cli_bulk_download` / `cli_refresh` / `cli_health_check` の `specs/current/<dir>/spec.md`
 - 実装の変更: 要（下の「実装の変更」）
 - 承認日: 2026-10-04（PR #135）
-- 状態: 草案
+- 状態: 取り込み済み（v0.24.0）
 - 起こした日: 2026-10-03（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #106（CLI の引数の検査と `--version` の文）、#107（版が合わない DB の作り直しと、全データを消す入口）、#109（`--refresh-stale=<日数> --apply` と `--refresh`）、#110（税目を絞った投入での `orphaned_at`）、#111（`--check-baseline-drift` の判定の対象外の 4 件）、#112（`document.doc_type` / `taxonomy` の制約）。あわせて #128 の索引の保存先（差分 `20261003-source-paths` の「索引を DB に保存するためのスキーマ（指示 K に渡す）」）

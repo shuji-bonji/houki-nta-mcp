@@ -3,7 +3,7 @@
 - 対象: `specs/current/search_rules/spec.md`、`specs/current/nta_search_qa/spec.md`
 - 実装の変更: 要（下の「実装の変更」）
 - 承認日: 2026-10-03（PR #133）
-- 状態: 草案
+- 状態: 取り込み済み（v0.24.0）
 - 起こした日: 2026-10-03（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #81（英字の 2 文字の語と 3 文字以上の語の混在で 0 件）、#80（3 文字未満の略称で略称そのものを含む文書が返らず、`search_notes` と合わない）、#72（`nta_search_qa` の `domain` 引数の扱い）

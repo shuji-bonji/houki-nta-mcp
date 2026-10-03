@@ -3,7 +3,7 @@
 - 対象: `specs/current/common_errors/spec.md`、`nta_get_qa`・`nta_get_tax_answer`・`nta_get_tsutatsu`・`cli_bulk_download`（#120・#128）、`nta_search_jimu_unei`・`nta_get_jimu_unei`・`nta_inspect_pdf_meta`・`search_rules`（#131）の `specs/current/<dir>/spec.md`
 - 実装の変更: 要（下の「実装の変更」）
 - 承認日: 2026-10-03（PR #134）
-- 状態: 草案
+- 状態: 取り込み済み（v0.24.0）
 - 起こした日: 2026-10-03（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #120（国税庁サイトとの通信の失敗を houki-egov-mcp と同じ 4 つの code に分けるか）、#128（タックスアンサーの 8xxx 帯に対応し、記事の URL を国税庁の索引から決める）、#131（事務運営指針の `legal_status.note` を `nta_search_jimu_unei` と `nta_inspect_pdf_meta` でも揃える）
