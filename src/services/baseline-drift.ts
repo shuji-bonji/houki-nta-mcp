@@ -24,7 +24,11 @@ export interface BaselineDriftEntry {
   doc_type: string;
   label: string;
   baselineUrl: string;
-  status: 'ok' | 'missing' | 'generation-drift';
+  /**
+   * `not-applicable` は判定の対象外（kihon/ の下でない代表ページ・税目のディレクトリを取れない代表ページ）。
+   * v0.24.0（SPEC-NTA-CLI-HEALTH-CHECK-001、houki-nta-mcp #111）までは ok にしていた
+   */
+  status: 'ok' | 'missing' | 'generation-drift' | 'not-applicable';
   /**
    * `status === 'generation-drift'` のとき、menu 側で見つかった新世代のディレクトリ名一覧。
    * 例: baseline が `sozoku/` を見ているのに menu に `sozoku2/` がある → ['sozoku2']
@@ -41,7 +45,7 @@ export interface BaselineDriftResult {
   /** menu.htm から取れた entry 総数 (debug 用) */
   menuEntryCount: number;
   entries: BaselineDriftEntry[];
-  /** ok 以外の件数 */
+  /** missing と generation-drift の件数（ok と not-applicable は数えない。SPEC-NTA-CLI-HEALTH-CHECK-003） */
   driftCount: number;
 }
 
@@ -84,7 +88,9 @@ export async function detectBaselineDrift(
     })
   );
 
-  const driftCount = entries.filter((e) => e.status !== 'ok').length;
+  const driftCount = entries.filter(
+    (e) => e.status === 'missing' || e.status === 'generation-drift'
+  ).length;
 
   return {
     ranAt,
@@ -125,7 +131,7 @@ export function classifyDrift(args: {
       doc_type,
       label,
       baselineUrl,
-      status: 'ok',
+      status: 'not-applicable',
       message: 'kihon/ 配下でないため drift 検知対象外 (menu.htm 範囲外)',
     };
   }
@@ -136,7 +142,7 @@ export function classifyDrift(args: {
       doc_type,
       label,
       baselineUrl,
-      status: 'ok',
+      status: 'not-applicable',
       message: 'taxKey を抽出できないため drift 検知対象外',
     };
   }

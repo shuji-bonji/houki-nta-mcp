@@ -289,6 +289,17 @@ export async function bulkDownloadQa(
   const finishedAt = new Date().toISOString();
   const durationMs = Date.now() - startMs;
 
+  // v0.24.0（SPEC-NTA-CLI-BULK-DOWNLOAD-012、#110）: 税目を絞った実行でも、絞った税目の索引をすべて取れたら、
+  // その税目の行に限って索引から消えた文書の印を付け直す。baseline の記録は絞らない実行だけ
+  if (!isFullRun && options.topics?.length && !options.perTopicLimit && indexFailures === 0) {
+    markAndCount(db, 'qa-jirei', {
+      indexUrls: new Set(targets.map((t) => t.url)),
+      runStartedAt: startedAt,
+      ranAt: finishedAt,
+      taxonomyFilter: topics,
+    });
+  }
+
   // Phase 5 Resilience: full run 時のみ集計 + baseline 永続化
   let aggregation: BulkRunRecord | undefined;
   let health: HealthEvaluation | undefined;

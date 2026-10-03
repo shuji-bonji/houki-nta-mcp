@@ -7,7 +7,9 @@
  */
 
 import type DatabaseT from 'better-sqlite3';
-import { TAX_ANSWER_INDEX_URL } from './tax-answer-bulk-downloader.js';
+
+/** タックスアンサーの索引 URL（全記事のリンクが集約されたページ） */
+export const TAX_ANSWER_INDEX_URL = 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/code/';
 
 /** 索引の 1 記事 */
 export interface TaxAnswerIndexRow {

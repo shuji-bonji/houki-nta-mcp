@@ -25,7 +25,16 @@ import {
   TSUTATSU_TOC_STYLES,
   TSUTATSU_URL_ROOTS,
 } from '../constants.js';
-import { closeDb, defaultDbPath, openDb } from '../db/index.js';
+import {
+  closeDb,
+  type DbState,
+  defaultDbPath,
+  isVersionProblem,
+  openReadDb,
+  openWriteBackDb,
+  probeDbState,
+} from '../db/index.js';
+import { SCHEMA_VERSION } from '../db/schema.js';
 import {
   isLawServiceError,
   type LawServiceError,
@@ -266,13 +275,21 @@ export async function handleNtaSearchTsutatsu(args: SearchTsutatsuArgs) {
  *
  * `dbPath` を `:memory:` などにしてテストから呼べる。
  */
-export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath?: string } = {}) {
+/**
+ * `searchTsutatsuInner` を呼び、DB の版が合わないときは「DB に 1 件も無い」応答の hint を DB の状態の文にする
+ * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
+ */
+export async function searchTsutatsu(...a: Parameters<typeof searchTsutatsuInner>) {
+  return explainDbState(await searchTsutatsuInner(...a), a[1]?.dbPath);
+}
+
+async function searchTsutatsuInner(args: SearchTsutatsuArgs, options: { dbPath?: string } = {}) {
   if (isBlank(args.keyword)) {
     return blankArgument('nta_search_tsutatsu', 'keyword', BLANK_KEYWORD_HINT, [LIST_TOOLS_ACTION]);
   }
   const keyword = args.keyword.trim();
 
-  const db = openDb(options.dbPath);
+  const db = openReadDb(options.dbPath).db;
   try {
     if (!hasAnyClause(db)) {
       // v0.23.0（T5）: このツールは基本通達 4 種をまとめて検索するので、説明文と freshness.warning と同じく
@@ -413,7 +430,10 @@ export async function getTsutatsu(
   //    国税庁サイトの経路でも半角に揃えてから読む（Issue #54）
   const clauseInput = normalizeClauseNumber(args.clause);
   const rootUrl = TSUTATSU_URL_ROOTS[resolved.formal];
-  const db = openDb(options.dbPath);
+  // v0.24.0（SPEC-NTA-DB-SCHEMA-021）: 書き戻すツールの入口で DB を開く。ファイルが無ければ、書き戻したときに作る。
+  // 版の合わない DB は使わず、書かない
+  const access = openWriteBackDb(options.dbPath);
+  const db = access.db;
   try {
     const dbHit = getClauseFromDb(db, resolved.formal, clauseInput);
     if (dbHit) {
@@ -472,6 +492,7 @@ export async function getTsutatsu(
     );
     return renderLiveResult(live, args, resolved.formal, style);
   } finally {
+    access.persist();
     closeDb(db);
   }
 }
@@ -922,11 +943,19 @@ function withFreshness(freshness: FreshnessRange | undefined): { freshness?: Fre
 /**
  * nta_search_qa — 質疑応答事例の FTS5 検索。事前に `--bulk-download-qa` で DB 投入が必要。
  */
-export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: string } = {}) {
+/**
+ * `handleNtaSearchQaInner` を呼び、DB の版が合わないときは「DB に 1 件も無い」応答の hint を DB の状態の文にする
+ * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
+ */
+export async function handleNtaSearchQa(...a: Parameters<typeof handleNtaSearchQaInner>) {
+  return explainDbState(await handleNtaSearchQaInner(...a), a[1]?.dbPath);
+}
+
+async function handleNtaSearchQaInner(args: SearchQaArgs, options: { dbPath?: string } = {}) {
   if (isBlank(args.keyword)) return blankArgument('nta_search_qa', 'keyword', BLANK_KEYWORD_HINT);
   const limit = args.limit ?? 10;
   // v0.24.0（SPEC-NTA-SEARCH-QA-010、#72）: domain は inputSchema から外した。税目での絞り込みは topic で行う
-  const db = openDb(options.dbPath);
+  const db = openReadDb(options.dbPath).db;
   try {
     const opts: { docType: 'qa-jirei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'qa-jirei',
@@ -1032,8 +1061,33 @@ export async function getQa(args: GetQaArgs, options: LiveDocumentFetchOptions =
   const url = `${QA_BASE_URL}${topic}/${category}/${id}.htm`;
   const docId = `${topic}/${category}/${id}`;
 
+  // v0.24.0（SPEC-NTA-DB-SCHEMA-021）: 書き戻すツールの入口で DB を開く。ファイルが無ければ、書き戻したときに作る。
+  // 版の合わない DB は使わず、書かない
+  const access = openWriteBackDb(options.dbPath);
+  try {
+    return await getQaWithDb(access.db, { args, options, topic, category, id, url, docId });
+  } finally {
+    access.persist();
+    closeDb(access.db);
+  }
+}
+
+/** `getQa` の DB を引いた後の処理。db は openWriteBackDb が開いたもの */
+async function getQaWithDb(
+  db: DatabaseT.Database,
+  ctx: {
+    args: GetQaArgs;
+    options: LiveDocumentFetchOptions;
+    topic: string;
+    category: string;
+    id: string;
+    url: string;
+    docId: string;
+  }
+) {
+  const { args, options, topic, category, id, url, docId } = ctx;
   // Issue #29: DB を先に引く。bulk DL 済みなら国税庁サイトへ行かない
-  const fromDb = readQaFromDb(docId, options.dbPath);
+  const fromDb = readQaFromDb(docId, db);
   if (fromDb) return qaResponse(fromDb.qa, args.format, 'db', fromDb.orphanedAt);
 
   let html: string;
@@ -1082,9 +1136,51 @@ export async function getQa(args: GetQaArgs, options: LiveDocumentFetchOptions =
 
   // Issue #29: 取得した 1 件を DB に入れる。次回は DB から返せる。
   // best effort で、失敗してもこの応答には影響しない
-  writeBackQa(docId, qa, options.dbPath);
+  writeBackQa(docId, qa, db);
 
   return qaResponse(qa, args.format, 'live');
+}
+
+/**
+ * SPEC-NTA-DB-SCHEMA-021 の注 2: 版の合わない DB を開いた読むだけのツールの hint
+ */
+function dbStateHint(
+  state: Extract<DbState, { kind: 'too-old' | 'too-new' | 'unreadable' }>,
+  path: string
+): string {
+  switch (state.kind) {
+    case 'too-old':
+      return `MCP サーバーが開いている DB（${path}）の版 (${state.version}) は古く移行できないため、使っていません。houki-nta-mcp --quickstart などの投入のフラグを実行すると作り直します（取り込んだ中身は消えます）`;
+    case 'too-new':
+      return `MCP サーバーが開いている DB（${path}）の版 (${state.version}) がこの houki-nta-mcp の版 (${SCHEMA_VERSION}) より新しいため、使っていません（DB は変更しません）。houki-nta-mcp を新しい版に更新してください`;
+    case 'unreadable':
+      return `MCP サーバーが開いている DB（${path}）の版を読めないため (schema_version: ${state.raw})、使っていません（DB は変更しません）。DB ファイルを消してから houki-nta-mcp --quickstart などの投入のフラグを実行してください`;
+  }
+}
+
+/**
+ * 読むだけのツールの応答を、DB の状態に合わせる（v0.24.0、SPEC-NTA-DB-SCHEMA-021）。
+ *
+ * 版の合わない DB のとき、ツールは空の DB を引いて「DB に 1 件も無い」ときの応答（TSUTATSU_NOT_FOUND / DOC_NOT_FOUND）を作る。
+ * code はそのままにし、hint を DB の状態の文にする。新しい版・読めない版では、投入しても終了コード 1 になるので、
+ * next_actions から投入の案内（cli_bulk_download）を外す。ファイルが無い・版の記録が無いときは応答を変えない
+ */
+function explainDbState<T>(result: T, dbPath?: string): T {
+  if (!isLawServiceError(result)) return result;
+  if (result.code !== 'DOC_NOT_FOUND' && result.code !== 'TSUTATSU_NOT_FOUND') return result;
+  const path = dbPath ?? defaultDbPath();
+  const state = probeDbState(path);
+  if (!isVersionProblem(state)) return result;
+  const { next_actions, ...rest } = result;
+  const kept =
+    state.kind === 'too-old'
+      ? next_actions
+      : next_actions?.filter((a) => a.action !== 'cli_bulk_download');
+  return {
+    ...rest,
+    hint: dbStateHint(state, path),
+    ...(kept && kept.length > 0 ? { next_actions: kept } : {}),
+  } as T;
 }
 
 /**
@@ -1153,8 +1249,10 @@ function liveFetchError(
  * `structured_json` を持つ行だけを返す。v0.16.0 より前に投入した行は構造を持たないので、
  * `null` を返して呼び出し側に国税庁サイトから取り直させる。
  */
-function readQaFromDb(docId: string, dbPath?: string): { qa: QaJirei; orphanedAt?: string } | null {
-  const db = openDb(dbPath);
+function readQaFromDb(
+  docId: string,
+  db: DatabaseT.Database
+): { qa: QaJirei; orphanedAt?: string } | null {
   try {
     const doc = getDocumentFromDb(db, 'qa-jirei', docId);
     if (!doc?.structured) return null;
@@ -1165,16 +1263,13 @@ function readQaFromDb(docId: string, dbPath?: string): { qa: QaJirei; orphanedAt
     };
   } catch {
     return null;
-  } finally {
-    closeDb(db);
   }
 }
 
 /** 取得した質疑応答事例を DB に書き戻す（Issue #29）。失敗は無視する */
-function writeBackQa(docId: string, qa: QaJirei, dbPath?: string): void {
+function writeBackQa(docId: string, qa: QaJirei, db: DatabaseT.Database): void {
   try {
-    const db = openDb(dbPath);
-    try {
+    {
       const { sourceUrl: _s, fetchedAt: _f, ...structured } = qa;
       writeBackLiveDocument(db, {
         docType: 'qa-jirei',
@@ -1190,8 +1285,6 @@ function writeBackQa(docId: string, qa: QaJirei, dbPath?: string): void {
         attachedPdfs: [],
         structured,
       });
-    } finally {
-      closeDb(db);
     }
   } catch {
     // best effort: 書き戻しに失敗しても応答は返せる
@@ -1269,7 +1362,17 @@ function relatedNextActions(laws: RelatedLawRef[], tsutatsu: RelatedTsutatsuRef[
  *
  * Phase 1e では検索インデックスを持たないため未実装。Phase 2 (FTS5) で対応。
  */
+/**
+ * `handleNtaSearchTaxAnswerInner` を呼び、DB の版が合わないときは「DB に 1 件も無い」応答の hint を DB の状態の文にする
+ * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
+ */
 export async function handleNtaSearchTaxAnswer(
+  ...a: Parameters<typeof handleNtaSearchTaxAnswerInner>
+) {
+  return explainDbState(await handleNtaSearchTaxAnswerInner(...a), a[1]?.dbPath);
+}
+
+async function handleNtaSearchTaxAnswerInner(
   args: SearchTaxAnswerArgs,
   options: { dbPath?: string } = {}
 ) {
@@ -1277,7 +1380,7 @@ export async function handleNtaSearchTaxAnswer(
     return blankArgument('nta_search_tax_answer', 'keyword', BLANK_KEYWORD_HINT);
   }
   const limit = args.limit ?? 10;
-  const db = openDb(options.dbPath);
+  const db = openReadDb(options.dbPath).db;
   try {
     const opts: { docType: 'tax-answer'; limit: number; hasPdf?: boolean } = {
       docType: 'tax-answer',
@@ -1381,8 +1484,25 @@ export async function getTaxAnswer(args: GetTaxAnswerArgs, options: LiveDocument
   }
   // v0.24.0（#128）: 先頭の桁では断らない（SPEC-NTA-GET-TAX-ANSWER-002 は REMOVED）。URL は DB の行 → 国税庁の索引で決める
 
+  // v0.24.0（SPEC-NTA-DB-SCHEMA-021）: 書き戻すツールの入口で DB を開く。ファイルが無ければ、書き戻したときに作る。
+  // 版の合わない DB は使わず、書かない
+  const access = openWriteBackDb(options.dbPath);
+  try {
+    return await getTaxAnswerWithDb(access.db, { args, options, no });
+  } finally {
+    access.persist();
+    closeDb(access.db);
+  }
+}
+
+/** `getTaxAnswer` の DB を引いた後の処理。db は openWriteBackDb が開いたもの */
+async function getTaxAnswerWithDb(
+  db: DatabaseT.Database,
+  ctx: { args: GetTaxAnswerArgs; options: LiveDocumentFetchOptions; no: string }
+) {
+  const { args, options, no } = ctx;
   // Issue #29: DB を先に引く。bulk DL 済みなら国税庁サイトへ行かない
-  const fromDb = readTaxAnswerFromDb(no, options.dbPath);
+  const fromDb = readTaxAnswerFromDb(no, db);
   if (fromDb && 'taxAnswer' in fromDb) {
     return taxAnswerResponse(fromDb.taxAnswer, args.format, 'db', fromDb.orphanedAt);
   }
@@ -1392,7 +1512,7 @@ export async function getTaxAnswer(args: GetTaxAnswerArgs, options: LiveDocument
   if (fromDb) {
     url = fromDb.sourceUrl;
   } else {
-    const resolved = await resolveTaxAnswerUrl(no, options);
+    const resolved = await resolveTaxAnswerUrl(no, db, options);
     if (resolved.kind === 'error') return resolved.error;
     if (resolved.kind === 'not_in_index') return taxAnswerNotInIndex(no);
     url = resolved.url;
@@ -1441,7 +1561,7 @@ export async function getTaxAnswer(args: GetTaxAnswerArgs, options: LiveDocument
 
   // Issue #29: 取得した 1 件を DB に入れる。次回は DB から返せる。
   // best effort で、失敗してもこの応答には影響しない
-  writeBackTaxAnswer(taxAnswer, html, options.dbPath);
+  writeBackTaxAnswer(taxAnswer, html, db);
 
   return taxAnswerResponse(taxAnswer, args.format, 'live');
 }
@@ -1462,10 +1582,10 @@ type TaxAnswerUrlResolution =
  */
 async function resolveTaxAnswerUrl(
   no: string,
+  db: DatabaseT.Database,
   options: LiveDocumentFetchOptions
 ): Promise<TaxAnswerUrlResolution> {
-  const db = openDb(options.dbPath);
-  try {
+  {
     const stored = readStoredTaxAnswerIndex(db);
     const hit = stored?.entries.get(no);
     if (hit) return { kind: 'url', url: hit.url, fetchedIndex: false };
@@ -1487,8 +1607,6 @@ async function resolveTaxAnswerUrl(
     }
     const found = loaded.rows.find((r) => r.no === no);
     return found ? { kind: 'url', url: found.url, fetchedIndex: true } : { kind: 'not_in_index' };
-  } finally {
-    closeDb(db);
   }
 }
 
@@ -1583,9 +1701,8 @@ function sleepMs(ms: number): Promise<void> {
  */
 function readTaxAnswerFromDb(
   no: string,
-  dbPath?: string
+  db: DatabaseT.Database
 ): { taxAnswer: TaxAnswer; orphanedAt?: string } | { sourceUrl: string } | null {
-  const db = openDb(dbPath);
   try {
     const doc = getDocumentFromDb(db, 'tax-answer', no);
     if (!doc) return null;
@@ -1599,8 +1716,6 @@ function readTaxAnswerFromDb(
     };
   } catch {
     return null;
-  } finally {
-    closeDb(db);
   }
 }
 
@@ -1608,10 +1723,9 @@ function readTaxAnswerFromDb(
  * 取得したタックスアンサーを DB に書き戻す（Issue #29）。失敗は無視する。
  * 行の税目は取得した URL の税目フォルダ（v0.24.0、SPEC-NTA-GET-TAX-ANSWER-006・011）
  */
-function writeBackTaxAnswer(ta: TaxAnswer, html: string, dbPath?: string): void {
+function writeBackTaxAnswer(ta: TaxAnswer, html: string, db: DatabaseT.Database): void {
   try {
-    const db = openDb(dbPath);
-    try {
+    {
       const { sourceUrl: _s, fetchedAt: _f, ...structured } = ta;
       writeBackLiveDocument(db, {
         docType: 'tax-answer',
@@ -1628,8 +1742,6 @@ function writeBackTaxAnswer(ta: TaxAnswer, html: string, dbPath?: string): void 
         attachedPdfs: extractPdfs(html, ta.sourceUrl),
         structured,
       });
-    } finally {
-      closeDb(db);
     }
   } catch {
     // best effort: 書き戻しに失敗しても応答は返せる
@@ -1749,7 +1861,17 @@ import type {
 /**
  * 改正通達の FTS5 検索。事前に `--bulk-download-kaisei` で DB 投入が必要。
  */
+/**
+ * `handleNtaSearchKaiseiTsutatsuInner` を呼び、DB の版が合わないときは「DB に 1 件も無い」応答の hint を DB の状態の文にする
+ * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
+ */
 export async function handleNtaSearchKaiseiTsutatsu(
+  ...a: Parameters<typeof handleNtaSearchKaiseiTsutatsuInner>
+) {
+  return explainDbState(await handleNtaSearchKaiseiTsutatsuInner(...a), a[1]?.dbPath);
+}
+
+async function handleNtaSearchKaiseiTsutatsuInner(
   args: SearchKaiseiTsutatsuArgs,
   options: { dbPath?: string } = {}
 ) {
@@ -1757,7 +1879,7 @@ export async function handleNtaSearchKaiseiTsutatsu(
     return blankArgument('nta_search_kaisei_tsutatsu', 'keyword', BLANK_KEYWORD_HINT);
   }
   const limit = args.limit ?? 10;
-  const db = openDb(options.dbPath);
+  const db = openReadDb(options.dbPath).db;
   try {
     const opts: { docType: 'kaisei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'kaisei',
@@ -1819,14 +1941,24 @@ export async function handleNtaSearchKaiseiTsutatsu(
 /**
  * 改正通達を docId で取得する（DB 経由）。
  */
+/**
+ * `handleNtaGetKaiseiTsutatsuInner` を呼び、DB の版が合わないときは「DB に 1 件も無い」応答の hint を DB の状態の文にする
+ * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
+ */
 export async function handleNtaGetKaiseiTsutatsu(
+  ...a: Parameters<typeof handleNtaGetKaiseiTsutatsuInner>
+) {
+  return explainDbState(await handleNtaGetKaiseiTsutatsuInner(...a), a[1]?.dbPath);
+}
+
+async function handleNtaGetKaiseiTsutatsuInner(
   args: GetKaiseiTsutatsuArgs,
   options: { dbPath?: string } = {}
 ) {
   const guarded = guardDocId(KAISEI_DOC_ID, args.docId);
   if (isLawServiceError(guarded)) return guarded;
   const { docId } = guarded;
-  const db = openDb(options.dbPath);
+  const db = openReadDb(options.dbPath).db;
   try {
     const stored = getDocumentFromDb(db, 'kaisei', docId);
     if (!stored) {
@@ -1898,7 +2030,17 @@ function renderKaiseiMarkdown(doc: NtaDocument): string {
 /**
  * 事務運営指針の FTS5 検索。事前に `--bulk-download-jimu-unei` で DB 投入が必要。
  */
+/**
+ * `handleNtaSearchJimuUneiInner` を呼び、DB の版が合わないときは「DB に 1 件も無い」応答の hint を DB の状態の文にする
+ * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
+ */
 export async function handleNtaSearchJimuUnei(
+  ...a: Parameters<typeof handleNtaSearchJimuUneiInner>
+) {
+  return explainDbState(await handleNtaSearchJimuUneiInner(...a), a[1]?.dbPath);
+}
+
+async function handleNtaSearchJimuUneiInner(
   args: SearchJimuUneiArgs,
   options: { dbPath?: string } = {}
 ) {
@@ -1906,7 +2048,7 @@ export async function handleNtaSearchJimuUnei(
     return blankArgument('nta_search_jimu_unei', 'keyword', BLANK_KEYWORD_HINT);
   }
   const limit = args.limit ?? 10;
-  const db = openDb(options.dbPath);
+  const db = openReadDb(options.dbPath).db;
   try {
     const opts: { docType: 'jimu-unei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'jimu-unei',
@@ -1969,14 +2111,19 @@ export async function handleNtaSearchJimuUnei(
 /**
  * 事務運営指針を docId で取得する（DB 経由）。
  */
-export async function handleNtaGetJimuUnei(
-  args: GetJimuUneiArgs,
-  options: { dbPath?: string } = {}
-) {
+/**
+ * `handleNtaGetJimuUneiInner` を呼び、DB の版が合わないときは「DB に 1 件も無い」応答の hint を DB の状態の文にする
+ * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
+ */
+export async function handleNtaGetJimuUnei(...a: Parameters<typeof handleNtaGetJimuUneiInner>) {
+  return explainDbState(await handleNtaGetJimuUneiInner(...a), a[1]?.dbPath);
+}
+
+async function handleNtaGetJimuUneiInner(args: GetJimuUneiArgs, options: { dbPath?: string } = {}) {
   const guarded = guardDocId(JIMU_UNEI_DOC_ID, args.docId);
   if (isLawServiceError(guarded)) return guarded;
   const { docId } = guarded;
-  const db = openDb(options.dbPath);
+  const db = openReadDb(options.dbPath).db;
   try {
     const stored = getDocumentFromDb(db, 'jimu-unei', docId);
     if (!stored) {
@@ -2057,7 +2204,17 @@ function renderDocumentMarkdown(
 /**
  * 文書回答事例の FTS5 検索。事前に `--bulk-download-bunshokaitou` で DB 投入が必要。
  */
+/**
+ * `handleNtaSearchBunshokaitouInner` を呼び、DB の版が合わないときは「DB に 1 件も無い」応答の hint を DB の状態の文にする
+ * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
+ */
 export async function handleNtaSearchBunshokaitou(
+  ...a: Parameters<typeof handleNtaSearchBunshokaitouInner>
+) {
+  return explainDbState(await handleNtaSearchBunshokaitouInner(...a), a[1]?.dbPath);
+}
+
+async function handleNtaSearchBunshokaitouInner(
   args: SearchBunshokaitouArgs,
   options: { dbPath?: string } = {}
 ) {
@@ -2065,7 +2222,7 @@ export async function handleNtaSearchBunshokaitou(
     return blankArgument('nta_search_bunshokaitou', 'keyword', BLANK_KEYWORD_HINT);
   }
   const limit = args.limit ?? 10;
-  const db = openDb(options.dbPath);
+  const db = openReadDb(options.dbPath).db;
   try {
     // v0.14.0: 国税局のページは本庁と違う税目フォルダ名を使うことがある（sozoku と souzoku など）ので、
     // 同じ税目の別表記もまとめて探す
@@ -2136,14 +2293,24 @@ export async function handleNtaSearchBunshokaitou(
 /**
  * 文書回答事例を docId で取得する（DB 経由）。
  */
+/**
+ * `handleNtaGetBunshokaitouInner` を呼び、DB の版が合わないときは「DB に 1 件も無い」応答の hint を DB の状態の文にする
+ * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
+ */
 export async function handleNtaGetBunshokaitou(
+  ...a: Parameters<typeof handleNtaGetBunshokaitouInner>
+) {
+  return explainDbState(await handleNtaGetBunshokaitouInner(...a), a[1]?.dbPath);
+}
+
+async function handleNtaGetBunshokaitouInner(
   args: GetBunshokaitouArgs,
   options: { dbPath?: string } = {}
 ) {
   const guarded = guardDocId(BUNSHOKAITOU_DOC_ID, args.docId);
   if (isLawServiceError(guarded)) return guarded;
   const { docId } = guarded;
-  const db = openDb(options.dbPath);
+  const db = openReadDb(options.dbPath).db;
   try {
     const stored = getDocumentFromDb(db, 'bunshokaitou', docId);
     if (!stored) {
@@ -2181,7 +2348,17 @@ export async function handleNtaGetBunshokaitou(
  *
  * 質疑応答事例 (qa-jirei) は PDF を持たないため対象外（tool definition で enum 制限済）。
  */
+/**
+ * `handleNtaInspectPdfMetaInner` を呼び、DB の版が合わないときは「DB に 1 件も無い」応答の hint を DB の状態の文にする
+ * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
+ */
 export async function handleNtaInspectPdfMeta(
+  ...a: Parameters<typeof handleNtaInspectPdfMetaInner>
+) {
+  return explainDbState(await handleNtaInspectPdfMetaInner(...a), a[1]?.dbPath);
+}
+
+async function handleNtaInspectPdfMetaInner(
   args: InspectPdfMetaArgs,
   options: { dbPath?: string; filesDir?: string; fetchImpl?: typeof fetch } = {}
 ) {
@@ -2195,7 +2372,7 @@ export async function handleNtaInspectPdfMeta(
   }
   // 全角の数字・ダッシュ類は半角に揃えてから DB を引く（SPEC-NTA-INSPECT-PDF-META-020）
   const docId = normalizeJpText(args.docId);
-  const db = openDb(options.dbPath);
+  const db = openReadDb(options.dbPath).db;
   try {
     const doc = getDocumentFromDb(db, args.docType, docId);
     if (!doc) {

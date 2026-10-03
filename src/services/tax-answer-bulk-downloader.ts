@@ -27,11 +27,11 @@ import type { HealthEvaluation } from './health-thresholds.js';
 import { markAndCount } from './index-status.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { extractPdfKind } from './pdf-meta.js';
+import { saveTaxAnswerIndex, TAX_ANSWER_INDEX_URL } from './tax-answer-index.js';
 import { buildTaxAnswerFullText, parseTaxAnswer } from './tax-answer-parser.js';
 import { normalizeJpText } from './text-normalize.js';
 
-/** タックスアンサー索引 URL */
-export const TAX_ANSWER_INDEX_URL = 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/code/';
+export { TAX_ANSWER_INDEX_URL };
 
 export interface BulkTaxAnswerProgress {
   phase: 'index' | 'doc' | 'done';
@@ -131,6 +131,20 @@ export async function bulkDownloadTaxAnswer(
   onProgress?.({ phase: 'index', message: `索引取得: ${indexUrl}` });
   const indexFetched = await fetchNtaPage(indexUrl, fetchImpl ? { fetchImpl } : {});
   let entries = parseTaxAnswerIndex(indexFetched.html, indexFetched.sourceUrl);
+  // v0.24.0（SPEC-NTA-CLI-BULK-DOWNLOAD-013・SPEC-NTA-DB-SCHEMA-025、#128）: 税目で絞る前の索引のすべての記事を保存する。
+  // nta_get_tax_answer はこの索引で記事の URL を決める。記事の URL が 1 件も読めない索引では保存を変えない
+  if (entries.length > 0) {
+    saveTaxAnswerIndex(
+      db,
+      entries,
+      {
+        fetchedAt: indexFetched.fetchedAt,
+        ...(indexFetched.lastModified ? { lastModified: indexFetched.lastModified } : {}),
+        ...(indexFetched.etag ? { etag: indexFetched.etag } : {}),
+      },
+      indexUrl
+    );
+  }
   if (options.taxonomies && options.taxonomies.length > 0) {
     const allow = new Set(options.taxonomies);
     entries = entries.filter((e) => allow.has(e.taxonomy));
@@ -249,6 +263,17 @@ export async function bulkDownloadTaxAnswer(
 
   const finishedAt = new Date().toISOString();
   const durationMs = Date.now() - startMs;
+
+  // v0.24.0（SPEC-NTA-CLI-BULK-DOWNLOAD-012、#110）: 税目を絞った実行でも、索引を取れたので（取れなければ例外でここに来ない）、
+  // 絞った税目の行に限って索引から消えた文書の印を付け直す。baseline の記録は絞らない実行だけ
+  if (!isFullRun && options.taxonomies && options.taxonomies.length > 0 && !options.limit) {
+    markAndCount(db, 'tax-answer', {
+      indexUrls: new Set(entries.map((e) => e.url)),
+      runStartedAt: startedAt,
+      ranAt: finishedAt,
+      taxonomyFilter: options.taxonomies,
+    });
+  }
 
   // Phase 5 Resilience: full run 時のみ集計 + baseline 永続化
   let aggregation: BulkRunRecord | undefined;

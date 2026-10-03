@@ -688,7 +688,8 @@ describe('SPEC-NTA-DB-SCHEMA-025 タックスアンサーの索引は tax_answer
       no: '8001',
       url: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/saigai/8001.htm',
       taxonomy: 'saigai',
-      title: '記事 8001',
+      // 索引の題名はリンクの文字列（テストの索引は「No.<番号> <題名>」の形で書いている）
+      title: 'No.8001 記事 8001',
     });
   });
 

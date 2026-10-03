@@ -8,8 +8,11 @@
  *   clause→URL lookup を高速化する（Phase 1d 残課題への対応）
  * - clause_fts は trigram tokenizer で日本語混在テキストを N-gram 検索可能に
  *
- * SCHEMA_VERSION を上げたら migrate() がスキーマ再構築する。
- * Phase 2a 段階ではマイグレーションは「DROP & CREATE」で十分（ローカルキャッシュなので）。
+ * DB の版（schema_meta の schema_version）の扱いは SPEC-NTA-DB-SCHEMA-021（v0.24.0、houki-nta-mcp #107）:
+ * - 版 3〜11 は、行を保ったまま 1 段ずつ最新の版まで移行する（initSchema）
+ * - 版 1・2 は移行できない。作り直すのは CLI の投入のフラグだけ（src/db/index.ts の openIngestDb）
+ * - この版より新しい版と、版を読めない DB は、どの入口も変更しない（initSchema は例外を投げる）
+ * どの入口が DB を作り・移行し・作り直すかは src/db/index.ts に置く。
  */
 
 import { createHash } from 'node:crypto';
@@ -32,8 +35,22 @@ import { normalizeClauseNumber, normalizeJpText } from '../services/text-normali
  * - v9: 改正通達・事務運営指針の full_text からも案内文の行を除く（Issue #45 の続き: 「※PDFファイルが開けない…こちらをご覧ください。」）
  * - v10: tsutatsu に bulk_completed_at、目次を保存する tsutatsu_toc を追加（Issue #54: 国税庁サイトからの取得を基本通達 4 種で成立させる）
  * - v11: 投入済みテキストを houki-abbreviations 0.7.0 の正規化（ダッシュ類も `-` にする）で入れ直す（T3、SPEC-NTA-DB-SCHEMA-019・020）
+ * - v12: タックスアンサーの索引（tax_answer_index・tax_answer_index_page）を足し、document.doc_type に CHECK を付ける
+ *   （houki-nta-mcp #112・#128、SPEC-NTA-DB-SCHEMA-022・023・025）。行は保つので取り込み直しは要らない
  */
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
+
+/** SPEC-NTA-DB-SCHEMA-023: document.doc_type が受け付ける 5 つの値 */
+export const DOCUMENT_DOC_TYPES = [
+  'kaisei',
+  'jimu-unei',
+  'bunshokaitou',
+  'tax-answer',
+  'qa-jirei',
+] as const;
+
+/** 版 1・2 の DB は移行できない（v0.3.0 より前）。版 3 から移行できる */
+export const MIN_MIGRATABLE_VERSION = 3;
 
 const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -145,7 +162,8 @@ END;
 -- doc_type で種別を区別、(doc_type, doc_id) で一意。
 CREATE TABLE IF NOT EXISTS document (
   id INTEGER PRIMARY KEY,
-  doc_type TEXT NOT NULL,             -- 'kaisei' / 'jimu-unei' / 'bunshokaitou'
+  -- v12 (#112、SPEC-NTA-DB-SCHEMA-023): 5 つの値だけを受け付ける。taxonomy は制限しない（024）
+  doc_type TEXT NOT NULL CHECK (doc_type IN ('kaisei','jimu-unei','bunshokaitou','tax-answer','qa-jirei')),
   doc_id TEXT NOT NULL,               -- 例: '0026003-067' (新形式) / '240401' (旧形式)
   taxonomy TEXT,                      -- 税目フォルダ。例: 'shohi' / 'shotoku' / 'hojin' / 'sisan/sozoku'
   title TEXT NOT NULL,                -- 例: '消費税法基本通達の一部改正について（法令解釈通達）'
@@ -220,28 +238,55 @@ CREATE TABLE IF NOT EXISTS tax_answer_index_page (
 );
 `;
 
+/** DB の版を読めないとき（10 進の整数の文字列でない）、またはこの版より新しいときの例外。DB は変更しない */
+export class SchemaVersionError extends Error {
+  constructor(
+    message: string,
+    public readonly kind: 'too-new' | 'unreadable',
+    public readonly raw: string
+  ) {
+    super(message);
+    this.name = 'SchemaVersionError';
+  }
+}
+
 /**
- * DB を初期化（スキーマ作成 + バージョン記録）。
- * 既にスキーマがある場合は CREATE IF NOT EXISTS で skip。
+ * DB を初期化（スキーマ作成 + バージョン記録）して、最新の版にする。
  *
- * バージョン不一致時は可能な限り **追加マイグレーション** で既存データを保つ。
- * 未知の遷移パスのみ `dropAndRecreate` にフォールバックする。
+ * - 版の記録が無い DB: テーブルを作り、版 SCHEMA_VERSION を記録する
+ * - 版 3〜11: 既存の行を保ったまま 1 段ずつ移行する（SPEC-NTA-DB-SCHEMA-006〜014・019・022）
+ * - 版 1・2: 全テーブルを消して作り直す。呼んでよいのは CLI の投入のフラグだけ（SPEC-NTA-DB-SCHEMA-021）。
+ *   ほかの入口は src/db/index.ts で版を確かめ、ここへ来ない
+ * - この版より新しい版・版を読めない DB: 何も変えずに SchemaVersionError を投げる（v0.23.x までは作り直していた。#107）
  */
 export function initSchema(db: DatabaseT.Database): void {
-  db.exec(SCHEMA_SQL);
-  const cur = getSchemaVersion(db);
-  if (cur === null) {
-    db.prepare('INSERT INTO schema_meta(key, value) VALUES (?, ?)').run(
-      'schema_version',
-      String(SCHEMA_VERSION)
+  // テーブルを作る前に版を確かめる（新しい版・読めない版の DB には何も書かない）
+  const raw = readSchemaVersionRaw(db);
+  if (raw.kind === 'invalid') {
+    throw new SchemaVersionError(`schema_version を読めません: ${raw.raw}`, 'unreadable', raw.raw);
+  }
+  if (raw.kind === 'int' && raw.value > SCHEMA_VERSION) {
+    throw new SchemaVersionError(
+      `schema_version ${raw.value} はこの版 (${SCHEMA_VERSION}) より新しい`,
+      'too-new',
+      String(raw.value)
     );
+  }
+  if (raw.kind === 'int' && raw.value < MIN_MIGRATABLE_VERSION) {
+    dropAndRecreate(db);
     return;
   }
-  if (cur === SCHEMA_VERSION) return;
+
+  db.exec(SCHEMA_SQL);
+  if (raw.kind === 'none') {
+    setSchemaVersion(db, SCHEMA_VERSION);
+    return;
+  }
+  if (raw.value === SCHEMA_VERSION) return;
 
   // 既存 bulk DL データを保ったまま進めるパスは 1 段ずつ順に適用する。
-  // 古い DB（v3）からでも v5 まで辿り着けるように、if を並べて数珠つなぎにする。
-  let version = cur;
+  // 古い DB（v3）からでも最新まで辿り着けるように、if を並べて数珠つなぎにする。
+  let version = raw.value;
   if (version === 3) {
     migrateV3ToV4(db);
     version = 4;
@@ -274,13 +319,11 @@ export function initSchema(db: DatabaseT.Database): void {
     migrateV10ToV11(db);
     version = 11;
   }
-  if (version === SCHEMA_VERSION) {
-    setSchemaVersion(db, SCHEMA_VERSION);
-    return;
+  if (version === 11) {
+    migrateV11ToV12(db);
+    version = 12;
   }
-
-  // 想定外の遷移は DROP & CREATE（既存データは失われる）
-  dropAndRecreate(db);
+  setSchemaVersion(db, version);
 }
 
 /**
@@ -470,6 +513,60 @@ function migrateV10ToV11(db: DatabaseT.Database): void {
   tx();
 }
 
+/**
+ * v11 → v12 マイグレーション（#112・#128、SPEC-NTA-DB-SCHEMA-022・023・025）
+ *
+ * - `tax_answer_index`・`tax_answer_index_page` は SCHEMA_SQL の `CREATE TABLE IF NOT EXISTS` で空のまま作られる。
+ *   国税庁サイトは取りに行かない（最初の nta_get_tax_answer か --bulk-download-tax-answer が埋める）
+ * - `document` に doc_type の CHECK を付ける。SQLite は ALTER TABLE で CHECK を足せないので、表を作り直して行を移す。
+ *   `id` を含むすべての列をそのまま写すので、`document_fts`（content_rowid='id'）はそのまま引ける
+ * - doc_type が 5 つの値でない行は移さず、`document_fts` も作り直す（どの版も書かないので通常は 0 行）
+ * - ほかのテーブルの行と content_hash は変えない
+ */
+function migrateV11ToV12(db: DatabaseT.Database): void {
+  const ddl = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'document'`)
+    .get() as { sql: string } | undefined;
+  if (ddl?.sql.includes('CHECK')) return;
+
+  const placeholders = DOCUMENT_DOC_TYPES.map(() => '?').join(', ');
+  const tx = db.transaction(() => {
+    const oldCols = listColumns(db, 'document');
+    db.exec(`
+      DROP TRIGGER IF EXISTS document_ai;
+      DROP TRIGGER IF EXISTS document_ad;
+      DROP TRIGGER IF EXISTS document_au;
+      DROP INDEX IF EXISTS idx_document_lookup;
+      DROP INDEX IF EXISTS idx_document_taxonomy;
+      ALTER TABLE document RENAME TO document_v11;
+    `);
+    // 新しい document（CHECK 付き）・索引・トリガーを SCHEMA_SQL から作る
+    db.exec(SCHEMA_SQL);
+    const cols = [...listColumns(db, 'document')].filter((c) => oldCols.has(c));
+    const colList = cols.join(', ');
+    const dropped = (
+      db
+        .prepare(`SELECT count(*) AS n FROM document_v11 WHERE doc_type NOT IN (${placeholders})`)
+        .get(...DOCUMENT_DOC_TYPES) as { n: number }
+    ).n;
+    // 行を移す。トリガーで document_fts に二重に入らないよう、移す間はトリガーを外しておく
+    db.exec(`
+      DROP TRIGGER IF EXISTS document_ai;
+      DROP TRIGGER IF EXISTS document_ad;
+      DROP TRIGGER IF EXISTS document_au;
+    `);
+    db.prepare(
+      `INSERT INTO document (${colList}) SELECT ${colList} FROM document_v11 WHERE doc_type IN (${placeholders})`
+    ).run(...DOCUMENT_DOC_TYPES);
+    db.exec('DROP TABLE document_v11');
+    db.exec(SCHEMA_SQL);
+    if (dropped > 0) {
+      db.exec(`INSERT INTO document_fts(document_fts) VALUES ('rebuild')`);
+    }
+  });
+  tx();
+}
+
 /** 指定した種別の full_text から案内文の行を除き、content_hash を計算し直す */
 function stripNavigationLines(db: DatabaseT.Database, docTypes: string[]): void {
   const placeholders = docTypes.map(() => '?').join(', ');
@@ -645,16 +742,35 @@ function setSchemaVersion(db: DatabaseT.Database, v: number): void {
   ).run(String(v));
 }
 
-/** schema_meta から schema_version を読む。未設定なら null */
+/** schema_meta の schema_version の読み方（SPEC-NTA-DB-SCHEMA-021） */
+export type SchemaVersionRaw =
+  | { kind: 'none' }
+  | { kind: 'int'; value: number }
+  | { kind: 'invalid'; raw: string };
+
+/**
+ * schema_meta の schema_version を読む。テーブルも行も無ければ `none`、10 進の整数の文字列なら `int`、
+ * それ以外（`abc`・空文字・`12abc` など）は `invalid`。v0.23.x までの parseInt は `12abc` を 12 と読んでいた
+ */
+export function readSchemaVersionRaw(db: DatabaseT.Database): SchemaVersionRaw {
+  const table = db
+    .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'schema_meta'`)
+    .get();
+  if (!table) return { kind: 'none' };
+  const row = db.prepare('SELECT value FROM schema_meta WHERE key = ?').get('schema_version') as
+    | { value?: unknown }
+    | undefined;
+  if (!row) return { kind: 'none' };
+  const raw = row.value === null || row.value === undefined ? '' : String(row.value);
+  if (/^[0-9]+$/.test(raw)) return { kind: 'int', value: Number(raw) };
+  return { kind: 'invalid', raw };
+}
+
+/** schema_meta から schema_version を読む。未設定・読めないなら null */
 export function getSchemaVersion(db: DatabaseT.Database): number | null {
-  // schema_meta テーブルが無い段階で呼ばれる場合に備える
   try {
-    const row = db.prepare('SELECT value FROM schema_meta WHERE key = ?').get('schema_version') as
-      | { value?: string }
-      | undefined;
-    if (!row?.value) return null;
-    const n = parseInt(row.value, 10);
-    return Number.isFinite(n) ? n : null;
+    const raw = readSchemaVersionRaw(db);
+    return raw.kind === 'int' ? raw.value : null;
   } catch {
     return null;
   }
@@ -682,24 +798,5 @@ function dropAndRecreate(db: DatabaseT.Database): void {
     DROP TABLE IF EXISTS schema_meta;
   `);
   db.exec(SCHEMA_SQL);
-  db.prepare('INSERT INTO schema_meta(key, value) VALUES (?, ?)').run(
-    'schema_version',
-    String(SCHEMA_VERSION)
-  );
-}
-
-/**
- * DB の中身を全削除（テスト用 / 強制再 DL 用）
- */
-export function clearAllData(db: DatabaseT.Database): void {
-  db.exec(`
-    DELETE FROM document;
-    DELETE FROM clause;
-    DELETE FROM section;
-    DELETE FROM chapter;
-    DELETE FROM tsutatsu_toc;
-    DELETE FROM tsutatsu;
-    INSERT INTO clause_fts(clause_fts) VALUES ('rebuild');
-    INSERT INTO document_fts(document_fts) VALUES ('rebuild');
-  `);
+  setSchemaVersion(db, SCHEMA_VERSION);
 }

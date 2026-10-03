@@ -11,6 +11,7 @@
  */
 
 import type DatabaseT from 'better-sqlite3';
+import { expandBunshoTaxonomy } from '../constants.js';
 import { logger, toMeta } from '../utils/logger.js';
 import { computeBulkAggregation, recordBulkRun } from './bulk-aggregation.js';
 import {
@@ -266,6 +267,23 @@ export async function bulkDownloadBunshokaitou(
     phase: 'done',
     message: `完了: ${documentsFetched}/${targets.length} docs (304: ${counts.notModified}, 同内容: ${counts.contentSame}, 更新: ${counts.contentChanged}) ${(durationMs / 1000).toFixed(1)}s`,
   });
+
+  // v0.24.0（SPEC-NTA-CLI-BULK-DOWNLOAD-012、#110）: 税目を絞った実行でも、絞った税目の索引をすべて取れたら、
+  // その税目（国税局の別表記を含む）の行に限って索引から消えた文書の印を付け直す。baseline の記録は絞らない実行だけ
+  if (
+    !isFullRun &&
+    options.taxonomies &&
+    options.taxonomies.length > 0 &&
+    !options.perTaxonomyLimit &&
+    indexFailures === 0
+  ) {
+    markAndCount(db, 'bunshokaitou', {
+      indexUrls: new Set(targets.map((t) => t.url)),
+      runStartedAt: startedAt,
+      ranAt: finishedAt,
+      taxonomyFilter: [...new Set(options.taxonomies.flatMap((t) => expandBunshoTaxonomy(t)))],
+    });
+  }
 
   // Phase 5 Resilience: full run 時のみ集計 + baseline 永続化
   let aggregation: BulkRunRecord | undefined;

@@ -23,7 +23,16 @@ import {
   TAX_ANSWER_TAXONOMIES,
   TSUTATSU_URL_ROOTS,
 } from './constants.js';
-import { closeDb, defaultDbPath, openDb } from './db/index.js';
+import {
+  closeDb,
+  DbEntryError,
+  type DbState,
+  defaultDbPath,
+  openDb,
+  openExistingDb,
+  openIngestDb,
+} from './db/index.js';
+import { SCHEMA_VERSION } from './db/schema.js';
 import { detectBaselineDrift } from './services/baseline-drift.js';
 import {
   computeBulkAggregation,
@@ -66,7 +75,7 @@ interface CliArgs {
   bulkDownloadEverything: boolean;
   /** Issue #35: まず数分で試す入口。`--tsutatsu` の通達 1 本（既定: 消費税法基本通達）だけを投入する */
   quickstart: boolean;
-  /** Issue #25: 税目フラグに渡された、一覧に無い値（あれば CLI は何もせず exit 1） */
+  /** Issue #25: 税目フラグに渡された、一覧に無い値（あれば CLI は何もせず exit 2。v0.23.x までは 1） */
   invalidTaxonomyValues: InvalidTaxonomyValue[];
   /** N 日より古い section を列挙（dry-run）。`--refresh-stale=<days>` */
   staleDays: number | undefined;
@@ -83,6 +92,20 @@ interface CliArgs {
   refresh: boolean;
   help: boolean;
   version: boolean;
+  /**
+   * v0.24.0（SPEC-NTA-CLI-ENTRY-006〜008）: 引数の誤り。あれば CLI は何もせず、messages を標準エラー出力に出し、
+   * showUsage なら使い方を標準出力に出して、終了コード 2 で終わる
+   */
+  argError?: CliArgError;
+}
+
+/** 引数の誤り（形・値・組み合わせ） */
+export interface CliArgError {
+  kind: 'shape' | 'value' | 'combination';
+  /** 標準エラー出力に出す行（値の誤りは誤った値 1 つにつき 1 行） */
+  messages: string[];
+  /** 使い方も出すか（値の誤りと、値を取るフラグに値が無いときは出さない） */
+  showUsage: boolean;
 }
 
 /** Issue #25: 税目フラグに渡された値のうち、一覧に無かったもの */
@@ -130,7 +153,170 @@ function parseTaxonomyCsv(
   return { values, invalid };
 }
 
-/** argv をパース（process.argv.slice(2) を渡す前提） */
+/** 処理を選ぶフラグ（SPEC-NTA-CLI-ENTRY-007） */
+type CliAction =
+  | 'help'
+  | 'version'
+  | 'quickstart'
+  | 'bulkDownload'
+  | 'bulkDownloadAll'
+  | 'bulkDownloadKaisei'
+  | 'bulkDownloadJimuUnei'
+  | 'bulkDownloadBunshokaitou'
+  | 'bulkDownloadTaxAnswer'
+  | 'bulkDownloadQa'
+  | 'bulkDownloadEverything'
+  | 'refreshStale'
+  | 'healthCheck'
+  | 'checkBaselineDrift';
+
+/** 値を取らない、処理を選ぶフラグ */
+const ACTION_FLAGS: Readonly<Record<string, CliAction>> = {
+  '--help': 'help',
+  '-h': 'help',
+  '--version': 'version',
+  '-v': 'version',
+  '--quickstart': 'quickstart',
+  '--bulk-download': 'bulkDownload',
+  '--bulk-download-all': 'bulkDownloadAll',
+  '--bulk-download-kaisei': 'bulkDownloadKaisei',
+  '--bulk-download-jimu-unei': 'bulkDownloadJimuUnei',
+  '--bulk-download-bunshokaitou': 'bulkDownloadBunshokaitou',
+  '--bulk-download-tax-answer': 'bulkDownloadTaxAnswer',
+  '--bulk-download-qa': 'bulkDownloadQa',
+  '--bulk-download-everything': 'bulkDownloadEverything',
+  '--health-check': 'healthCheck',
+  '--check-baseline-drift': 'checkBaselineDrift',
+};
+
+/** 値を取らない、処理と一緒に使うフラグ */
+const SWITCH_FLAGS: ReadonlySet<string> = new Set(['--refresh', '--apply', '--strict']);
+
+/** 値を取るフラグ（`--名前=値` の形だけ。SPEC-NTA-CLI-ENTRY-006） */
+const VALUE_FLAGS: ReadonlySet<string> = new Set([
+  '--db-path',
+  '--tsutatsu',
+  '--bunsho-taxonomy',
+  '--tax-answer-taxonomy',
+  '--qa-topic',
+  '--refresh-stale',
+]);
+
+/** 処理ごとに一緒に使えるフラグ（SPEC-NTA-CLI-ENTRY-007 の表） */
+const ACCEPTED_FLAGS: Readonly<Record<CliAction, readonly string[]>> = {
+  help: [],
+  version: [],
+  quickstart: ['--tsutatsu', '--refresh', '--db-path'],
+  bulkDownload: ['--tsutatsu', '--refresh', '--db-path'],
+  bulkDownloadAll: ['--refresh', '--db-path'],
+  bulkDownloadKaisei: ['--refresh', '--db-path'],
+  bulkDownloadJimuUnei: ['--refresh', '--db-path'],
+  bulkDownloadBunshokaitou: ['--bunsho-taxonomy', '--refresh', '--db-path'],
+  bulkDownloadTaxAnswer: ['--tax-answer-taxonomy', '--refresh', '--db-path'],
+  bulkDownloadQa: ['--qa-topic', '--refresh', '--db-path'],
+  bulkDownloadEverything: [
+    '--bunsho-taxonomy',
+    '--tax-answer-taxonomy',
+    '--qa-topic',
+    '--refresh',
+    '--db-path',
+  ],
+  // --refresh は --apply があるときだけ（SPEC-NTA-CLI-REFRESH-007）
+  refreshStale: ['--apply', '--db-path', '--refresh'],
+  healthCheck: ['--strict'],
+  checkBaselineDrift: ['--strict'],
+};
+
+/** 投入のフラグ（SPEC-NTA-DB-SCHEMA-021 の「投入」） */
+const INGEST_ACTIONS: ReadonlySet<CliAction> = new Set([
+  'quickstart',
+  'bulkDownload',
+  'bulkDownloadAll',
+  'bulkDownloadKaisei',
+  'bulkDownloadJimuUnei',
+  'bulkDownloadBunshokaitou',
+  'bulkDownloadTaxAnswer',
+  'bulkDownloadQa',
+  'bulkDownloadEverything',
+]);
+
+/** `--tsutatsu` で使える値（基本通達 4 種の正式名。SPEC-NTA-CLI-BULK-DOWNLOAD-011） */
+const TSUTATSU_NAMES: readonly string[] = Object.keys(TSUTATSU_URL_ROOTS);
+
+/** フラグの名前（`=` より前） */
+function flagName(arg: string): string {
+  const eq = arg.indexOf('=');
+  return eq < 0 ? arg : arg.slice(0, eq);
+}
+
+/** SPEC-NTA-CLI-ENTRY-006: 形の誤り。最初の 1 つを返す */
+function findShapeError(argv: readonly string[]): CliArgError | undefined {
+  for (const arg of argv) {
+    if (!arg.startsWith('-')) {
+      return { kind: 'shape', messages: [`ERROR: 未知の引数: ${arg}`], showUsage: true };
+    }
+    const name = flagName(arg);
+    const hasValue = arg.includes('=');
+    if (VALUE_FLAGS.has(name)) {
+      if (!hasValue || arg.length === name.length + 1) {
+        return {
+          kind: 'shape',
+          messages: [`ERROR: ${name} は値を必要とします（${name}=<値> の形で指定してください）`],
+          showUsage: false,
+        };
+      }
+      continue;
+    }
+    if (!hasValue && (ACTION_FLAGS[arg] !== undefined || SWITCH_FLAGS.has(arg))) continue;
+    return { kind: 'shape', messages: [`ERROR: 未知のフラグ: ${arg}`], showUsage: true };
+  }
+  return undefined;
+}
+
+/** SPEC-NTA-CLI-ENTRY-007: 組み合わせの誤り。前から最初の余分な引数を返す */
+function findCombinationError(argv: readonly string[]): CliArgError | undefined {
+  const actionArgs = argv.filter((a) => actionOf(a) !== undefined);
+  if (actionArgs.length === 0) {
+    return {
+      kind: 'combination',
+      messages: [`ERROR: 処理を選ぶフラグがありません（${argv[0]} だけでは何もしません）`],
+      showUsage: true,
+    };
+  }
+  const first = actionArgs[0];
+  const action = actionOf(first) as CliAction;
+  const accepted = new Set(ACCEPTED_FLAGS[action]);
+  const hasApply = argv.includes('--apply');
+  const seen = new Set<string>();
+  for (const arg of argv) {
+    const name = flagName(arg);
+    let extra: boolean;
+    if (arg === first) extra = false;
+    else if (actionOf(arg) !== undefined) extra = true;
+    else if (seen.has(name)) extra = true;
+    else if (!accepted.has(name)) extra = true;
+    else extra = action === 'refreshStale' && name === '--refresh' && !hasApply;
+    if (extra) {
+      return { kind: 'combination', messages: [`ERROR: 余分な引数: ${arg}`], showUsage: true };
+    }
+    seen.add(name);
+  }
+  return undefined;
+}
+
+/** 処理を選ぶフラグなら、その処理 */
+function actionOf(arg: string): CliAction | undefined {
+  if (flagName(arg) === '--refresh-stale' && arg.includes('=')) return 'refreshStale';
+  return ACTION_FLAGS[arg];
+}
+
+/**
+ * argv をパース（process.argv.slice(2) を渡す前提）。
+ *
+ * v0.24.0（SPEC-NTA-CLI-ENTRY-006〜008、houki-nta-mcp #106）から、形 → 値 → 組み合わせの順に確かめ、
+ * 誤りがあれば `argError` に入れる（呼び出し側は文を出して終了コード 2 で終わる）。v0.23.x までは
+ * 知らない引数を読み飛ばし、処理を選ぶフラグが 2 つ以上なら決まった順で最初の 1 つだけを行っていた
+ */
 export function parseArgs(argv: readonly string[]): CliArgs {
   const args: CliArgs = {
     bulkDownload: false,
@@ -157,12 +343,36 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     help: false,
     version: false,
   };
+
+  // 1. 形（SPEC-NTA-CLI-ENTRY-006）
+  const shape = findShapeError(argv);
+  if (shape) {
+    args.argError = shape;
+    return args;
+  }
+
+  // 2. 値（SPEC-NTA-CLI-ENTRY-008）。誤った値は引数の順にすべて集める
+  const valueErrors: string[] = [];
   for (const a of argv) {
-    if (a === '--bulk-download-everything') args.bulkDownloadEverything = true;
-    else if (a === '--quickstart') args.quickstart = true;
-    else if (a === '--bulk-download-kaisei') args.bulkDownloadKaisei = true;
-    else if (a === '--bulk-download-jimu-unei') args.bulkDownloadJimuUnei = true;
-    else if (a === '--bulk-download-bunshokaitou') args.bulkDownloadBunshokaitou = true;
+    const action = actionOf(a);
+    if (action === 'refreshStale') {
+      const raw = a.slice('--refresh-stale='.length);
+      if (/^[0-9]+$/.test(raw)) {
+        args.staleDays = Number(raw);
+      } else {
+        valueErrors.push(
+          `[houki-nta-mcp] --refresh-stale="${raw}" は使えません。0 以上の整数の日数を指定してください（例: --refresh-stale=90）`
+        );
+      }
+      continue;
+    }
+    if (action !== undefined) {
+      args[action] = true;
+      continue;
+    }
+    if (a === '--strict') args.strict = true;
+    else if (a === '--refresh') args.refresh = true;
+    else if (a === '--apply') args.refreshStale = true;
     else if (a.startsWith('--bunsho-taxonomy=')) {
       // 国税局の別表記（souzoku 等）は本庁の表記に直してから索引を絞り込む
       const parsed = parseTaxonomyCsv(
@@ -174,8 +384,8 @@ export function parseArgs(argv: readonly string[]): CliArgs {
       );
       args.bunshoTaxonomies = parsed.values;
       args.invalidTaxonomyValues.push(...parsed.invalid);
-    } else if (a === '--bulk-download-tax-answer') args.bulkDownloadTaxAnswer = true;
-    else if (a.startsWith('--tax-answer-taxonomy=')) {
+      valueErrors.push(...formatInvalidLines(parsed.invalid));
+    } else if (a.startsWith('--tax-answer-taxonomy=')) {
       const parsed = parseTaxonomyCsv(
         a.slice('--tax-answer-taxonomy='.length),
         '--tax-answer-taxonomy',
@@ -184,8 +394,8 @@ export function parseArgs(argv: readonly string[]): CliArgs {
       );
       args.taxAnswerTaxonomies = parsed.values;
       args.invalidTaxonomyValues.push(...parsed.invalid);
-    } else if (a === '--bulk-download-qa') args.bulkDownloadQa = true;
-    else if (a.startsWith('--qa-topic=')) {
+      valueErrors.push(...formatInvalidLines(parsed.invalid));
+    } else if (a.startsWith('--qa-topic=')) {
       const parsed = parseTaxonomyCsv(
         a.slice('--qa-topic='.length),
         '--qa-topic',
@@ -194,23 +404,37 @@ export function parseArgs(argv: readonly string[]): CliArgs {
       );
       args.qaTopics = parsed.values as QaTopic[];
       args.invalidTaxonomyValues.push(...parsed.invalid);
-    } else if (a === '--bulk-download-all') args.bulkDownloadAll = true;
-    else if (a === '--bulk-download') args.bulkDownload = true;
-    else if (a === '--health-check') args.healthCheck = true;
-    else if (a === '--check-baseline-drift') args.checkBaselineDrift = true;
-    else if (a === '--strict') args.strict = true;
-    else if (a === '--refresh') args.refresh = true;
-    else if (a === '--apply') args.refreshStale = true;
-    else if (a === '--help' || a === '-h') args.help = true;
-    else if (a === '--version' || a === '-v') args.version = true;
-    else if (a.startsWith('--tsutatsu=')) args.tsutatsu = a.slice('--tsutatsu='.length);
-    else if (a.startsWith('--db-path=')) args.dbPath = a.slice('--db-path='.length);
-    else if (a.startsWith('--refresh-stale=')) {
-      const v = parseInt(a.slice('--refresh-stale='.length), 10);
-      if (Number.isFinite(v) && v >= 0) args.staleDays = v;
-    }
+      valueErrors.push(...formatInvalidLines(parsed.invalid));
+    } else if (a.startsWith('--tsutatsu=')) {
+      const value = a.slice('--tsutatsu='.length);
+      if (TSUTATSU_NAMES.includes(value)) {
+        args.tsutatsu = value;
+      } else {
+        // SPEC-NTA-CLI-BULK-DOWNLOAD-011: 略称（消基通）も使えない値
+        valueErrors.push(
+          `[houki-nta-mcp] --tsutatsu="${value}" は使えません。使える値: ${TSUTATSU_NAMES.join(', ')}`
+        );
+      }
+    } else if (a.startsWith('--db-path=')) args.dbPath = a.slice('--db-path='.length);
+  }
+  if (valueErrors.length > 0) {
+    args.argError = { kind: 'value', messages: valueErrors, showUsage: false };
+    return args;
+  }
+
+  // 3. 組み合わせ（SPEC-NTA-CLI-ENTRY-007）
+  if (argv.length > 0) {
+    const combination = findCombinationError(argv);
+    if (combination) args.argError = combination;
   }
   return args;
+}
+
+/** 一覧に無い税目の値を 1 件 1 行の文にする（formatInvalidTaxonomyValues の行） */
+function formatInvalidLines(invalid: readonly InvalidTaxonomyValue[]): string[] {
+  return formatInvalidTaxonomyValues(invalid)
+    .split('\n')
+    .filter((l) => l.length > 0);
 }
 
 const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
@@ -287,22 +511,37 @@ export function formatInvalidTaxonomyValues(invalid: readonly InvalidTaxonomyVal
  * @returns CLI モードで処理した場合 true、MCP モードに進むべき場合 false
  */
 export async function runCliIfRequested(argv: readonly string[]): Promise<boolean> {
+  // 引数が無ければ MCP サーバーとして起動する（SPEC-NTA-CLI-ENTRY-001）
+  if (argv.length === 0) return false;
   const args = parseArgs(argv);
+
+  // v0.24.0（SPEC-NTA-CLI-ENTRY-006〜008）: 引数の誤りは、何もせずに文を出して終了コード 2。
+  // DB を開かず、国税庁サイトに接続せず、MCP サーバーも起動しない
+  if (args.argError) {
+    process.stderr.write(args.argError.messages.map((m) => `${m}\n`).join(''));
+    if (args.argError.showUsage) process.stdout.write(HELP_TEXT);
+    process.exitCode = 2;
+    return true;
+  }
 
   if (args.help) {
     process.stdout.write(HELP_TEXT);
     return true;
   }
   if (args.version) {
-    process.stdout.write(`${PACKAGE_INFO.version}\n`);
+    // SPEC-NTA-CLI-ENTRY-003: houki-egov-mcp と同じ `<パッケージ名> v<版>`（v0.23.x までは版の数字だけ）
+    process.stdout.write(`${PACKAGE_INFO.name} v${PACKAGE_INFO.version}\n`);
     return true;
   }
-  // Issue #25: 税目フラグに一覧に無い値があれば、何も投入せずに終わる（MCP サーバーも起動しない）
-  if (args.invalidTaxonomyValues.length > 0) {
-    process.stderr.write(formatInvalidTaxonomyValues(args.invalidTaxonomyValues));
-    process.exitCode = 1;
-    return true;
-  }
+
+  // SPEC-NTA-DB-SCHEMA-021: 投入のフラグは、国税庁サイトを取りに行く前に DB を確かめる。
+  // 作る・移行する・版 1・2 を作り直すのはここ。新しい版・読めない版・開けない DB は何も変えずに終了コード 1
+  const isIngest = argv.some((a) => {
+    const action = actionOf(a);
+    return action !== undefined && INGEST_ACTIONS.has(action);
+  });
+  if (isIngest && !prepareIngestDb(args.dbPath ?? defaultDbPath())) return true;
+
   if (args.quickstart) {
     await runQuickstart(args);
     return true;
@@ -355,6 +594,48 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
 }
 
 /**
+ * SPEC-NTA-DB-SCHEMA-021: CLI の入口が DB を使えないときの文（標準エラー出力）。
+ * `<DB の場所>` は各フラグが出す `DB: ` の行と同じ
+ */
+export function formatDbEntryError(state: DbState, dbPath: string): string {
+  switch (state.kind) {
+    case 'too-old':
+      return `[ERROR] DB の版 (${state.version}) は古く移行できないため使えません。houki-nta-mcp --quickstart などの投入のフラグを実行すると作り直します（取り込んだ中身は消えます）`;
+    case 'too-new':
+      return `[ERROR] DB の版 (${state.version}) がこの houki-nta-mcp の版 (${SCHEMA_VERSION}) より新しいため、DB を変更しません。houki-nta-mcp を新しい版に更新するか、--db-path（MCP サーバーでは HOUKI_NTA_DB_PATH）で別のファイルを指定してください`;
+    case 'unreadable':
+      return `[ERROR] DB の版を読めないため (schema_version: ${state.raw})、DB を変更しません。DB ファイル (${dbPath}) を消してから houki-nta-mcp --quickstart などの投入のフラグを実行してください`;
+    case 'unopenable':
+      return `[ERROR] DB を開けません: ${state.message}`;
+    default:
+      return `[ERROR] DB がまだありません (${dbPath})。houki-nta-mcp --quickstart か --bulk-download-all で作ってください`;
+  }
+}
+
+/**
+ * 投入の前に DB を作る・移行する・作り直す（SPEC-NTA-DB-SCHEMA-021 の「投入」の列）。
+ * 使えないときは文を出して終了コード 1 にし、false を返す
+ */
+function prepareIngestDb(dbPath: string): boolean {
+  try {
+    const db = openIngestDb(dbPath, (version) => {
+      process.stderr.write(
+        `  DB の版 (${version}) は移行できないため、作り直します（取り込んだ中身は消えます）\n`
+      );
+    });
+    closeDb(db);
+    return true;
+  } catch (err) {
+    if (err instanceof DbEntryError) {
+      process.stderr.write(`${formatDbEntryError(err.state, dbPath)}\n`);
+      process.exitCode = 1;
+      return false;
+    }
+    throw err;
+  }
+}
+
+/**
  * Phase 5 Resilience Lv-3b: --check-baseline-drift CLI モード。
  *
  * `/law/tsutatsu/menu.htm` を「真の正典」として fetch し、
@@ -370,15 +651,26 @@ async function runBaselineDriftCli(args: CliArgs): Promise<void> {
   process.stderr.write(`\n[drift-check] ===== サマリ =====\n`);
   process.stderr.write(`  menu entries: ${result.menuEntryCount}\n`);
   for (const e of result.entries) {
-    const mark = e.status === 'ok' ? '✓' : e.status === 'generation-drift' ? '⚠' : '✗';
+    // v0.24.0（SPEC-NTA-CLI-HEALTH-CHECK-007）: 判定の対象外（not-applicable）は -
+    const mark =
+      e.status === 'ok'
+        ? '✓'
+        : e.status === 'generation-drift'
+          ? '⚠'
+          : e.status === 'not-applicable'
+            ? '-'
+            : '✗';
     process.stderr.write(`  ${mark} ${e.doc_type.padEnd(18)} ${e.label}\n`);
     process.stderr.write(`    → ${e.message}\n`);
     if (e.newerGenerations?.length) {
       process.stderr.write(`    newer: ${e.newerGenerations.join(', ')}\n`);
     }
   }
+  // SPEC-NTA-CLI-HEALTH-CHECK-007: 分母は判定の対象の件数（entries から not-applicable を引いた数）
+  const notApplicable = result.entries.filter((e) => e.status === 'not-applicable').length;
+  const okCount = result.entries.filter((e) => e.status === 'ok').length;
   process.stderr.write(
-    `\n[drift-check] ${result.entries.length - result.driftCount}/${result.entries.length} OK, drift=${result.driftCount} (${(result.durationMs / 1000).toFixed(1)}s)\n`
+    `\n[drift-check] ${okCount}/${result.entries.length - notApplicable} OK, drift=${result.driftCount}, 対象外=${notApplicable} (${(result.durationMs / 1000).toFixed(1)}s)\n`
   );
 
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -752,7 +1044,31 @@ async function runRefreshStale(args: CliArgs, staleDays: number): Promise<void> 
   const dbPath = args.dbPath ?? defaultDbPath();
   process.stderr.write(`[refresh-stale] DB: ${dbPath} (${staleDays} 日より古い section を対象)\n`);
 
-  const db = openDb(dbPath);
+  // SPEC-NTA-DB-SCHEMA-021: 一覧・取り直しは DB を作らない。版 3〜11 は移行してから使う
+  let opened: ReturnType<typeof openExistingDb>;
+  try {
+    opened = openExistingDb(dbPath);
+  } catch (err) {
+    if (err instanceof DbEntryError) {
+      process.stderr.write(`${formatDbEntryError(err.state, dbPath)}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
+  }
+  if (!opened) {
+    if (args.refreshStale) {
+      process.stderr.write(`${formatDbEntryError({ kind: 'missing' }, dbPath)}\n`);
+      process.exitCode = 1;
+    } else {
+      process.stderr.write(
+        `[refresh-stale] DB がまだありません (${dbPath})。houki-nta-mcp --quickstart か --bulk-download-all で作ってください\n`
+      );
+      process.stdout.write('[]\n');
+    }
+    return;
+  }
+  const db = opened;
   try {
     const stale = findStaleSections(db, staleDays);
     process.stderr.write(`[refresh-stale] 該当: ${stale.length} sections\n`);
@@ -773,6 +1089,8 @@ async function runRefreshStale(args: CliArgs, staleDays: number): Promise<void> 
         const result = await bulkDownloadTsutatsu(db, {
           formalName,
           abbr: deriveAbbr(formalName),
+          // v0.24.0（SPEC-NTA-CLI-REFRESH-007、#109）: --apply --refresh は条件付き取得を使わずに取り直す
+          forceReload: args.refresh,
           onProgress: (p) => {
             if (p.current && p.total) {
               process.stderr.write(`  ${p.message}\n`);

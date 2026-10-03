@@ -3,7 +3,7 @@ import type DatabaseT from 'better-sqlite3';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { clearAllData, getSchemaVersion, initSchema, SCHEMA_VERSION } from './schema.js';
+import { getSchemaVersion, initSchema, SCHEMA_VERSION } from './schema.js';
 
 describe('initSchema', () => {
   let db: DatabaseT.Database;
@@ -198,28 +198,6 @@ describe('initSchema — Phase 6-2 (v0.9.0): last_modified / etag カラム', ()
 
     // schema_version が最新に更新されている
     expect(getSchemaVersion(db)).toBe(SCHEMA_VERSION);
-  });
-});
-
-describe('clearAllData', () => {
-  it('全テーブルを空にし FTS5 も rebuild する', () => {
-    const db = new Database(':memory:');
-    initSchema(db);
-    db.prepare(`INSERT INTO tsutatsu(formal_name, abbr, source_root_url) VALUES (?, ?, ?)`).run(
-      'X',
-      'X',
-      'https://x/'
-    );
-    db.prepare(
-      `INSERT INTO clause(tsutatsu_id, clause_number, source_url, chapter_number, section_number, title, full_text, paragraphs_json)
-       VALUES (1, '1-1-1', 'u', 1, 1, 't', 'f', '[]')`
-    ).run();
-
-    clearAllData(db);
-
-    const c = db.prepare(`SELECT count(*) AS n FROM clause`).get() as { n: number };
-    expect(c.n).toBe(0);
-    db.close();
   });
 });
 
