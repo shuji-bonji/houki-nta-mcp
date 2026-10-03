@@ -21,7 +21,7 @@ import { join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { encode as iconvEncode } from 'iconv-lite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { initSchema } from '../db/schema.js';
 import {
   getQa,
@@ -814,7 +814,9 @@ describe('SPEC-NTA-GET-TAX-ANSWER-008 json の応答は、値の無いフィー�
     const r = (await getTaxAnswer(
       { no: '6101', format: 'json' },
       {
-        fetchImpl: sjisFixtureFetch('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm'),
+        fetchImpl: withTaxAnswerIndex(
+          sjisFixtureFetch('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')
+        ),
         dbPath,
       }
     )) as { taxAnswer: Json; source: string };
@@ -866,7 +868,9 @@ describe('SPEC-NTA-GET-TAX-ANSWER-009 索引から消えた記事以外では印
     const r = (await getTaxAnswer(
       { no: '6101', format: 'json' },
       {
-        fetchImpl: sjisFixtureFetch('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm'),
+        fetchImpl: withTaxAnswerIndex(
+          sjisFixtureFetch('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')
+        ),
         dbPath,
       }
     )) as Json;

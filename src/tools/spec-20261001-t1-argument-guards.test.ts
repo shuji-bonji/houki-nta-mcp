@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import * as abbreviations from '@shuji-bonji/houki-abbreviations';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { initSchema } from '../db/schema.js';
 import { tools } from './definitions.js';
 import { getQa, getTaxAnswer, toolHandlers } from './handlers.js';
@@ -821,12 +822,30 @@ describe('SPEC-NTA-GET-TAX-ANSWER-012 番号は 4 桁で、桁数が違えば取
     });
   }
 
-  it('SPEC-NTA-GET-TAX-ANSWER-012 no: "8101" は 4 桁なので検査を通り、SPEC-NTA-GET-TAX-ANSWER-002 の未対応の桁のエラーになる', async () => {
-    const body = await call('nta_get_tax_answer', { no: '8101' });
-    expect(body.code).toBe('INVALID_ARGUMENT');
-    expect(body.error).toContain('先頭桁');
-    expect(body.detail?.issues).toBeUndefined();
-    expectUntouched(env);
+  // 差分 20261003-source-paths（#128）で SPEC-NTA-GET-TAX-ANSWER-002（先頭の桁で断る）を外し、012 の例を "8001" に直した
+  it('SPEC-NTA-GET-TAX-ANSWER-012 no: "8001" は 4 桁なので検査を通り、先頭の桁では断らずに国税庁の索引で URL を決めて取る（v0.23.0 では先頭の桁が未対応の INVALID_ARGUMENT）', async () => {
+    const html = readFileSync(
+      join(FIXTURES, 'www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')
+    );
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(html, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        })
+    );
+    const body = (await getTaxAnswer(
+      { no: '8001', format: 'json' },
+      {
+        fetchImpl: withTaxAnswerIndex(fetchImpl as unknown as typeof fetch),
+        dbPath: join(env.dir, 'ta8.db'),
+      }
+    )) as Body;
+    expect(body.code).toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(
+      'https://www.nta.go.jp/taxes/shiraberu/taxanswer/saigai/8001.htm'
+    );
   });
 
   it('SPEC-NTA-GET-TAX-ANSWER-012 no: "6101" は検査を通り、国税庁サイトから取る', async () => {
@@ -842,7 +861,7 @@ describe('SPEC-NTA-GET-TAX-ANSWER-012 番号は 4 桁で、桁数が違えば取
     ) as unknown as typeof fetch;
     const body = (await getTaxAnswer(
       { no: '6101', format: 'json' },
-      { fetchImpl, dbPath: join(env.dir, 'ta.db') }
+      { fetchImpl: withTaxAnswerIndex(fetchImpl), dbPath: join(env.dir, 'ta.db') }
     )) as Body;
     expect(body.code).toBeUndefined();
     expect(fetchImpl).toHaveBeenCalledTimes(1);

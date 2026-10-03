@@ -22,6 +22,7 @@ import * as abbreviations from '@shuji-bonji/houki-abbreviations';
 import Database from 'better-sqlite3';
 import { encode as iconvEncode } from 'iconv-lite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { initSchema } from '../db/schema.js';
 import { tools } from './definitions.js';
 import { getQa, getTaxAnswer, getTsutatsu, toolHandlers } from './handlers.js';
@@ -321,7 +322,7 @@ describe('SPEC-NTA-COMMON-ERRORS-009 国税庁のページの解析に失敗し�
     const { fetchImpl, urls } = unparseableFetch();
     const body = (await getTaxAnswer(
       { no: '6101', format: 'json' },
-      { fetchImpl, dbPath }
+      { fetchImpl: withTaxAnswerIndex(fetchImpl), dbPath }
     )) as ErrorBody;
     expectParseFailure(body, 'タックスアンサーページのパースに失敗: ', urls);
     expect(body.url).toBe('https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6101.htm');

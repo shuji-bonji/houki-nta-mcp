@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { encode as iconvEncode } from 'iconv-lite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { initSchema } from '../db/schema.js';
 import {
   describeOutOfScope,
@@ -101,7 +101,7 @@ describe('SPEC-NTA-COMMON-ERRORS-009 国税庁のページの解析に失敗し�
   it('SPEC-NTA-COMMON-ERRORS-009 nta_get_tax_answer: 「タックスアンサーページのパースに失敗」は retryable: false', async () => {
     const body = (await getTaxAnswer(
       { no: '6101', format: 'json' },
-      { fetchImpl: unparseableFetch(), dbPath }
+      { fetchImpl: withTaxAnswerIndex(unparseableFetch()), dbPath }
     )) as Body;
     expect(body.code).toBe('INTERNAL_ERROR');
     expect(body.error?.startsWith('タックスアンサーページのパースに失敗: ')).toBe(true);

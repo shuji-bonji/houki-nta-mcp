@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { initSchema } from '../db/schema.js';
 import {
   getQa,
@@ -44,7 +45,7 @@ interface Body {
 
 const NTA_ORIGIN = 'https://www.nta.go.jp';
 const QA_URL = `${NTA_ORIGIN}/law/shitsugi/shohi/99/99.htm`;
-const TAX_ANSWER_URL = `${NTA_ORIGIN}/taxes/shiraberu/taxanswer/shohi/6999.htm`;
+const TAX_ANSWER_6101_URL = `${NTA_ORIGIN}/taxes/shiraberu/taxanswer/shohi/6101.htm`;
 
 let dir: string;
 let dbPath: string;
@@ -125,7 +126,7 @@ describe('SPEC-NTA-GET-QA-014 国税庁サイトにページが無い（404・41
   }
 });
 
-describe('SPEC-NTA-GET-QA-015 国税庁サイトとの通信が失敗したときは SOURCE_API_ERROR（retryable: true）を返す', () => {
+describe('SPEC-NTA-GET-QA-015 国税庁サイトとの通信が失敗したときは、失敗の種類ごとの SOURCE_* を返す', () => {
   it('SPEC-NTA-GET-QA-015 HTTP 503 は SOURCE_API_ERROR・retryable: true・detail.status: 503・retry_later', async () => {
     const body = (await getQa(
       { topic: 'shohi', category: '02', id: '19' },
@@ -139,12 +140,13 @@ describe('SPEC-NTA-GET-QA-015 国税庁サイトとの通信が失敗したと�
     expect(body.next_actions?.map((a) => a.action)).toEqual(['retry_later']);
   }, 30_000);
 
-  it('SPEC-NTA-GET-QA-015 HTTP 429 も SOURCE_API_ERROR・retryable: true', async () => {
+  // 差分 20261003-source-paths（#120）で 429 は SOURCE_RATE_LIMITED に分けた
+  it('SPEC-NTA-GET-QA-015 SPEC-NTA-COMMON-ERRORS-018 HTTP 429 は SOURCE_RATE_LIMITED・retryable: true（v0.23.0 では SOURCE_API_ERROR）', async () => {
     const body = (await getQa(
       { topic: 'shohi', category: '02', id: '19' },
       { fetchImpl: statusFetch(429), dbPath }
     )) as Body;
-    expect(body.code).toBe('SOURCE_API_ERROR');
+    expect(body.code).toBe('SOURCE_RATE_LIMITED');
     expect(body.retryable).toBe(true);
     expect(body.detail?.status).toBe(429);
   });
@@ -161,14 +163,19 @@ describe('SPEC-NTA-GET-QA-015 国税庁サイトとの通信が失敗したと�
   }, 30_000);
 });
 
-describe('SPEC-NTA-GET-TAX-ANSWER-013 国税庁サイトにページが無い（404・410・404 ページへの転送）ときは DOC_NOT_FOUND を返し、検索ツールを案内する', () => {
+// 差分 20261003-source-paths（#128）: 記事の URL は国税庁の索引で決める。索引にある番号（6101）の記事のページが無いときを確かめる
+// （索引に無い番号は記事を取りに行かずに DOC_NOT_FOUND。src/tools/spec-20261003-source-paths.test.ts）
+describe('SPEC-NTA-GET-TAX-ANSWER-013 索引に番号が無いとき、または国税庁サイトにページが無い（404・410・404 ページへの転送）ときは DOC_NOT_FOUND を返し、検索ツールを案内する', () => {
   for (const [label, make, status] of NOT_FOUND_CASES) {
-    it(`SPEC-NTA-GET-TAX-ANSWER-013 ${label} は DOC_NOT_FOUND・retryable: false・next_actions は nta_search_tax_answer`, async () => {
-      const body = (await getTaxAnswer({ no: '6999' }, { fetchImpl: make(), dbPath })) as Body;
+    it(`SPEC-NTA-GET-TAX-ANSWER-013 索引にある番号の記事のページが ${label} なら DOC_NOT_FOUND・retryable: false・next_actions は nta_search_tax_answer`, async () => {
+      const body = (await getTaxAnswer(
+        { no: '6101' },
+        { fetchImpl: withTaxAnswerIndex(make()), dbPath }
+      )) as Body;
       expect(body.code).toBe('DOC_NOT_FOUND');
       expect(body.retryable).toBe(false);
       expect(body.tool).toBe('nta_get_tax_answer');
-      expect(body.error).toContain('6999');
+      expect(body.error).toContain('6101');
       expect(body.hint).toContain('nta_search_tax_answer');
       expect(body.next_actions).toEqual([
         {
@@ -178,16 +185,16 @@ describe('SPEC-NTA-GET-TAX-ANSWER-013 国税庁サイトにページが無い（
         },
       ]);
       expect(body.detail?.status).toBe(status);
-      expect(body.detail?.url).toBe(TAX_ANSWER_URL);
+      expect(body.detail?.url).toBe(TAX_ANSWER_6101_URL);
     });
   }
 });
 
-describe('SPEC-NTA-GET-TAX-ANSWER-014 国税庁サイトとの通信が失敗したときは SOURCE_API_ERROR（retryable: true）を返す', () => {
+describe('SPEC-NTA-GET-TAX-ANSWER-014 国税庁サイトとの通信が失敗したときは、失敗の種類ごとの SOURCE_* を返す', () => {
   it('SPEC-NTA-GET-TAX-ANSWER-014 HTTP 503 は SOURCE_API_ERROR・retryable: true・detail.status: 503', async () => {
     const body = (await getTaxAnswer(
       { no: '6101' },
-      { fetchImpl: statusFetch(503), dbPath }
+      { fetchImpl: withTaxAnswerIndex(statusFetch(503)), dbPath }
     )) as Body;
     expect(body.code).toBe('SOURCE_API_ERROR');
     expect(body.retryable).toBe(true);
@@ -199,7 +206,7 @@ describe('SPEC-NTA-GET-TAX-ANSWER-014 国税庁サイトとの通信が失敗し
   it('SPEC-NTA-GET-TAX-ANSWER-014 接続できないときは detail.status が無く retryable: true', async () => {
     const body = (await getTaxAnswer(
       { no: '6101' },
-      { fetchImpl: networkErrorFetch(), dbPath }
+      { fetchImpl: withTaxAnswerIndex(networkErrorFetch()), dbPath }
     )) as Body;
     expect(body.code).toBe('SOURCE_API_ERROR');
     expect(body.retryable).toBe(true);
@@ -296,20 +303,21 @@ describe('SPEC-NTA-GET-KAISEI-TSUTATSU-002 改正通達はあるが docId が無
 /* -------------------------------------------------------------------------- */
 
 describe('SPEC-NTA-COMMON-ERRORS-016 SOURCE_API_ERROR は国税庁サイトとの通信が失敗したときだけ返し、*_NOT_FOUND は問い合わせが成功して求めたものが無かったときだけ返す', () => {
-  it('SPEC-NTA-COMMON-ERRORS-016 nta_get_tax_answer の { no: "6999" } は、/error/404.htm への転送で DOC_NOT_FOUND・retryable: false', async () => {
+  // 差分 20261003-source-paths（#128）: 6999 は国税庁の索引に無いので、記事を取りに行かずに DOC_NOT_FOUND
+  it('SPEC-NTA-COMMON-ERRORS-016 nta_get_tax_answer の { no: "6999" } は、DB にも国税庁の索引にも無いので DOC_NOT_FOUND・retryable: false', async () => {
     const body = (await getTaxAnswer(
       { no: '6999' },
-      { fetchImpl: soft404Fetch(), dbPath }
+      { fetchImpl: withTaxAnswerIndex(soft404Fetch()), dbPath }
     )) as Body;
     expect(body.code).toBe('DOC_NOT_FOUND');
     expect(body.retryable).toBe(false);
     expect(body.next_actions?.some((a) => a.action === 'retry_later')).toBe(false);
   });
 
-  it('SPEC-NTA-COMMON-ERRORS-016 同じ引数で 503 なら SOURCE_API_ERROR・retryable: true', async () => {
+  it('SPEC-NTA-COMMON-ERRORS-016 索引にある番号（6101）で記事のページが 503 なら SOURCE_API_ERROR・retryable: true', async () => {
     const body = (await getTaxAnswer(
-      { no: '6999' },
-      { fetchImpl: statusFetch(503), dbPath }
+      { no: '6101' },
+      { fetchImpl: withTaxAnswerIndex(statusFetch(503)), dbPath }
     )) as Body;
     expect(body.code).toBe('SOURCE_API_ERROR');
     expect(body.retryable).toBe(true);

@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { encode as iconvEncode } from 'iconv-lite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { getQa, getTaxAnswer } from './handlers.js';
 
 const fixturesDir = resolve(import.meta.dirname, '..', '..', 'tests', 'fixtures');
@@ -126,7 +126,10 @@ describe('nta_get_tax_answer — DB を先に引く', () => {
       sjisHtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')
     ) as unknown as typeof fetch;
 
-    const r = (await getTaxAnswer({ no: '6101', format: 'json' }, { fetchImpl, dbPath })) as {
+    const r = (await getTaxAnswer(
+      { no: '6101', format: 'json' },
+      { fetchImpl: withTaxAnswerIndex(fetchImpl), dbPath }
+    )) as {
       source?: string;
       taxAnswer?: { no: string };
     };
@@ -139,7 +142,10 @@ describe('nta_get_tax_answer — DB を先に引く', () => {
     const fetchImpl = vi.fn(async () =>
       sjisHtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')
     ) as unknown as typeof fetch;
-    const first = (await getTaxAnswer({ no: '6101', format: 'json' }, { fetchImpl, dbPath })) as {
+    const first = (await getTaxAnswer(
+      { no: '6101', format: 'json' },
+      { fetchImpl: withTaxAnswerIndex(fetchImpl), dbPath }
+    )) as {
       taxAnswer?: { sections: unknown[]; fetchedAt: string };
     };
 

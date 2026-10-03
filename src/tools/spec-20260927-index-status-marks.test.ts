@@ -12,7 +12,7 @@ import { join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { encode as iconvEncode } from 'iconv-lite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { initSchema } from '../db/schema.js';
 import {
   getQa,
@@ -399,7 +399,7 @@ describe('SPEC-NTA-GET-TAX-ANSWER-009 nta_get_tax_answer — 国税庁の索引�
   it('SPEC-NTA-GET-TAX-ANSWER-009 国税庁サイトから取った記事（source=live）と、索引にある DB の記事は json の印のキーが null で、markdown には何も付かない', async () => {
     const live = (await getTaxAnswer(
       { no: '6101', format: 'json' },
-      { fetchImpl: fixtureFetch(TAX_ANSWER_FIXTURE), dbPath }
+      { fetchImpl: withTaxAnswerIndex(fixtureFetch(TAX_ANSWER_FIXTURE)), dbPath }
     )) as MarkedJson;
     expect(live.source).toBe('live');
     expectNoMarkInJson(live);
@@ -418,7 +418,7 @@ describe('SPEC-NTA-GET-TAX-ANSWER-009 nta_get_tax_answer — 国税庁の索引�
   it('SPEC-NTA-GET-TAX-ANSWER-009 DB の記事が索引から外れていれば format=json に index_status / orphaned_at / notice が付く', async () => {
     await getTaxAnswer(
       { no: '6101', format: 'json' },
-      { fetchImpl: fixtureFetch(TAX_ANSWER_FIXTURE), dbPath }
+      { fetchImpl: withTaxAnswerIndex(fixtureFetch(TAX_ANSWER_FIXTURE)), dbPath }
     );
     markAllOrphaned();
 
@@ -434,7 +434,10 @@ describe('SPEC-NTA-GET-TAX-ANSWER-009 nta_get_tax_answer — 国税庁の索引�
   });
 
   it('SPEC-NTA-GET-TAX-ANSWER-009 markdown では見出しの後、最初の「## 」の節の前に索引の状態の行と「> 」の注記が入る', async () => {
-    await getTaxAnswer({ no: '6101' }, { fetchImpl: fixtureFetch(TAX_ANSWER_FIXTURE), dbPath });
+    await getTaxAnswer(
+      { no: '6101' },
+      { fetchImpl: withTaxAnswerIndex(fixtureFetch(TAX_ANSWER_FIXTURE)), dbPath }
+    );
     markAllOrphaned();
 
     const r = (await getTaxAnswer({ no: '6101' }, { fetchImpl: failingFetch, dbPath })) as string;

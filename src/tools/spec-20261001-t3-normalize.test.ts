@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import type DatabaseT from 'better-sqlite3';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { getSchemaVersion, initSchema, SCHEMA_VERSION } from '../db/schema.js';
 import { buildFtsQueryWithAbbreviation } from '../services/db-search.js';
 import { normalizeJpText } from '../services/text-normalize.js';
@@ -248,7 +249,7 @@ describe('SPEC-NTA-GET-TAX-ANSWER-015 no は半角に揃えてから形を確か
     );
     const full = (await getTaxAnswer(
       { no: '６１０１', format: 'json' },
-      { fetchImpl: a.fetchImpl, dbPath: join(dir, 'a.db') }
+      { fetchImpl: withTaxAnswerIndex(a.fetchImpl), dbPath: join(dir, 'a.db') }
     )) as { taxAnswer?: Record<string, unknown>; code?: string };
     const b = fixtureFetch(
       'www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm',
@@ -256,7 +257,7 @@ describe('SPEC-NTA-GET-TAX-ANSWER-015 no は半角に揃えてから形を確か
     );
     const half = (await getTaxAnswer(
       { no: '6101', format: 'json' },
-      { fetchImpl: b.fetchImpl, dbPath: join(dir, 'b.db') }
+      { fetchImpl: withTaxAnswerIndex(b.fetchImpl), dbPath: join(dir, 'b.db') }
     )) as { taxAnswer?: Record<string, unknown> };
     expect(full.code).toBeUndefined();
     expect(a.urls).toEqual([`${NTA_ORIGIN}/taxes/shiraberu/taxanswer/shohi/6101.htm`]);

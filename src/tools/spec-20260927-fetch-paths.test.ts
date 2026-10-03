@@ -20,7 +20,7 @@ import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
 import Database from 'better-sqlite3';
 import { encode as iconvEncode } from 'iconv-lite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { initSchema } from '../db/schema.js';
 import { writeBackLiveSection } from '../services/bulk-downloader.js';
 import { bulkDownloadTaxAnswer } from '../services/tax-answer-bulk-downloader.js';
@@ -160,14 +160,14 @@ describe('nta_get_tax_answer — SPEC-NTA-GET-TAX-ANSWER-010 節の構造を持�
     it(`SPEC-NTA-GET-TAX-ANSWER-010 ${v.title}は DB から返さず国税庁サイトから取り（source=live）、書き戻して次から DB から返す`, async () => {
       await getTaxAnswer(
         { no: '6101', format: 'json' },
-        { fetchImpl: fixtureFetch(TAX_ANSWER_FIXTURE), dbPath }
+        { fetchImpl: withTaxAnswerIndex(fixtureFetch(TAX_ANSWER_FIXTURE)), dbPath }
       );
       expect(setStructuredJson(v.structured)).toBeGreaterThan(0);
 
       const fetchImpl = fixtureFetch(TAX_ANSWER_FIXTURE);
       const r = (await getTaxAnswer(
         { no: '6101', format: 'json' },
-        { fetchImpl, dbPath }
+        { fetchImpl: withTaxAnswerIndex(fetchImpl), dbPath }
       )) as TaxAnswerJson;
 
       expect(r.source).toBe('live');

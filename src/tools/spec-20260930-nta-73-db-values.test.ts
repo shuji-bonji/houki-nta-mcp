@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { initSchema } from '../db/schema.js';
 import {
   getTaxAnswer,
@@ -102,7 +102,7 @@ describe('nta_get_tax_answer — SPEC-NTA-GET-TAX-ANSWER-011 記事番号は引�
   it('SPEC-NTA-GET-TAX-ANSWER-011 SPEC-NTA-GET-TAX-ANSWER-008 見出しに No. が無いページでも taxAnswer.no は引数の no、題名は見出しの文字列', async () => {
     const r = (await getTaxAnswer(
       { no: ' 6101 ', format: 'json' },
-      { fetchImpl: htmlFetch(pageWithoutNo()), dbPath }
+      { fetchImpl: withTaxAnswerIndex(htmlFetch(pageWithoutNo())), dbPath }
     )) as TaxAnswerJson;
 
     expect(r.source).toBe('live');
@@ -114,7 +114,7 @@ describe('nta_get_tax_answer — SPEC-NTA-GET-TAX-ANSWER-011 記事番号は引�
   it('SPEC-NTA-GET-TAX-ANSWER-011 見出しに No. が無いページでも markdown の見出しは # No.<no> <題名>', async () => {
     const md = (await getTaxAnswer(
       { no: '6101' },
-      { fetchImpl: htmlFetch(pageWithoutNo()), dbPath }
+      { fetchImpl: withTaxAnswerIndex(htmlFetch(pageWithoutNo())), dbPath }
     )) as string;
 
     expect(md.startsWith('# No.6101 消費税の基本的なしくみ\n')).toBe(true);
@@ -123,7 +123,7 @@ describe('nta_get_tax_answer — SPEC-NTA-GET-TAX-ANSWER-011 記事番号は引�
   it('SPEC-NTA-GET-TAX-ANSWER-011 書き戻す行の文書 ID は no、税目は先頭の桁の税目フォルダで、文書 ID が空の行は作らない。次の呼び出しは DB から返す', async () => {
     await getTaxAnswer(
       { no: '6101', format: 'json' },
-      { fetchImpl: htmlFetch(pageWithoutNo()), dbPath }
+      { fetchImpl: withTaxAnswerIndex(htmlFetch(pageWithoutNo())), dbPath }
     );
 
     const rows = withDb((db) =>
@@ -136,7 +136,7 @@ describe('nta_get_tax_answer — SPEC-NTA-GET-TAX-ANSWER-011 記事番号は引�
     const fetchImpl = fetchMustNotBeCalled();
     const again = (await getTaxAnswer(
       { no: '6101', format: 'json' },
-      { fetchImpl, dbPath }
+      { fetchImpl: withTaxAnswerIndex(fetchImpl), dbPath }
     )) as TaxAnswerJson;
     expect(again.source).toBe('db');
     expect(again.taxAnswer?.no).toBe('6101');
@@ -146,7 +146,7 @@ describe('nta_get_tax_answer — SPEC-NTA-GET-TAX-ANSWER-011 記事番号は引�
   it('SPEC-NTA-GET-TAX-ANSWER-011 SPEC-NTA-GET-TAX-ANSWER-004 DB の行に記録された番号が空でも、DB から返す taxAnswer.no は no', async () => {
     await getTaxAnswer(
       { no: '6101', format: 'json' },
-      { fetchImpl: htmlFetch(readFixture(TAX_ANSWER_FIXTURE)), dbPath }
+      { fetchImpl: withTaxAnswerIndex(htmlFetch(readFixture(TAX_ANSWER_FIXTURE))), dbPath }
     );
     // bulk download で見出しに No. の無いページを取り込んだ行と同じ状態にする
     const changed = withDb((db) => {

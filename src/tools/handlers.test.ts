@@ -4,8 +4,8 @@ import { join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { encode as iconvEncode } from 'iconv-lite';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { initSchema } from '../db/schema.js';
-
 import {
   getQa,
   getTaxAnswer,
@@ -937,7 +937,10 @@ describe('getTaxAnswer — 6101 (消費税) を取得', () => {
       utf8HtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm')
     ) as unknown as typeof fetch;
 
-    const r = (await getTaxAnswer({ no: '6101' }, { fetchImpl, dbPath: ':memory:' })) as string;
+    const r = (await getTaxAnswer(
+      { no: '6101' },
+      { fetchImpl: withTaxAnswerIndex(fetchImpl), dbPath: ':memory:' }
+    )) as string;
     expect(typeof r).toBe('string');
     expect(r).toContain('No.6101');
     expect(r).toContain('消費税の基本的なしくみ');
@@ -953,7 +956,7 @@ describe('getTaxAnswer — 6101 (消費税) を取得', () => {
 
     const r = (await getTaxAnswer(
       { no: '1120', format: 'json' },
-      { fetchImpl, dbPath: ':memory:' }
+      { fetchImpl: withTaxAnswerIndex(fetchImpl), dbPath: ':memory:' }
     )) as {
       taxAnswer: { no: string; title: string; sections: unknown[] };
       legal_status: { binds_citizens: boolean };
@@ -972,7 +975,10 @@ describe('getTaxAnswer — 6101 (消費税) を取得', () => {
       utf8HtmlResponse('www.nta.go.jp_taxes_shiraberu_taxanswer_hojin_5759.htm')
     ) as unknown as typeof fetch;
 
-    await getTaxAnswer({ no: '5759', format: 'json' }, { fetchImpl, dbPath: ':memory:' });
+    await getTaxAnswer(
+      { no: '5759', format: 'json' },
+      { fetchImpl: withTaxAnswerIndex(fetchImpl), dbPath: ':memory:' }
+    );
     const calls = (fetchImpl as unknown as { mock: { calls: [string][] } }).mock.calls;
     expect(calls[0][0]).toContain('/hojin/5759.htm');
   });

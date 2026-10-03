@@ -284,6 +284,50 @@ describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
     expect(help).toContain('--bunsho-taxonomy の値: shotoku, gensen, joto-sanrin');
   });
 
+  // 差分 20261003-source-paths（#128）: --tax-answer-taxonomy の一覧は国税庁の索引の税目フォルダ 13 個
+  const TAX_ANSWER_FOLDERS = [
+    'shotoku',
+    'gensen',
+    'joto',
+    'sozoku',
+    'zoyo',
+    'hyoka',
+    'hojin',
+    'shohi',
+    'inshi',
+    'hotei',
+    'fufuku',
+    'saigai',
+    'osirase',
+  ];
+
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-008 --tax-answer-taxonomy は国税庁の索引の税目フォルダ 13 個を受け付ける（saigai・zoyo・hyoka・hotei・fufuku を足した）', async () => {
+    await runCliIfRequested([
+      '--bulk-download-tax-answer',
+      '--tax-answer-taxonomy=saigai,zoyo,hyoka,hotei,fufuku',
+      '--db-path=:memory:',
+    ]);
+    expect(written.join('')).not.toContain('は使えません');
+    expect(bulkDownloadTaxAnswer).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(bulkDownloadTaxAnswer).mock.calls[0][1]).toMatchObject({
+      taxonomies: ['saigai', 'zoyo', 'hyoka', 'hotei', 'fufuku'],
+    });
+  });
+
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-008 SPEC-NTA-CLI-BULK-DOWNLOAD-010 --tax-answer-taxonomy=saigai,zzz は zzz だけを使えない値として出し、使える値に 13 個を並べる（v0.23.0 では saigai も使えない値だった）', async () => {
+    await runCliIfRequested([
+      '--bulk-download-tax-answer',
+      '--tax-answer-taxonomy=saigai,zzz',
+      '--db-path=:memory:',
+    ]);
+    const err = written.join('');
+    expect(err).toContain('--tax-answer-taxonomy="zzz" は使えません');
+    expect(err).not.toContain('--tax-answer-taxonomy="saigai"');
+    const allowed = err.match(/使える値: (.+)/)?.[1]?.split(', ') ?? [];
+    expect([...allowed].sort()).toEqual([...TAX_ANSWER_FOLDERS].sort());
+    expect(bulkDownloadTaxAnswer).not.toHaveBeenCalled();
+  });
+
   it('SPEC-NTA-CLI-BULK-DOWNLOAD-010 formatInvalidTaxonomyValues は 1 件につき 1 行', () => {
     const text = formatInvalidTaxonomyValues([
       { flag: '--qa-topic', value: 'zzz', allowed: ['shohi'], aliases: [] },
