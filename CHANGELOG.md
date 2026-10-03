@@ -7,6 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-10-04
+
+**minor リリース** — 段階 5（houki-hub `docs/notes/2026-09-29-plan-spec-issues.md`）。検索の規則（#81・#80・#72）、国税庁サイトから取る経路（#120・#128・#131）、ローカル DB と CLI（#106・#107・#109・#110・#111・#112）を、承認済みの仕様の差分どおりに直した。仕様 PR は #132（specs/current の直し漏れ、#123）・#133（検索の規則）・#134（国税庁サイトから取る経路）・#135（DB と CLI）。
+
+> **DB のスキーマの版を 12 に上げた。** v0.3.0〜v0.23.x で作った DB（版 3〜11）は、0.24.0 の CLI かツールが最初に開いたときに、行を保ったまま版 12 に移行する。**取り込み直しは要らない。**
+>
+> **0.24.0 に上げた後は、同じ DB を 0.23.x 以前の CLI や MCP サーバーで開かないこと。** 0.23.x は版が新しい DB を全テーブルを消して作り直す（0.23.x の動きで、0.24.0 では直せない）。MCP クライアントの設定やプラグインの版を 0.23.x 以前に戻すときは、`HOUKI_NTA_DB_PATH` で別の DB ファイルを指すこと。
+
+閉じる Issue: #123 #80 #81 #72 #120 #128 #131 #106 #107 #109 #110 #111 #112
+
+### 互換性
+
+T2 の互換の扱い（旧 code → 新 code を書き、同じ日に houki-research-skill の `docs/ERROR-CODES.md` を直し、minor を上げる。旧 code を並行して返す期間は設けない）に従う。
+
+#### エラーの code の置き換え（#120、SPEC-NTA-COMMON-ERRORS-018・019）
+
+`nta_get_qa`・`nta_get_tax_answer`・`nta_get_tsutatsu` が国税庁サイトから取れなかったときの code を、houki-egov-mcp と同じ 4 つに分けた。houki-research-skill の `docs/ERROR-CODES.md` を同じ日に直す。
+
+| 場面 | 0.23.0 | 0.24.0 |
+| --- | --- | --- |
+| 国税庁サイトが 429 | `SOURCE_API_ERROR`・`retryable: true` | `SOURCE_RATE_LIMITED`・`retryable: true`（取り直さない） |
+| 国税庁サイトが 30 秒以内に応答しない | `SOURCE_API_ERROR`・`retryable: true` | `SOURCE_TIMEOUT`・`retryable: true` |
+| 国税庁サイトに接続できない（`ENOTFOUND` など） | `SOURCE_API_ERROR`・`retryable: true`・`detail.status` 無し | `SOURCE_UNAVAILABLE`・`retryable: true`・`detail.cause` |
+| 国税庁サイトが 403・400 など | `SOURCE_API_ERROR`・`retryable: true`・`retry_later` | `SOURCE_API_ERROR`・`retryable: false`・`next_actions` 無し |
+| `nta_get_tsutatsu` の目次のページが 404 | `SOURCE_API_ERROR`・`retryable: true` | `SOURCE_API_ERROR`・`retryable: false` |
+| `nta_get_tsutatsu` の `SOURCE_*` | `tool` が無い | `tool: "nta_get_tsutatsu"` を付ける |
+
+#### 引数・応答（#72・#81・#80・#128・#131）
+
+| 場面 | 0.23.0 | 0.24.0 |
+| --- | --- | --- |
+| `nta_search_qa` に `domain` を渡す | 成功（`tax` は省いたときと同じ結果、それ以外は `results: []`） | `INVALID_ARGUMENT`（`detail.issues[0].path: "domain"`）。`domain` を外して呼び直す。税目は `topic` で絞る |
+| `search_notes`・`scoreReasons` の英字の語 | 小文字 | 渡した表記（大文字と小文字は渡したまま） |
+| `"QR コード"` のように 2 文字の英字の語と 3 文字以上の語が混ざり、本文の英字が大文字 | `results: []` | 本文に `QR` を含む文書を返す |
+| `keyword` が 2 文字の略称（`消法` など） | 正式名を含む文書だけ | 略称を含む文書も返す。`search_notes` は略称と正式名の探し方を書く文 |
+| `keyword` が 1 文字の略称で正式名が 2 文字（`民`・`商`・`刑`） | 常に 0 件 | 正式名を部分一致で探す |
+| `nta_get_tax_answer` に `8xxx`・`0xxx` | `INVALID_ARGUMENT`（先頭の桁が未対応） | `8xxx` は記事を返す。`0xxx` は `DOC_NOT_FOUND` |
+| `nta_get_tax_answer` で DB に無く、国税庁の索引に無い番号 | 先頭の桁のフォルダを取りに行き、転送なら `DOC_NOT_FOUND` | 記事を取りに行かずに `DOC_NOT_FOUND`（`detail.url` は索引の URL、`detail.status` 無し） |
+| `nta_get_tax_answer` で DB に無い `2010`・`4402`・`7400` など 113 件 | `DOC_NOT_FOUND` | 記事を返す |
+| `--tax-answer-taxonomy=saigai` など 5 個（`zoyo`・`hyoka`・`hotei`・`fufuku`・`saigai`） | 使えない値 | 使える |
+| `nta_search_jimu_unei`・`nta_inspect_pdf_meta`（`jimu-unei`）の `legal_status.note` | `通達は行政内部文書。…` | `通達・事務運営指針は行政内部文書であり、…`（`nta_get_jimu_unei` の json と同じ） |
+
+#### DB と CLI（#106・#107・#109・#110・#111・#112）
+
+| 場面 | 0.23.x | 0.24.0 |
+| --- | --- | --- |
+| 版 3〜11 の DB を開く | 版 11 に移行（3〜10）・そのまま（11） | 行を保ったまま版 12 に移行 |
+| 版 12 以上・版を読めない DB を開く | 全テーブルを消して作り直す（12 以上）・例外（読めない） | どの入口も変えない。CLI は終了コード 1、読むだけのツールは `hint` で案内、書き戻すツールは国税庁サイトから取って返す |
+| 版 1・2 の DB を開く | どの入口でも全テーブルを消して作り直す | 投入のフラグだけが作り直す。ほかの CLI は終了コード 1、ツールは使わない |
+| DB の無い場所で検索ツール・`--refresh-stale=<日数>` | フォルダーと空の DB を作る | 作らない |
+| DB の無い場所で `--refresh-stale=<日数> --apply` | 空の DB を作り、何も取り直さない | 作らない。`[ERROR] DB がまだありません …`、終了コード 1 |
+| `document` に 5 つ以外の `doc_type` を書く | 入る | `CHECK constraint failed` |
+| `--version` | `0.23.0` | `@shuji-bonji/houki-nta-mcp v0.24.0` |
+| 知らないフラグ・フラグでない引数・`=` の無いフラグ・数でない日数 | 読み飛ばし、ほかに処理が無ければ MCP サーバーとして起動 | `ERROR: …`、終了コード 2 |
+| 処理を選ぶフラグが 2 つ以上 | 決まった順で最初の 1 つだけ実行 | `ERROR: 余分な引数: …`、終了コード 2 |
+| 処理が使わないフラグ（`--bulk-download-all --tsutatsu=…` など） | 黙って使わない | `ERROR: 余分な引数: …`、終了コード 2 |
+| `--db-path=<path>` だけ | MCP サーバーとして起動（そのパスは使わない） | `ERROR: 処理を選ぶフラグがありません …`、終了コード 2 |
+| 税目フラグに一覧に無い値 | 終了コード 1 | 終了コード 2（文は同じ） |
+| `--tsutatsu` に 4 種以外 | DB を開いた後に `fatal error`、終了コード 1 | 使える値を出して終了コード 2。DB は開かない |
+| `--help` と値の誤った税目フラグ | 使い方を出して終了コード 0 | 値のエラーで終了コード 2 |
+| `--refresh-stale=<日数> --apply --refresh` | 差分更新（`--refresh` が効かない） | 条件付き取得を使わずに取り直す |
+| `--refresh-stale=<日数> --refresh`（`--apply` なし） | 列挙だけ（`--refresh` は無視） | `ERROR: 余分な引数: --refresh`、終了コード 2 |
+| 税目を絞った投入の `orphaned_at` | 付け直さない | 絞った税目の行に限って付け直す |
+| `--check-baseline-drift` の対象外 4 件 | `status: "ok"`、`<ok>/9 OK` | `status: "not-applicable"`、`<ok>/5 OK, drift=<n>, 対象外=4` |
+
+### Added
+
+- **タックスアンサーの索引**（#128、SPEC-NTA-GET-TAX-ANSWER-003・016・017、SPEC-NTA-DB-SCHEMA-025）: `nta_get_tax_answer` は DB に無い記事の URL を国税庁の索引（`/taxes/shiraberu/taxanswer/code/`）で決める。索引は `tax_answer_index`・`tax_answer_index_page` に保存して使い回し、番号が見つからないときだけ前回の `Last-Modified` / `ETag` を付けて取り直す。`--bulk-download-tax-answer` も、税目で絞る前の索引のすべての記事を保存する（SPEC-NTA-CLI-BULK-DOWNLOAD-013）
+- **DB の状態と入口ごとの扱い**（#107、SPEC-NTA-DB-SCHEMA-021）: DB を作るのは投入のフラグと、国税庁サイトから取れたときの書き戻すツール（`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer`）だけ。読むだけのツールと `--refresh-stale` は作らない
+- **CLI の引数の検査**（#106、SPEC-NTA-CLI-ENTRY-006〜008、SPEC-NTA-CLI-BULK-DOWNLOAD-011）: 形 → 値 → 組み合わせの順に確かめ、誤りはどれも終了コード 2。引数の誤りは 2、処理の失敗は 1（houki-egov-mcp 0.19.0 と同じ分け方）
+- **`--refresh-stale=<日数> --apply --refresh`**（#109、SPEC-NTA-CLI-REFRESH-007）
+- **税目を絞った投入での索引から消えた文書の印**（#110、SPEC-NTA-CLI-BULK-DOWNLOAD-012）
+- **`--check-baseline-drift` の `not-applicable`**（#111、SPEC-NTA-CLI-HEALTH-CHECK-001・003・007）
+
+### Changed
+
+- **検索で英字の大文字と小文字を区別しない**（#81、SPEC-NTA-SEARCH-RULES-021・003・004・006）
+- **3 文字未満の略称は、元の語と正式名をそれぞれの長さで探して合わせる**（#80、SPEC-NTA-SEARCH-RULES-009・006）
+- **`nta_search_qa` の `domain` を外した**（#72、SPEC-NTA-SEARCH-QA-010。SPEC-NTA-SEARCH-QA-002・003 は REMOVED）
+- **`nta_get_tax_answer` の先頭の桁の検査を外した**（#128、SPEC-NTA-GET-TAX-ANSWER-002 は REMOVED、012 の例を直した）。書き戻す行の `taxonomy` は取得した URL の税目フォルダ（006・011）
+- **事務運営指針の `legal_status.note` を 3 つのツールで揃えた**（#131、SPEC-NTA-SEARCH-JIMU-UNEI-002、SPEC-NTA-INSPECT-PDF-META-016、SPEC-NTA-GET-JIMU-UNEI-005。markdown の注は変えていない）
+- **DB のスキーマの版 12**（#112・#128、SPEC-NTA-DB-SCHEMA-022・023・024）: `document.doc_type` を 5 つの値に限る CHECK を付けた（`document` を作り直し、`id` を含む列をそのまま写す）。`taxonomy` は制限しない
+- **`--version` の文**（SPEC-NTA-CLI-ENTRY-003）: `<パッケージ名> v<版>`
+
+### Removed
+
+- 全データを消す関数 `clearAllData` と、`HOUKI_NTA_REFRESH=1` の説明（実装は無かった）。DB の中身を消したいときは DB のファイルを消す（#107）
+
+### Documentation
+
+- README: `nta_search_qa` の税目の絞り込み、国税庁サイトとの通信の失敗の表、DB の版（v0.24.0）、`--check-baseline-drift` の判定の対象、税目フラグの表（`--tax-answer-taxonomy` の 13 個・終了コード 2）
+- tools/list の `nta_get_tax_answer` の説明と `no` の説明、`--help`（書き戻す 3 ツール、`--apply --refresh`、`--tsutatsu` の 4 つの正式名、終了コード）、`docs/DATABASE.md`（版の履歴と版の扱い、`tax_answer_index`）、`docs/DESIGN.md`、`llms.txt`
+
+### Tests
+
+- 仕様の差分 3 本の受入テストを足した（`src/tools/spec-20261003-search-rules.test.ts`・`-source-paths.test.ts`・`-db-cli.test.ts`、`src/spec-20261003-db-cli.test.ts`）。タックスアンサーの索引は 2026-10-03 JST の実測値から組み立てる（`tests/support/tax-answer-index.ts`）
+- 承認済みの差分で期待値が変わる既存のテストは、その差分の仕様 ID を名前に入れて書き換えた（CLI の終了コード 1 → 2、`--help` と値の誤り、日数の誤り、`schema_version` 11 → 12、`not-applicable`、429 の code、タックスアンサーの番号と索引）
+- REMOVED の仕様 ID（SPEC-NTA-SEARCH-QA-002・003、SPEC-NTA-GET-TAX-ANSWER-002）のテストを消した
+
+### Specs
+
+- 差分 `20261003-search-rules`・`20261003-source-paths`・`20261003-db-cli` を `specs/current/` に取り込み、`20261003-specs-current-catchup`（`specs/current/` へは仕様 PR #132 の中で反映済み）とあわせて 4 つを `specs/releases/v0.24.0/` へ移した
+
 ## [0.23.0] - 2026-10-03
 
 **minor リリース** — 段階 4 の後半（houki-hub `docs/notes/2026-09-29-plan-spec-issues.md`）。応答の形（T4）と、hint・next_actions・説明文・CLI の使い方と実際の動きの食い違い（T5）を、承認済みの仕様の差分どおりに直した。仕様 PR は #125（T4）・#126（T5）。対象 Issue: #70 #71 #82 #108。エラーの `code` は変えていない。消したフィールド・名前を付け替えたフィールドは無い。DB のスキーマは変えていない（版 11 のまま）。
