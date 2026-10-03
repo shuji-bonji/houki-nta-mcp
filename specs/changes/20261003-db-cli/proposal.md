@@ -1,0 +1,316 @@
+# 変更: ローカル DB の版の扱い・作る入口・doc_type の制約・タックスアンサーの索引の保存と、CLI の引数の検査（段階 5 DB と CLI）
+
+- 対象: `db_schema` / `cli_entry` / `cli_bulk_download` / `cli_refresh` / `cli_health_check` の `specs/current/<dir>/spec.md`
+- 実装の変更: 要（下の「実装の変更」）
+- 承認日:
+- 状態: 草案
+- 起こした日: 2026-10-03（JST）
+- 起こした役: Spec Steward
+- 対象 Issue: houki-nta-mcp #106（CLI の引数の検査と `--version` の文）、#107（版が合わない DB の作り直しと、全データを消す入口）、#109（`--refresh-stale=<日数> --apply` と `--refresh`）、#110（税目を絞った投入での `orphaned_at`）、#111（`--check-baseline-drift` の判定の対象外の 4 件）、#112（`document.doc_type` / `taxonomy` の制約）。あわせて #128 の索引の保存先（差分 `20261003-source-paths` の「索引を DB に保存するためのスキーマ（指示 K に渡す）」）
+- 決定の出典: houki-hub `docs/notes/2026-09-29-plan-spec-issues.md` 4 章「段階 5」の表（nta の DB と CLI の行）と「nta #75 の初版で見つかった、判断が要る未決」、`docs/notes/2026-10-03-stage5-spec-instructions.md` の指示 K、houki-egov-mcp `specs/changes/20261003-db-cli/proposal.md`（PR #100）の「場面ごとの規則」表 1・表 2 と #60・#61 の「変えた後の動き」、`specs/changes/20261003-db-cli-followup/proposal.md`（PR #103）の #102
+- 前提: main（`67224f0`。0.24.0 の 3 つの差分 `20261003-specs-current-catchup`・`20261003-search-rules`・`20261003-source-paths` はマージ済み・未取り込み）から切った。`cli_bulk_download` の spec.md は `20261003-source-paths` も触る（「入力」の表の `--tax-answer-taxonomy` の値の一覧だけ）。こちらは同じ表の `--tsutatsu` の行と ID のある見出しを触るので重ならない。取り込みは `20261003-source-paths` の後。#128 の索引の保存は、`20261003-source-paths` の SPEC-NTA-GET-TAX-ANSWER-016 が「DB に保存」の文のまま承認された（案 1・2 の側）ので、案 1（新しいテーブル）としてこの差分のスキーマの版上げに入れた
+
+## なぜ変えるか
+
+6 件はどれも、利用者の手元の DB とそれを作る CLI が、利用者の期待や houki-egov-mcp と違う動きをする問題である。
+
+- 新しい版の houki-nta-mcp で作った DB を古い版で開くと、全テーブルを消して作り直す。MCP クライアントが古い版のサーバーを起動しただけで、投入した中身（全部入りで約 100 分）が消える。版を読めない DB は例外で開けない（#107）
+- 全データを消す関数がテストにだけあり、`src/db/index.ts` の説明にある `HOUKI_NTA_REFRESH=1` を読む実装が無い（#107）
+- `document.doc_type` に制約が無く、5 つの種別以外の値も入る（#112）
+- 打ち間違えたフラグ、`=` の無いフラグ、数でない日数を黙って読み飛ばし、MCP サーバーとして標準入力を待ち続ける。`--tsutatsu` に基本通達 4 種以外を渡すと `fatal error` で終わる。`--version` の文が houki-egov-mcp と違う（#106）
+- `--refresh-stale=<日数> --apply --refresh` と打っても `--refresh` が取り直しに渡らない（#109）
+- 税目を絞った投入では、索引から消えた文書の印を付け直さない（#110）
+- `--check-baseline-drift` は判定の対象外の 4 件を `ok` にし、`<ok>/9 OK` に数える（#111）
+
+DB のスキーマを変えるのは #112（`doc_type` の `CHECK`）と #128（タックスアンサーの索引の 2 テーブル）で、計画書どおり版 12 への 1 回にまとめる。#107 は版の扱いの規則で、版の番号は上げるが、そのための列は変えない。#106・#109・#110・#111 はスキーマを変えない。
+
+版 11 から 12 への移行は行を保つ（SPEC-NTA-DB-SCHEMA-022）ので、0.24.0 で利用者が DB を取り込み直す必要は無い（下の「利用者の取り込み直し」）。
+
+## 確かめた値（2026-10-03 JST）
+
+| 呼び出し・読んだもの | 結果 | 使った仕様 ID |
+| --- | --- | --- |
+| v0.23.0 の `src/db/schema.ts`（読んだ） | `SCHEMA_VERSION = 11`。`initSchema()` は版 3〜10 を 1 段ずつ移行し、それ以外（1・2、12 以上）は `dropAndRecreate()` で全テーブルを消す。`getSchemaVersion()` は `parseInt` で読むので `abc` は `null`（記録が無い扱いで `INSERT` し、既存の行と衝突する）、`12abc` は `12`。`document` は `doc_type TEXT NOT NULL`・`taxonomy TEXT` で `CHECK` が無い。`document_fts` は `content='document'`・`content_rowid='id'` | DB-SCHEMA-001・021・022・023 |
+| v0.23.0 の `src/db/index.ts`・`src/tools/handlers.ts`・`src/cli.ts`（読んだ） | `openDb()` はフォルダーが無ければ `mkdirSync`、続けて `initSchema()`。CLI の投入・`--refresh-stale` と、検索・取得の全ツールが `openDb()` を使う（`handlers.ts` で `openDb()` を呼ぶ箇所は 15 か所）。`nta_get_qa`・`nta_get_tax_answer` の書き戻しも `openDb()` で、DB が無ければ作る。`HOUKI_NTA_REFRESH` を読む箇所は無い | DB-SCHEMA-021 |
+| v0.23.0 の `src/cli.ts` の `parseArgs()`・`runCliIfRequested()`（読んだ） | どの分岐にも当たらない引数は読み飛ばす。`--refresh-stale=` は `parseInt` が `NaN` か負なら無視。処理は `--quickstart` → `--bulk-download-everything` → … → `--check-baseline-drift` の順で最初の 1 つだけ。`--version` は `${PACKAGE_INFO.version}` だけ。`runRefreshStale()` の `--apply` は `bulkDownloadTsutatsu()` に `forceReload` を渡さない。`runBulkDownload()` は `openDb()` の後で `bulkDownloadTsutatsu()` が `通達 "…" は TSUTATSU_URL_ROOTS に未登録です` を投げる | CLI-ENTRY-003・006〜008、CLI-REFRESH-006・007、CLI-BULK-DOWNLOAD-011 |
+| v0.23.0 の `src/config.ts`・`src/services/*.ts`（`process.env` を grep） | 読む環境変数は `HOUKI_NTA_DB_PATH`・`XDG_CACHE_HOME`・`HOUKI_NTA_BASELINE_DIR`・`HOUKI_NTA_FILES_DIR` の 4 つで、数値の環境変数は無い。取得の時間切れ・取り直しの回数は `FETCH_CONFIG` の固定値 | （houki-egov-mcp #102 は当たらない） |
+| v0.23.0 の `src/services/*-bulk-downloader.ts`・`index-status.ts`（読んだ） | 文書回答事例・タックスアンサー・質疑応答事例は、税目を絞らない実行（`isFullRun`）でだけ `markAndCount()` を呼ぶ。`markOrphanedDocuments()` は `taxonomyFilter` を受け付けるが、CLI からは使っていない。文書回答事例の `taxonomy` は個別ページの URL から取るので、国税局の別表記（`souzoku` など）の行がある | CLI-BULK-DOWNLOAD-012 |
+| v0.23.0 の `src/services/baseline-drift.ts`（読んだ） | `status` は `'ok' \| 'missing' \| 'generation-drift'`。`kihon/` の下でない代表ページと税目のディレクトリを取れない代表ページは `ok`。`driftCount` は `ok` 以外の数 | CLI-HEALTH-CHECK-001・003・007 |
+| houki-nta-dev 0.23.0 `nta_search_bunshokaitou { keyword: "消費税", taxonomy: "zzz", limit: 1 }`（14 時台） | `available_taxonomies`: `gensen`・`gensenshotoku`・`hojin`・`hyoka`・`inshi`・`joto-sanrin`・`joto_sanrin`・`shohi`・`shotoku`・`shozei`・`sonota`・`souzoku`・`sozoku`・`zoyo`（DB の文書回答事例 487 件） | DB-SCHEMA-024 |
+| houki-nta-dev 0.23.0 `nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei`（同じ引数） | 改正通達 118 件: `hojin`・`shohi`・`shotoku`・`sisan/sozoku`。事務運営指針 32 件: `hojin`・`shotoku`・`shozei`・`sonota`・`sozoku`・`tyousyu` | DB-SCHEMA-024 |
+
+## 確かめていない点
+
+- CLI を実際に実行した出力。VM の `node_modules` は Mac と共有で `better-sqlite3` が Linux で読めないため、`--version`・`--bulk-downlod`・`--tsutatsu=国税通則法基本通達` の今の出力はコードを読んで書いた
+- 版 11 → 12 の移行（`document` を作り直す場合）にかかる時間。作者の DB の `document` は数千行の見込みで、件数は数えていない
+- MCP サーバーの 2 つの呼び出しが同時に古い版の DB を開いて移行しようとしたとき、2 つ目が待つかエラーになるか（`SQLITE_BUSY`）
+- `doc_type` が 5 つの値でない行が、利用者の DB に実際に無いか（どの版のコードも書かないことを確かめただけ）
+- 国税局の別表記の文書回答事例が、本庁の税目別の索引から辿れるか（#110 の印を、絞った税目の別表記の行にも付けてよいかの前提。税目を絞らない投入も同じ前提で印を付けている）
+- タックスアンサーの索引の題名が全記事で取れるか（`tax_answer_index.title` を `NOT NULL` にした。bulk download の索引の解析は `title` を持つ）
+
+## 場面ごとの規則（houki-egov-mcp 0.19.0 から写したもの）
+
+### 表 1: CLI の引数（egov #61・#102 → nta #106）
+
+| 場面 | 規則 | 標準エラー出力の文（nta） | 終了コード | nta の仕様 ID | egov の仕様 ID |
+| --- | --- | --- | --- | --- | --- |
+| 引数が無い | MCP サーバーとして起動する | — | — | CLI-ENTRY-001（今のまま） | CLI-ENTRY-001 |
+| 知らないフラグ（`=` 付きの形を含む） | 何もせず、エラーと使い方を出す | `ERROR: 未知のフラグ: <フラグ>` | 2 | CLI-ENTRY-006 | CLI-ENTRY-004 |
+| フラグでない引数 | 何もせず、エラーと使い方を出す | `ERROR: 未知の引数: <引数>` | 2 | CLI-ENTRY-006 | CLI-ENTRY-008 |
+| 余分な引数（処理を選ぶフラグが 2 つ以上、その処理が受け付けないフラグ、同じフラグの 2 回目） | 何もせず、エラーと使い方を出す | `ERROR: 余分な引数: <引数>` | 2 | CLI-ENTRY-007 | CLI-ENTRY-009 |
+| 処理を選ぶフラグが無く、ほかのフラグだけ（nta だけの場面） | 何もせず、エラーと使い方を出す | `ERROR: 処理を選ぶフラグがありません（<フラグ> だけでは何もしません）` | 2 | CLI-ENTRY-007 | — |
+| 値を取るフラグの値が無い | 何もせず、エラーを出す（使い方は出さない） | `ERROR: <フラグ> は値を必要とします（<フラグ>=<値> の形で指定してください）` | 2 | CLI-ENTRY-006 | CLI-BULK-DOWNLOAD-001 |
+| 値の形が違う・選べる値でない | 何もせず、誤った値をすべて並べる。値の検査は組み合わせの検査より先 | `[houki-nta-mcp] <フラグ>="<値>" は使えません。…` | 2 | CLI-ENTRY-008、CLI-BULK-DOWNLOAD-010・011、CLI-REFRESH-006 | CLI-BULK-DOWNLOAD-001 |
+| 版の表示 | `<パッケージ名> v<版>` の 1 行 | — | 0 | CLI-ENTRY-003 | CLI-ENTRY-003・005 |
+| 数値の環境変数が不正 | 当たらない（nta に数値の環境変数は無い） | — | — | — | CLI-ENTRY-010・011 |
+
+### 表 2: DB の状態と入口（egov #60・#71 → nta #107）
+
+SPEC-NTA-DB-SCHEMA-021 の表。egov の 4 つの入口を、nta の 5 つの入口に次のように対応させた。
+
+| egov の入口 | nta の入口 |
+| --- | --- |
+| 全件の取り込み（`--bulk-download-everything`） | 投入（`--quickstart`・`--bulk-download*` の 9 つ） |
+| 差分の取り込み（`--sync`・`--bulk-download-by-date`） | 取り直し（`--refresh-stale=<日数> --apply`） |
+| 状態の表示（`--status`） | 一覧（`--refresh-stale=<日数>`。nta に `--status` は無い） |
+| MCP サーバー（`search_fulltext`） | 読むだけのツール（10 個）と、書き戻すツール（3 個） |
+
+### egov 0.19.0 の規則から変えた点（nta 固有の事情で写せなかった点）
+
+| # | egov 0.19.0 | nta 0.24.0（この差分） | 理由 |
+| --- | --- | --- | --- |
+| 1 | DB を作る・作り直すのは `--bulk-download-everything` だけ | 投入の 9 つのフラグのどれでも作る・作り直す | nta は種別ごとに投入する設計で、初めての利用者には `--quickstart`（通達 1 本、3〜5 分）を勧めている。全部入りだけに限ると約 100 分かかる |
+| 2 | MCP サーバーは DB を作らない | 書き戻すツール（`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer`）は、国税庁サイトから取れたときに DB のファイルが無ければ作る。読むだけのツールは作らない | nta は DB に無いものを国税庁サイトから取って書き戻し、次から DB で返す（SPEC-NTA-GET-TSUTATSU-006・014、SPEC-NTA-GET-QA-006、SPEC-NTA-GET-TAX-ANSWER-006・016）。作らないと、投入していない利用者は目次・索引を毎回取り直し、国税庁サイトへの取得が増える。「人が判断すること」1 |
+| 3 | 古い版の DB は作り直すだけ（移行は無い） | 版 3〜11 は、どの入口でも行を保って 12 に移行する（読むだけのツールを含む）。作り直すのは版 1・2 だけ | nta は版 3 以降の DB を行を保って移行してきた（SPEC-NTA-DB-SCHEMA-006〜014・019）。移行は書き込みだが中身を失わない。「人が判断すること」2 |
+| 4 | 古い版の作り直しは、全件の zip の取得に成功した後 | 版 1・2 の作り直しは、国税庁サイトを取りに行く前 | nta の投入は 1 ページずつ取って入れるので、「取得に成功した後」に当たる時点が無い。版 1・2 は v0.3.0 より前の DB で、残っている見込みは小さい。「人が判断すること」3 |
+| 5 | DB が使えないとき `search_fulltext` は `search_law` に切り替える | 読むだけのツールは、各ツールの「DB に 1 件も無い」ときの応答（`TSUTATSU_NOT_FOUND` / `DOC_NOT_FOUND`）を返し、`hint` を DB の状態の文にする。書き戻すツールは国税庁サイトから取って返し、DB に書かない | nta に切り替え先のツールは無い。`code` は「DB が無い」ときと同じにして、新しい code を作らない。「人が判断すること」4 |
+| 6 | `--status` は DB が無いとき終了コード 0 | 一覧（`--refresh-stale=<日数>`）は DB が無いとき `[]` を出して終了コード 0 | nta に `--status` は無い。一覧は読むだけの CLI なので `--status` の列を写した |
+| 7 | 余分な引数は「フラグが受け取る数より後の引数」 | 処理を選ぶフラグ 1 つと、その処理が受け付けるフラグ（SPEC-NTA-CLI-ENTRY-007 の表）以外を余分な引数にする。処理を選ぶフラグが無くほかのフラグだけのときは別の文 | nta のフラグは並び順を問わず、`--tsutatsu`・`--refresh` などの組み合わせるフラグがある |
+| 8 | 値の誤りの文は `ERROR: …` | 税目・通達名・日数の値の誤りは、#25 で決めた `[houki-nta-mcp] <フラグ>="<値>" は使えません。…` の形のまま。終了コードだけ 1 から 2 にする | 文を変えると #25 で決めた文が変わる。終了コードは egov の「引数の誤りは 2、処理の失敗は 1」に揃えた |
+| 9 | 値の無いフラグは日付の無い `--bulk-download-by-date` | `=` の無い・`=` の後が空の値を取るフラグ（6 つ） | nta の値は `--名前=値` の形だけ |
+| 10 | 数値の環境変数は 1 以上の整数（#102） | 当たらない。CLI の `--refresh-stale=<日数>` は 0 以上の整数 | nta に数値の環境変数は無い（上の「確かめた値」）。日数の `0` は「実行時点より前のすべての節」で意味がある（今も受け付けている） |
+| 11 | #58（`last_sync_date`）・#59（段落だけの本則）・#71（`law_revision_id`） | 当たるものは無い | nta に同期の記録・e-Gov の XML は無い。版を読めない DB の扱い（#71 の後半）だけを写した |
+
+## Issue ごとの変更
+
+### #107 DB を作る・作り直す・消す場面
+
+**今の動き（v0.23.0）**: DB を開く入口はどれも、フォルダーとファイルが無ければ作る。版 3〜10 は行を保って移行し、版 1・2 と 12 以上は全テーブルを消して作り直す。版を読めない DB は例外で開けない。全データを消す関数がテストにだけあり、`HOUKI_NTA_REFRESH=1` の説明だけがある。
+
+**変えた後の動き**: SPEC-NTA-DB-SCHEMA-021 の表。DB を作るのは投入と、国税庁サイトから取れたときの書き戻すツール。作り直すのは投入だけで、版 1・2 のときだけ。版 3〜11 はどの入口でも移行する。新しい版・読めない版の DB はどの入口も書き換えない。読むだけのツールと一覧・取り直しは DB を作らない。全データを消す入口は作らない（`clearAllData` とそのテストを消し、`HOUKI_NTA_REFRESH` の説明を消す）。
+
+| 種類 | 仕様 ID |
+| --- | --- |
+| ADDED | SPEC-NTA-DB-SCHEMA-021 |
+| MODIFIED | SPEC-NTA-DB-SCHEMA-001・006・007・010・011・012・013・014・019（版の番号。006〜019 は「版 11」を「最新の版」にし、次の版上げで書き換えなくてよい文にした） |
+
+| 決めること（Issue） | 答え |
+| --- | --- |
+| DB の版がサーバーより新しいときは触らずにエラーにするか | する（021）。作り直すのは版 1・2 だけ |
+| 版 3 より前の DB を消して作り直すことを仕様に書くか | 書く。投入のフラグだけが、取得の前に作り直す（021 の「古く、移行できない」の行） |
+| 全データを消す機能を利用者に出すか | 出さない。`clearAllData` とテストを消し、`src/db/index.ts`・`docs/DESIGN.md` の `HOUKI_NTA_REFRESH=1` の説明を消す（下の「実装 PR で直す文書」） |
+
+### #112 `document.doc_type` と `taxonomy` の制約
+
+**今の動き（v0.23.0）**: どちらも制約が無い。
+
+**変えた後の動き**: `doc_type` は 5 つの値だけを受け付ける（`CHECK`）。`taxonomy` は制約を付けず、取得元の URL の税目フォルダを入れることを仕様にする。
+
+| 種類 | 仕様 ID |
+| --- | --- |
+| ADDED | SPEC-NTA-DB-SCHEMA-022（版 11 → 12 の移行）・023（`doc_type`）・024（`taxonomy`） |
+
+| 決めること（Issue） | 答え |
+| --- | --- |
+| `doc_type` の 5 つの値を仕様にするか（`CHECK` にするか） | する（023）。版 12 の移行（022）で `document` に付ける |
+| `taxonomy` の値の範囲を仕様にするか | 一覧では制限しない（024）。作者の DB でも別表記（`souzoku`・`joto_sanrin`）、階層（`sisan/sozoku`）、houki-nta-mcp が一覧に持たない値（`tyousyu`）がある。差分 `20261003-source-paths` の `--tax-answer-taxonomy` の 13 個も「一覧に無いフォルダが現れても取り込む」と決めているので、`CHECK` にすると国税庁が足したフォルダの文書を入れられなくなる |
+
+### #128 タックスアンサーの索引の保存先（差分 `20261003-source-paths` から）
+
+**変えた後の動き**: `tax_answer_index`（1 記事 1 行）と `tax_answer_index_page`（索引のページの取得の記録）を版 12 で足す（025）。`nta_get_tax_answer` と `--bulk-download-tax-answer` が書く（SPEC-NTA-CLI-BULK-DOWNLOAD-013）。移行では空で作る。
+
+| 種類 | 仕様 ID |
+| --- | --- |
+| ADDED | SPEC-NTA-DB-SCHEMA-025、SPEC-NTA-CLI-BULK-DOWNLOAD-013 |
+
+| 決めること（`20261003-source-paths` の 5 点） | 答え |
+| --- | --- |
+| テーブル名・列名 | `tax_answer_index(no, url, taxonomy, title)`・`tax_answer_index_page(url, fetched_at, last_modified, etag)` |
+| 版上げ | #107・#112 と同じ版 12 の 1 回。既存の行は変えず、新しいテーブルは空で作る |
+| `taxonomy` の `CHECK` | 付けない（#112 の答え） |
+| `--bulk-download-tax-answer` が索引を保存するか | する。`--tax-answer-taxonomy` で絞っても、絞る前の全記事を保存する |
+| `--refresh` で索引の保存を消すか | 消さない。`--bulk-download-tax-answer --refresh` は索引を取り直して置き換える（全データを消す入口を作らない #107 と同じ考え方） |
+
+### #106 CLI の引数と `--version` の文
+
+**今の動き（v0.23.0）**: 上の「なぜ変えるか」のとおり。
+
+**変えた後の動き**: 表 1。形 → 値 → 組み合わせの順に確かめ、誤りはどれも終了コード 2 で、DB を開かず、国税庁サイトに接続せず、MCP サーバーも起動しない。`--version` は `<パッケージ名> v<版>`。
+
+| 種類 | 仕様 ID |
+| --- | --- |
+| ADDED | SPEC-NTA-CLI-ENTRY-006・007・008、SPEC-NTA-CLI-BULK-DOWNLOAD-011 |
+| MODIFIED | SPEC-NTA-CLI-ENTRY-003・004・005、SPEC-NTA-CLI-BULK-DOWNLOAD-010、SPEC-NTA-CLI-REFRESH-006 |
+
+| 決めること（Issue） | 答え |
+| --- | --- |
+| 打ち間違い・`=` の無い形を `ERROR: 未知のフラグ` で終了コード 2 にするか | する（006）。`=` の無い値を取るフラグは「値を必要とします」の文にする |
+| `--refresh-stale=<日数>` の日数が 0 以上の整数でないときもエラーにするか | する（REFRESH-006）。数字だけを受け付ける |
+| `--tsutatsu` が 4 種に無いとき、使える値を出して終了コード 1 にするか | 使える値を出す。終了コードは 1 ではなく 2（BULK-DOWNLOAD-011）。税目フラグ（010）も 1 から 2 に変える |
+| `--db-path=<path>` だけを渡したときをエラーにするか、MCP サーバーがそのパスを使うか | エラー（ENTRY-007 の「処理を選ぶフラグがありません」）。MCP サーバーの DB の場所は環境変数だけで決める（MCP クライアントの設定は `env` で渡すのが普通で、引数で渡すと CLI と MCP サーバーで場所の決め方が 2 通りになる） |
+| `--version` の文を揃えるか | 揃える（ENTRY-003） |
+
+### #109 `--refresh-stale=<日数> --apply` と `--refresh`
+
+**今の動き（v0.23.0）**: `--apply` の取り直しは常に差分更新で、`--refresh` は渡らない。
+
+**変えた後の動き**: `--apply --refresh` は条件付き取得を使わずに取り直す。`--apply` の無い `--refresh-stale=<日数> --refresh` は余分な引数のエラー。
+
+| 種類 | 仕様 ID |
+| --- | --- |
+| ADDED | SPEC-NTA-CLI-REFRESH-007 |
+| MODIFIED | SPEC-NTA-CLI-REFRESH-005（`--refresh` の無いときの動きを書き足した） |
+
+| 決めること（Issue） | 答え |
+| --- | --- |
+| `--apply --refresh` で全部取り直すようにするか、今のまま「効かない」と書くか | 取り直す。投入のフラグと同じく `--refresh` が効く方が、フラグの意味が 1 つになる |
+
+### #110 税目を絞った投入での `orphaned_at`
+
+**今の動き（v0.23.0）**: 税目を絞った投入は印を付け直さない。
+
+**変えた後の動き**: 絞った税目の索引をすべて取れたときは、その税目の行に限って印を付け直す。baseline の記録は今までどおり絞らない投入だけ。
+
+| 種類 | 仕様 ID |
+| --- | --- |
+| ADDED | SPEC-NTA-CLI-BULK-DOWNLOAD-012 |
+
+| 決めること（Issue） | 答え |
+| --- | --- |
+| 絞った税目の文書に限って印を付け直すか | 付け直す。印を付ける処理（`markOrphanedDocuments`）はすでに税目の絞り込みに対応している |
+
+### #111 `--check-baseline-drift` の判定の対象外
+
+**今の動き（v0.23.0）**: 対象外の 4 件を `ok` にし、`<ok>/9 OK` に数える。
+
+**変えた後の動き**: 対象外は `status: "not-applicable"`。`entries` は 9 件のまま。まとめは `<ok>/5 OK, drift=<n>, 対象外=4`。
+
+| 種類 | 仕様 ID |
+| --- | --- |
+| ADDED | SPEC-NTA-CLI-HEALTH-CHECK-007 |
+| MODIFIED | SPEC-NTA-CLI-HEALTH-CHECK-001・003 |
+
+| 決めること（Issue） | 答え |
+| --- | --- |
+| A: `not-applicable` で分け、分母を 5 にする / B: 対象を 5 件に絞る / C: 今のまま | A。B は `entries` から 4 件が消え、`--health-check` と代表ページの一覧が分かれる。C は「9 件とも確かめた」と読める表示が残る |
+
+## 変わらない振る舞い
+
+- DB の置き場所の決め方（`HOUKI_NTA_DB_PATH` → `XDG_CACHE_HOME` → `~/.cache`）と、`--db-path` が投入・`--refresh-stale` で優先すること
+- 版 3〜10 の移行で行う入れ直し・列の追加の中身（006〜014・019・020。題の「版 11」を「最新の版」に直しただけ）
+- 投入・取り直し・検索・取得の中身、表示、結果の JSON（版の合わない DB のときに 1 行増える・止まることを除く）
+- `--help` を単独で渡したときの使い方の中身（SPEC-NTA-CLI-ENTRY-002）と終了コード 0
+- `--health-check` の動き、`--check-baseline-drift` の `missing` / `generation-drift` の判定と `--strict` の終了コード
+- 検索・取得ツールの応答のフィールド（消す・名前を付け替える変更は無い。T4）。`code` も変えない（T2 の互換の扱いは要らない）。読むだけのツールの `hint` の文が、DB の版が合わないときだけ変わる
+- baseline ファイル（`HOUKI_NTA_BASELINE_DIR`）と、`nta_inspect_pdf_meta` の保存先（`HOUKI_NTA_FILES_DIR`）
+
+## 利用者の取り込み直し
+
+0.24.0 では要らない。
+
+- 版 3〜11 の DB（v0.3.0〜v0.23.x で作った DB）は、0.24.0 の CLI かツールが最初に開いたときに、行を保ったまま版 12 に移行する（SPEC-NTA-DB-SCHEMA-022）。国税庁サイトは取りに行かない。タックスアンサーの索引のテーブルは空で作り、最初の `nta_get_tax_answer` か `--bulk-download-tax-answer` で埋まる
+- 版 1・2 の DB（v0.3.0 より前）は、今までどおり取り込み直しになる（投入のフラグが作り直す）
+- 注意: 0.24.0 で版 12 に移行した DB を 0.23.x 以前で開くと、0.23.x は版が新しい DB を全テーブルを消して作り直す（0.23.x の動き。0.24.0 では直せない）。CHANGELOG に「0.24.0 に上げた後は、同じ DB を 0.23.x 以前の CLI や MCP サーバーで開かない」と書く
+
+## 実装 PR で直す文書
+
+動きを変えない行で、仕様 ID を作らないもの（T5 の決め方）。
+
+| # | 場所 | 直すこと |
+| --- | --- | --- |
+| 1 | CHANGELOG 0.24.0 | 冒頭に「DB のスキーマの版を 12 に上げた。0.23.x 以前の DB は最初に開いたときに行を保ったまま移行するので取り込み直しは要らない。移行した後は 0.23.x 以前で開かない（全テーブルを消す）」を書く。下の「互換性」の表を「互換性」の節に写す |
+| 2 | README の DB の節（「DB ファイル」の表の後）と `docs/DATABASE.md` のマイグレーション履歴 | 版 12（`tax_answer_index`・`tax_answer_index_page`・`doc_type` の `CHECK`）と、版の扱い（021 の表の要約: 新しい版・読めない版はどの入口も変えない、作るのは投入と書き戻し、版 1・2 は投入で作り直す）を書く |
+| 3 | `--help` の使い方 | 「※ DB が無くても nta_get_* は国税庁サイトから直接取る（約 700ms）」を「※ DB が無くても nta_get_tsutatsu / nta_get_qa / nta_get_tax_answer は国税庁サイトから直接取る（約 700ms）。取ったものは DB に入る」にする（`nta_get_kaisei_tsutatsu` などは DB だけを引く）。保守の節に `houki-nta-mcp --refresh-stale=<日数> --apply --refresh` を足す。オプションの `--tsutatsu` に「基本通達 4 種の正式名」と 4 つの名前を書く。末尾に「引数の誤りは終了コード 2、処理の失敗は 1」を足す |
+| 4 | `src/db/index.ts` の JSDoc | `HOUKI_NTA_REFRESH=1` の行を消す |
+| 5 | `docs/DESIGN.md` 267 行目 | 「強制再取得: 環境変数 `HOUKI_NTA_REFRESH=1` で全件再 DL」を「強制再取得: 投入のフラグに `--refresh`」にする |
+| 6 | `src/cli.ts` の冒頭の JSDoc | `houki-nta-mcp --bulk-download --tsutatsu=消基通` を `--tsutatsu=消費税法基本通達` にする（略称は使えない。SPEC-NTA-CLI-BULK-DOWNLOAD-011） |
+| 7 | `src/db/schema.ts` の版の履歴の JSDoc と冒頭の説明 | v12 の行を足す。冒頭の「SCHEMA_VERSION を上げたら migrate() がスキーマ再構築する。… DROP & CREATE で十分」を、021 の規則（移行できる版は移行、1・2 は投入だけが作り直す、新しい版・読めない版は変えない）に直す |
+| 8 | houki-hub `site/docs/guide/local-database.md` 42 行目 | 「版が上がったとき」の houki-nta-mcp の列に「新しい版で作った DB は古い版では使わない（変更しない）。0.23.x 以前は消して作り直すので、0.24.0 に上げた後は戻さない」を足す（段階 6 の houki-hub の追随で行う） |
+| 9 | README 71 行目・393 行目・501 行目付近の `--check-baseline-drift` の説明 | 「判定するのは基本通達 4 種と改正通達の索引の 5 件。ほかの 4 件は `not-applicable`」を足す |
+
+## 互換性（0.24.0 の CHANGELOG の「互換性」の節に書くもの）
+
+| 場面 | 0.23.x | 0.24.0 |
+| --- | --- | --- |
+| 版 3〜11 の DB を開く | 版 11 に移行（3〜10）・そのまま（11） | 行を保ったまま版 12 に移行 |
+| 版 12 以上・版を読めない DB を開く | 全テーブルを消して作り直す（12 以上）・例外（読めない） | どの入口も変えない。CLI は終了コード 1、読むだけのツールは `hint` で案内、書き戻すツールは国税庁サイトから取って返す |
+| 版 1・2 の DB を開く | どの入口でも全テーブルを消して作り直す | 投入のフラグだけが作り直す。ほかの CLI は終了コード 1、ツールは使わない |
+| DB の無い場所で検索ツール・`--refresh-stale=<日数>` | フォルダーと空の DB を作る | 作らない |
+| DB の無い場所で `--refresh-stale=<日数> --apply` | 空の DB を作り、何も取り直さない | 作らない。`[ERROR] DB がまだありません …`、終了コード 1 |
+| `document` に 5 つ以外の `doc_type` を書く | 入る | `CHECK constraint failed` |
+| `--version` | `0.23.0` | `@shuji-bonji/houki-nta-mcp v0.24.0` |
+| 知らないフラグ・フラグでない引数・`=` の無いフラグ・数でない日数 | 読み飛ばし、ほかに処理が無ければ MCP サーバーとして起動 | `ERROR: …`、終了コード 2 |
+| 処理を選ぶフラグが 2 つ以上 | 決まった順で最初の 1 つだけ実行 | `ERROR: 余分な引数: …`、終了コード 2 |
+| 処理が使わないフラグ（`--bulk-download-all --tsutatsu=…` など） | 黙って使わない | `ERROR: 余分な引数: …`、終了コード 2 |
+| `--db-path=<path>` だけ | MCP サーバーとして起動（そのパスは使わない） | `ERROR: 処理を選ぶフラグがありません …`、終了コード 2 |
+| 税目フラグに一覧に無い値 | 終了コード 1 | 終了コード 2（文は同じ） |
+| `--tsutatsu` に 4 種以外 | DB を開いた後に `fatal error`、終了コード 1 | 使える値を出して終了コード 2。DB は開かない |
+| `--help` と値の誤った税目フラグ | 使い方を出して終了コード 0 | 値のエラーで終了コード 2 |
+| `--refresh-stale=<日数> --apply --refresh` | 差分更新（`--refresh` が効かない） | 条件付き取得を使わずに取り直す |
+| `--refresh-stale=<日数> --refresh`（`--apply` なし） | 列挙だけ（`--refresh` は無視） | `ERROR: 余分な引数: --refresh`、終了コード 2 |
+| 税目を絞った投入の `orphaned_at` | 付け直さない | 絞った税目の行に限って付け直す |
+| `--check-baseline-drift` の対象外 4 件 | `status: "ok"`、`<ok>/9 OK` | `status: "not-applicable"`、`<ok>/5 OK, drift=<n>, 対象外=4` |
+
+houki-research-skill の追随: 2026-10-03 JST に `skills/houki-research-skill` の `*.md` を grep した範囲で、`--version` の出力・CLI の終了コード・`--check-baseline-drift` の `9 OK` を載せた箇所は無かった。houki-hub は `site/docs/guide/local-database.md`（上の文書 8）と `site/docs/mcp/houki-nta.md`（`--refresh-stale` の使い方だけで、今のままで正しい）。
+
+## 実装の変更
+
+- `SCHEMA_VERSION = 12`。`tax_answer_index`・`tax_answer_index_page` を足し、`document` に `CHECK (doc_type IN ('kaisei','jimu-unei','bunshokaitou','tax-answer','qa-jirei'))` を付ける。SQLite は `ALTER TABLE` で `CHECK` を足せないので、版 11 → 12 の移行で `document` を作り直して行を移す（`id` を保つので `document_fts`（`content_rowid='id'`）はそのまま引ける。トリガーも作り直す）。`BEFORE INSERT` / `BEFORE UPDATE` のトリガーで同じ制約にする方法もある（作り直しが要らない）。どちらでも 022・023 の約束は同じ
+- DB を開く関数を分ける: 作る入口（投入用。フォルダー・ファイル・テーブル・版の記録を作り、版 1・2 は作り直す）、書き戻し用（ファイルが無ければ作る。版の記録の無いファイル・版 1・2・新しい版・読めない版なら書かない）、使う入口（ほかの全部。ファイルが無ければ作らずに「無い」を返す。版 3〜11 は移行する）。版を読む関数は「記録が無い」「10 進の整数の文字列でない」「整数」を分けて返す（`parseInt` をやめる）
+- 投入の各フラグ: 国税庁サイトを取りに行く前に DB を開き、新しい版・読めない版・開けないなら終了コード 1。版 1・2 なら作り直しの行を出す。`openDb()` の後の例外（`--tsutatsu`）は引数の検査に移す
+- `--refresh-stale`: 使う入口で開き、DB が無ければ一覧は `[]` と終了コード 0、`--apply` は終了コード 1。`--apply --refresh` のときは `bulkDownloadTsutatsu()` に `forceReload: true` を渡す
+- `src/tools/handlers.ts`: 読むだけのツールは使う入口で開き、DB が無い・使えないときは今の「1 件も無い」応答を返す（版が合わないときは `hint` を 021 の注 2 の文にし、新しい版・読めない版では `next_actions` から投入の案内を外す）。書き戻すツールは、DB が使えないときは国税庁サイトから取って返し、書き戻し・目次・索引の保存をしない。DB のファイルが無いときは書き戻し用で開いて作る
+- `src/cli.ts` の `parseArgs()`: 形・値・組み合わせの 3 段で検査し、誤りの種類と最初の引数（値の誤りは全部）を返す。`runCliIfRequested()` は誤りがあれば文を出して `process.exitCode = 2`。処理を選ぶフラグの優先順を外す。`--version` は `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}`
+- 投入（文書回答事例・タックスアンサー・質疑応答事例）: 税目を絞った実行でも、絞った税目の索引をすべて取れたら `markAndCount()` に `taxonomyFilter`（文書回答事例は `expandBunshoTaxonomy()` で別表記を足したもの）を渡す。baseline の記録は `isFullRun` のときだけのまま
+- `--bulk-download-tax-answer`: 取った索引を、税目で絞る前に `tax_answer_index` に保存する（`nta_get_tax_answer` と同じ保存の関数）
+- `src/services/baseline-drift.ts`: 対象外を `'not-applicable'` にし、`driftCount` を `missing` と `generation-drift` の数にする。`runBaselineDriftCli()` の印とまとめの行を 007 の形にする
+- `clearAllData` と、そのテスト（`src/db/schema.test.ts` の `describe('clearAllData', …)`。仕様 ID は無い）を消す
+
+## 取り込みのとき（Publisher）
+
+- 0.24.0 の 3 つの差分（`20261003-specs-current-catchup`・`20261003-search-rules`・`20261003-source-paths`）を先に取り込む（`cli_bulk_download` の spec.md が `20261003-source-paths` と重なる）
+- ADDED の見出しを、各 `specs/current/<dir>/spec.md` の「できること」の末尾に足す。MODIFIED は見出しの行（題）も含めて、差分の見出しと本文に置き換える
+- MODIFIED で期待値が変わる既存のテスト（Test Designer が直す）: SPEC-NTA-CLI-BULK-DOWNLOAD-010（終了コード 1 → 2）、SPEC-NTA-CLI-ENTRY-003（`--version` の文）・005（`--help` と値の誤り）、SPEC-NTA-CLI-REFRESH-006（日数の誤りを無視 → 終了コード 2）、SPEC-NTA-CLI-HEALTH-CHECK-001（対象外が `ok` → `not-applicable`）、SPEC-NTA-DB-SCHEMA-001・006・007・010〜014・019（`schema_version` が `11` → `12`）
+- 各差分の spec.md の冒頭に書いた、ID の無い節の変更（「関連する Issue」、「入力」の表、「処理の流れ」の図、「できないこと」、「未決」の行の削除）を行う
+- 「未決」から次の行を消す: db_schema 2・4・6、cli_entry 1・2・3、cli_bulk_download 3・4、cli_refresh 3・4、cli_health_check 4
+- 各 `specs/current/<dir>/spec.md` の承認日の行に「差分 `20261003-db-cli` は YYYY-MM-DD（PR #N）」を足す
+- この差分のフォルダーを `specs/releases/v0.24.0/20261003-db-cli/` へ移し、この proposal.md の「状態」を取り込み済みにする
+- CHANGELOG の 0.24.0 に閉じる Issue（#106・#107・#109・#110・#111・#112）を列挙する。`Closes` は実装 PR の本文に書く
+- 計画書 5.2 の「契約の確認」は、0.24.0 では全 47 例を流す。版 12 への移行の後の DB で流す（取り込み直しは要らない）
+
+## 人が判断すること
+
+1. **（#107）書き戻すツールが、DB のファイルが無いときに作ること。** 作る側で書いた（021 の「ファイルが無い」の行。egov と違う点 2）。代わりの案は (B) 作らない（DB が無ければ書き戻さない）。B は egov と同じ「MCP サーバーは DB を作らない」になるが、投入していない利用者は `nta_get_tsutatsu` の目次（SPEC-NTA-GET-TSUTATSU-014）とタックスアンサーの索引（016）を毎回取り直し、国税庁サイトへの取得が呼び出しごとに 1〜2 ページ増える。`--help` の「DB が無くても nta_get_* は国税庁サイトから直接取る」の使い方も、取ったものが残らなくなる。A を勧める。版の記録の無いファイル（`HOUKI_NTA_DB_PATH` で別の用途の SQLite を指したときなど）には、書き戻すツールは書かない
+2. **（#107）読むだけのツールと一覧も、版 3〜11 の DB を移行すること。** 移行する側で書いた（egov と違う点 3）。代わりの案は (B) 移行は CLI の投入・取り直しだけが行い、ツールと一覧は版 3〜11 を「古い版」として使わない。B は「読むだけの入口は書き換えない」が文字どおり成り立つが、0.24.0 に上げた利用者は CLI を 1 回実行するまで検索が全部 `*_NOT_FOUND` になる。移行は行を保ち（中身を失わない）、これまでも MCP サーバーの呼び出しで行ってきたので、A を勧める
+3. **（#107）版 1・2 の DB を、投入のフラグが国税庁サイトを取りに行く前に作り直すこと。** egov は「取得に成功した後」（egov と違う点 4）。nta の投入には「取得が済んだ」時点が無い。取得に失敗すると、古い DB を失い、新しい DB は一部だけになる
+4. **（#107）読むだけのツールは、版の合わない DB のとき `code` を「DB に 1 件も無い」ときと同じ（`TSUTATSU_NOT_FOUND` / `DOC_NOT_FOUND`）にし、`hint` だけを DB の状態の文にすること。** T2 の「`*_NOT_FOUND` は問い合わせが成功して求めたものが無かったとき」に厳密には当たらない（DB を引いていない）が、「DB が無い」ときも同じ code を返しているので揃えた。新しい code（例: `DB_UNAVAILABLE`）を足す案は、common_errors と Skill の ERROR-CODES.md も変わるので採らなかった。新しい版・読めない版では `next_actions` から投入の案内を外す（実行しても終了コード 1 になるため）
+5. **（#107）一覧（`--refresh-stale=<日数>`）は DB が無いとき `[]` と終了コード 0。** egov の `--status` に揃えた。取り直し（`--apply`）は終了コード 1
+6. **（#107）全データを消す入口を作らず、`clearAllData` とテスト、`HOUKI_NTA_REFRESH=1` の説明を消すこと。** egov #60 と同じ
+7. **（#112）`doc_type` に `CHECK` を付け、`taxonomy` は制限しないこと。** 移行で 5 つ以外の `doc_type` の行は残さない（通常 0 行。残すと `CHECK` を付けられない）。`CHECK` を付けるために `document` を作り直す（数千行のコピー）か、トリガーにするかは実装で選ぶ
+8. **（#128）`tax_answer_index` の名前・列と、`--bulk-download-tax-answer` が絞っても全記事を保存すること。** 304 のときは `tax_answer_index_page.fetched_at` だけを書き換える
+9. **（#106）引数の誤りの終了コードを 2 に揃え、税目フラグ（010）も 1 から 2 に変えること。** Issue は `--tsutatsu` を「税目フラグと同じく終了コード 1」と書いているが、egov 0.19.0 の「引数の誤りは 2、処理の失敗は 1」に揃えた。010 を 1 のまま残す案もある（nta の中では変わらない）が、そうすると nta と egov で同じ場面の終了コードが分かれる
+10. **（#106）`--help` / `--version` をほかの引数と一緒に渡すとエラーにすること（005）。** egov の SPEC-EGOV-CLI-ENTRY-009（`--help --version` は余分な引数）と同じ。今の 005（`--help` は値の誤りを報告せず使い方を出す）は変わる
+11. **（#106）`--db-path=<path>` だけを渡したときをエラーにすること。** MCP サーバーが `--db-path` を使う案は採らなかった（上の #106 の表）
+12. **（#106）処理が使わないフラグを余分な引数のエラーにすること（007 の表）。** `--bulk-download-everything --tsutatsu=…`、`--health-check --db-path=…` など、今まで黙って無視していた組み合わせも終了コード 2 になる。スクリプトで余計なフラグを付けている利用者は直す必要がある
+13. **（#106）`--tsutatsu` で略称（`消基通`）を受け付けないこと。** 略称を houki-abbreviations で正式名に直して受け付ける案もあるが、この差分では今の「正式名だけ」を仕様にした（`src/cli.ts` の JSDoc の例だけを直す）
+14. **（#109）`--apply --refresh` は全部取り直し、`--apply` の無い `--refresh` はエラーにすること**
+15. **（#110）絞った税目の印の付け直しで、文書回答事例の国税局の別表記の行も対象にすること。** 上の「確かめていない点」の 5 つ目が前提。税目を絞らない投入も同じ前提で印を付けている
+16. **（#111）案 A（`not-applicable`）。** `entries[].status` の値が 4 件で変わるので、`status === 'ok'` で全件を数えている外の仕組みがあれば影響する（houki-nta-mcp の `.github/workflows/canary.yml` は `--strict` を付けずに実行するだけで、影響しない）
+17. **承認日。** この proposal.md に承認日と PR 番号を書く
+
+## この差分の外で見つけたこと（Issue の候補）
+
+1. **`--help` の「※ DB が無くても nta_get_* は国税庁サイトから直接取る」が、`nta_get_kaisei_tsutatsu`・`nta_get_jimu_unei`・`nta_get_bunshokaitou` には当たらない**（この 3 つは DB だけを引く）。動きを変えない文書の食い違いなので、Issue にせず「実装 PR で直す文書」3 に入れた
+2. **`--db-path=`（値が空）は、空文字のパスで `better-sqlite3` を開き、一時的な DB に投入して終わる**（コードを読んで分かったこと。`args.dbPath ?? defaultDbPath()` の `??` は空文字を既定に置き換えない）。SPEC-NTA-CLI-ENTRY-006 の値の無いフラグのエラーで直るので、この差分に含めた
+3. **`getSchemaVersion()` は `12abc` を `12` と読む。** SPEC-NTA-DB-SCHEMA-021 の「版を読めない」に含めた
+4. 取り込み中（CLI の投入）に、MCP サーバーの書き戻すツールが同じ DB に書いたときの扱い（`SQLITE_BUSY` になるか、待つか）は、仕様にもテストにも無い。db_schema の未決 5（取り込み中の読み取り）と同じ種類なので、未決 5 に足すかを Test Designer の段階で決める
