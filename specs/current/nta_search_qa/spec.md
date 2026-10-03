@@ -30,7 +30,9 @@
 
 ```mermaid
 flowchart TD
-  A["呼び出し（keyword・domain・topic・limit・hasPdf）"] --> B{"domain が tax 以外か"}
+  A["呼び出し（keyword・domain・topic・limit・hasPdf）"] --> W{"keyword が空白だけか"}
+  W -- はい --> E0["DB を引かずに INVALID_ARGUMENT を返す（009）"]
+  W -- いいえ --> B{"domain が tax 以外か"}
   B -- はい --> E1["DB を引かずに results: [] と hint を返す（002）"]
   B -- "いいえ（tax または省略）" --> C["domain では絞らない（003）"]
   C --> D["topic があればその税目に絞って DB を検索する（004）"]

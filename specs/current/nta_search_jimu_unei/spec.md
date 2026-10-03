@@ -29,7 +29,9 @@
 
 ```mermaid
 flowchart TD
-  A["呼び出し（keyword・taxonomy・limit・hasPdf）"] --> B["taxonomy・hasPdf で絞って DB を検索する"]
+  A["呼び出し（keyword・taxonomy・limit・hasPdf）"] --> W{"keyword が空白だけか"}
+  W -- はい --> E0["DB を引かずに INVALID_ARGUMENT を返す（008）"]
+  W -- いいえ --> B["taxonomy・hasPdf で絞って DB を検索する"]
   B --> C{"キーワードに合う文書があるか"}
   C -- ある --> D["関連度の高い順に limit 件まで results に入れる（003）"]
   D --> E{"国税庁の索引から消えた文書が含まれるか"}

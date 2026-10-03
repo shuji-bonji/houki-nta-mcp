@@ -29,7 +29,9 @@
 
 ```mermaid
 flowchart TD
-  A["呼び出し（docType・docId・kind・save）"] --> B{"docType と docId の組がローカル DB にあるか"}
+  A["呼び出し（docType・docId・kind・save）"] --> W{"docId が空白だけか"}
+  W -- はい --> E0["DB を引かずに INVALID_ARGUMENT を返す（019）"]
+  W -- いいえ --> B{"docType と、全角を半角に揃えた docId の組がローカル DB にあるか（020）"}
   B -- 無い --> E1["DOC_NOT_FOUND を返す。国税庁サイトには取りに行かない（001）"]
   B -- ある --> B2["添付 PDF の記録が読めなければ、PDF が無い文書として扱う（017）"]
   B2 --> C["kind の無い PDF は題名から kind を決める（003）"]
@@ -210,7 +212,7 @@ DB にある文書の添付 PDF の記録が JSON として読めないときは
 
 ### SPEC-NTA-INSPECT-PDF-META-020 `docId` は半角に揃えてから形を確かめる
 
-`docId` は、前後の空白を除いた値を houki-abbreviations の `normalizeJpText` の規則（全角英数字を半角に、ダッシュ類 `－` `‐` `‑` `–` `—` `―` `−` を `-` に、全角チルダ `～` `〜` を `~` に、全角空白を半角空白にし、前後の空白を除く。罫線 `─` と長音 `ー` は変えない。大文字と小文字は区別する）で揃えてから、SPEC-NTA-INSPECT-PDF-META-001（DB に無い文書は取りに行かない） の形の検査に進む（SPEC-NTA-SEARCH-RULES-019）。揃えた後の値で DB を引き、国税庁サイトの URL を組み立てる。
+`docId` は、前後の空白を除いた値を houki-abbreviations の `normalizeJpText` の規則（全角英数字を半角に、ダッシュ類 `－` `‐` `‑` `–` `—` `―` `−` を `-` に、全角チルダ `～` `〜` を `~` に、全角空白を半角空白にし、前後の空白を除く。罫線 `─` と長音 `ー` は変えない。大文字と小文字は区別する）で揃えてから DB を引く（SPEC-NTA-SEARCH-RULES-019）。このツールは `docId` の形を確かめない（DB に無い値は SPEC-NTA-INSPECT-PDF-META-001 の `DOC_NOT_FOUND`）。`save: true` の保存先のパス（`<保存先>/<docType>/<docId>/`）には DB の `docId` を使う。
 
 例: `{ docType: "kaisei", docId: "００２６００３―０６７" }` は `{ docType: "kaisei", docId: "0026003-067" }` と同じ応答（v0.21.3 では全角のまま DB を引いて「DB に無い」だった）。
 

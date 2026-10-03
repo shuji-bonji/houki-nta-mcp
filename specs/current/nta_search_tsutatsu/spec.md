@@ -29,7 +29,7 @@
 flowchart TD
   A["呼び出し（keyword・limit）"] --> B{"引数が inputSchema に合うか"}
   B -- いいえ --> E1["INVALID_ARGUMENT を返す（001）"]
-  B -- はい --> C{"keyword が空文字列か空白だけか"}
+  B -- はい --> C{"keyword が空白だけか（空文字は inputSchema の検査で止まる）"}
   C -- はい --> E2["INVALID_ARGUMENT を返す（002）"]
   C -- いいえ --> D{"ローカル DB に基本通達の条項があるか"}
   D -- 無い --> E3["TSUTATSU_NOT_FOUND と --bulk-download-all の案内を返す（003）"]

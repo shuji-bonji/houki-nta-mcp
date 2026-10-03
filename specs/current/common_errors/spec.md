@@ -296,7 +296,7 @@ houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ規則である（egov �
 意図か不具合かの判断が要る項目は houki-nta-mcp の Issue に移し、ここには題と Issue の番号だけを残します。今の振る舞いのままでよくテストが無いだけの項目は、受入テストを書いてから「できること」に ID を振ります。
 
 3. **`arguments` を省いた呼び出し。** 空のオブジェクトを渡したものとして検査する（14 ツールとも必須の引数があるので `INVALID_ARGUMENT` になる）。テストが無い。ID を振るのは受入テストを書いてから。
-4. **inputSchema に無い引数の `detail.issues` の `message` と、2 つ以上あるときの `path`。** `message` は「inputSchema に無い引数です」。inputSchema に無い引数が 2 つ以上あるときは、`path` にそれらの名前がすべて「, 」区切りで入り、問題 1 件ごとにどの引数かを分けない。どちらもテストが無い。問題ごとに引数を分けるかは人が決める。
+4. **inputSchema に無い引数の `detail.issues` の `message` と、2 つ以上あるときの `path`。** → SPEC-NTA-COMMON-ERRORS-010・SPEC-NTA-COMMON-ERRORS-011
 5. **`UNKNOWN_TOOL` の `error` の文面と `tool`。** → SPEC-NTA-COMMON-ERRORS-002
 6. **処理中の想定外の例外で返す `INTERNAL_ERROR` の `hint`・`next_actions`・`tool`・`error`。** → SPEC-NTA-COMMON-ERRORS-006
 7. **`INTERNAL_ERROR` の `retryable` がツールと場面で揃わない。** → SPEC-NTA-COMMON-ERRORS-006・SPEC-NTA-COMMON-ERRORS-009

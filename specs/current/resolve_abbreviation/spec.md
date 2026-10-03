@@ -27,7 +27,9 @@
 flowchart TD
   A["呼び出し（abbr）"] --> B{"引数が inputSchema に合うか"}
   B -- いいえ --> E1["辞書を引かずに INVALID_ARGUMENT を返す（005）"]
-  B -- はい --> C{"abbr が辞書の略称・正式名称・別名のどれかと完全一致するか（001・006）"}
+  B -- はい --> W{"abbr が空白だけか"}
+  W -- はい --> E0["辞書を引かずに INVALID_ARGUMENT を返す（007）"]
+  W -- いいえ --> C{"全角を半角に揃えた abbr が、辞書の略称・正式名称・別名のどれかと完全一致するか（001・006・008）"}
   C -- いいえ --> E2["resolved: null と note を返す。エラーにしない（004）"]
   C -- はい --> D["見つかったエントリを resolved に入れる（001）"]
   D --> F{"エントリの source_mcp_hint が houki-nta か"}

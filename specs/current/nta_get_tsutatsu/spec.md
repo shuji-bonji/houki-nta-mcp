@@ -35,7 +35,9 @@
 
 ```mermaid
 flowchart TD
-  A["呼び出し（name・clause・format）"] --> B{"name を略称辞書で解決できるか（001）"}
+  A["呼び出し（name・clause・format）"] --> W{"name が空白だけか"}
+  W -- はい --> E0["略称辞書と DB を引かずに INVALID_ARGUMENT を返す（017）"]
+  W -- いいえ --> B{"全角を半角に揃えた name を略称辞書で解決できるか（001・018）"}
   B -- 辞書に無い --> E1["ABBREVIATION_NOT_FOUND を返す（001）"]
   B -- 管轄が houki-nta でない --> E2["OUT_OF_SCOPE を返す（002）"]
   B -- houki-nta の管轄 --> C{"clause があるか"}

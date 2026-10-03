@@ -27,7 +27,9 @@
 
 ```mermaid
 flowchart TD
-  A["呼び出し（docId・format）"] --> B{"その docId の事務運営指針がローカル DB にあるか"}
+  A["呼び出し（docId・format）"] --> W{"docId が空白だけでなく、全角を半角に揃えて受け付ける形か（009・010・011）"}
+  W -- いいえ --> E0["DB を引かずに INVALID_ARGUMENT を返す（009・010）"]
+  W -- はい --> B{"その docId の事務運営指針がローカル DB にあるか"}
   B -- 無い --> D{"DB に事務運営指針が 1 件でもあるか"}
   D -- 1 件も無い --> E1["DOC_NOT_FOUND と bulk download の案内を返す（001）"]
   D -- ある --> E2["DOC_NOT_FOUND と available_doc_ids・nta_search_jimu_unei の案内を返す（002）"]

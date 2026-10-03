@@ -25,7 +25,9 @@
 
 ```mermaid
 flowchart TD
-  A["呼び出し（docId・format）"] --> B{"その docId の改正通達がローカル DB にあるか"}
+  A["呼び出し（docId・format）"] --> W{"docId が空白だけでなく、全角を半角に揃えて受け付ける形か（009・010・011）"}
+  W -- いいえ --> E0["DB を引かずに INVALID_ARGUMENT を返す（009・010）"]
+  W -- はい --> B{"その docId の改正通達がローカル DB にあるか"}
   B -- ある --> C["DB の内容を code の無い応答で返す（003。国税庁サイトには取りに行かない）"]
   C --> K["「別紙 N」とだけ題した attachment の添付 PDF を comparison にする（007）"]
   K --> F{"国税庁の索引から外れているか（004）"}

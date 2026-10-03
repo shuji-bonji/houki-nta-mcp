@@ -28,7 +28,9 @@
 
 ```mermaid
 flowchart TD
-  A["呼び出し（keyword・limit・hasPdf）"] --> B{"ローカル DB にタックスアンサーが 1 件でもあるか"}
+  A["呼び出し（keyword・limit・hasPdf）"] --> W{"keyword が空白だけか"}
+  W -- はい --> E0["DB を引かずに INVALID_ARGUMENT を返す（005）"]
+  W -- いいえ --> B{"ローカル DB にタックスアンサーが 1 件でもあるか"}
   B -- 無い --> E1["DOC_NOT_FOUND と投入コマンドの案内を返す（001）"]
   B -- ある --> C{"keyword と hasPdf の条件に合う文書があるか（003）"}
   C -- ある --> R["results・keyword・freshness・legal_status と、先頭の記事を読む next_actions を返す（015・006）"]
