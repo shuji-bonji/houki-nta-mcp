@@ -277,7 +277,10 @@ export async function searchTsutatsu(args: SearchTsutatsuArgs, options: { dbPath
     const { hits, expansion } = searchClauseFtsWithExpansion(db, keyword, { limit });
     // Issue #18: 3 文字未満の語を LIKE で補完した / 外した ことを応答に明示する
     // Issue #21: 通称を 0 件のため法令名に広げたときも明示する
-    const searchNotes = [...describeSearchNotes(keyword), ...describeExpansionNotes(expansion)];
+    const searchNotes = [
+      ...describeSearchNotes(keyword, expansion),
+      ...describeExpansionNotes(expansion),
+    ];
 
     // Phase 5 Resilience: section テーブルから freshness を取得（4 通達横断、tsutatsu 絞り込みなし）
     const freshness = summarizeFreshnessFromSection(db, undefined, '`--bulk-download-all`');
@@ -914,17 +917,7 @@ function withFreshness(freshness: FreshnessRange | undefined): { freshness?: Fre
 export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: string } = {}) {
   if (isBlank(args.keyword)) return blankArgument('nta_search_qa', 'keyword', BLANK_KEYWORD_HINT);
   const limit = args.limit ?? 10;
-  // Issue #23: v0.12.0 までは domain（tax / labor / …）を taxonomy（shotoku / shohi / …）と比べていたため、
-  // domain を付けると必ず 0 件だった。質疑応答事例はすべて税務なので、"tax" は絞り込まず、
-  // それ以外は DB を開かずに 0 件を返す。税目での絞り込みは topic で行う
-  if (args.domain !== undefined && args.domain !== 'tax') {
-    return {
-      results: [],
-      keyword: args.keyword,
-      hint: `質疑応答事例はすべて税務（domain="tax"）の資料のため、domain="${args.domain}" に当たる文書はありません。税目で絞り込むときは topic を使ってください`,
-      legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
-    };
-  }
+  // v0.24.0（SPEC-NTA-SEARCH-QA-010、#72）: domain は inputSchema から外した。税目での絞り込みは topic で行う
   const db = openDb(options.dbPath);
   try {
     const opts: { docType: 'qa-jirei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
@@ -936,7 +929,7 @@ export async function handleNtaSearchQa(args: SearchQaArgs, options: { dbPath?: 
     const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
     // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
     const searchNotes = [
-      ...describeSearchNotes(args.keyword),
+      ...describeSearchNotes(args.keyword, expansion),
       ...describeExpansionNotes(expansion),
     ];
     if (hits.length === 0) {
@@ -1273,7 +1266,7 @@ export async function handleNtaSearchTaxAnswer(
     const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
     // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
     const searchNotes = [
-      ...describeSearchNotes(args.keyword),
+      ...describeSearchNotes(args.keyword, expansion),
       ...describeExpansionNotes(expansion),
     ];
     if (hits.length === 0) {
@@ -1620,7 +1613,7 @@ export async function handleNtaSearchKaiseiTsutatsu(
     const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
     // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
     const searchNotes = [
-      ...describeSearchNotes(args.keyword),
+      ...describeSearchNotes(args.keyword, expansion),
       ...describeExpansionNotes(expansion),
     ];
 
@@ -1769,7 +1762,7 @@ export async function handleNtaSearchJimuUnei(
     const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
     // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
     const searchNotes = [
-      ...describeSearchNotes(args.keyword),
+      ...describeSearchNotes(args.keyword, expansion),
       ...describeExpansionNotes(expansion),
     ];
 
@@ -1936,7 +1929,7 @@ export async function handleNtaSearchBunshokaitou(
     const { hits, expansion } = searchDocumentFtsWithExpansion(db, args.keyword, opts);
     // Issue #18 (短い語) / Issue #21 (通称を 0 件のため法令名に広げた)
     const searchNotes = [
-      ...describeSearchNotes(args.keyword),
+      ...describeSearchNotes(args.keyword, expansion),
       ...describeExpansionNotes(expansion),
       ...describeTaxonomyAliasNotes(args.taxonomy, taxonomies),
     ];

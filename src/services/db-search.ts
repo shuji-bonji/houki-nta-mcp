@@ -33,11 +33,18 @@ export interface KeywordAnalysis {
 
 /**
  * 半角化 → FTS5 メタ文字除去 → 空白で分割し、語の長さで 3 種に振り分ける。
+ *
+ * 既定では英字を小文字に寄せる（検索に使う語。SPEC-NTA-SEARCH-RULES-008）。
+ * `keepCase: true` は英字の大文字と小文字を渡したままにした語を返す。`search_notes` と
+ * `scoreReasons` に出す語に使う（SPEC-NTA-SEARCH-RULES-006）。どちらも語の並びと長さは同じ
  */
-export function analyzeKeyword(raw: string): KeywordAnalysis {
+export function analyzeKeyword(raw: string, options: { keepCase?: boolean } = {}): KeywordAnalysis {
   const result: KeywordAnalysis = { ftsTokens: [], shortTokens: [], droppedTokens: [] };
   if (!raw) return result;
-  const cleaned = normalizeSearchQuery(raw)
+  const normalized = options.keepCase
+    ? normalizeJpText(raw).replace(/\s+/g, ' ')
+    : normalizeSearchQuery(raw);
+  const cleaned = normalized
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/["*:()]/g, ' ')
     .trim();
@@ -53,9 +60,16 @@ export function analyzeKeyword(raw: string): KeywordAnalysis {
  * Issue #18: 検索結果に添える注記。短い語を LIKE で補完した / 1 文字を外した ことを
  * 利用側 (LLM / Skill 層) が「仕様上ヒットしなかった」と区別できるように文で返す。
  * 注記が不要なら空配列。
+ *
+ * - 語の表記は、渡した keyword を半角に揃えたもので、英字の大文字と小文字は渡したまま
+ *   （v0.24.0、SPEC-NTA-SEARCH-RULES-006。v0.23.0 までは小文字に寄せていた。#81）
+ * - keyword 全体が 3 文字未満の略称で正式名に広げたとき（`expansion.kind === 'abbreviation'`）は、
+ *   3 つの文の代わりに略称と正式名の探し方を書く文を 1 つ返す（SPEC-NTA-SEARCH-RULES-006・009。#80）
  */
-export function describeSearchNotes(keyword: string): string[] {
-  const a = analyzeKeyword(keyword);
+export function describeSearchNotes(keyword: string, expansion?: AbbreviationExpansion): string[] {
+  const shortAbbr = describeShortAbbreviationNote(expansion);
+  if (shortAbbr) return [shortAbbr];
+  const a = analyzeKeyword(keyword, { keepCase: true });
   const notes: string[] = [];
   if (a.shortTokens.length > 0) {
     const words = a.shortTokens.map((t) => `"${t}"`).join(' / ');
@@ -71,6 +85,25 @@ export function describeSearchNotes(keyword: string): string[] {
     );
   }
   return notes;
+}
+
+/**
+ * SPEC-NTA-SEARCH-RULES-006・009（v0.24.0、#80）: 3 文字未満の略称を正式名に広げたときの文。
+ * 3 文字以上の略称の展開と通称の展開は undefined（通称の文は describeExpansionNotes）
+ */
+function describeShortAbbreviationNote(expansion?: AbbreviationExpansion): string | undefined {
+  if (expansion?.kind !== 'abbreviation') return undefined;
+  const abbr = normalizeJpText(expansion.from);
+  if (abbr.length >= FTS_MIN_TOKEN_LENGTH) return undefined;
+  const formal = expansion.to;
+  const how =
+    normalizeSearchQuery(formal).trim().length >= FTS_MIN_TOKEN_LENGTH
+      ? '全文検索'
+      : '部分一致 (LIKE) ';
+  if (abbr.length >= SHORT_TOKEN_MIN_LENGTH) {
+    return `"${abbr}" は ${FTS_MIN_TOKEN_LENGTH} 文字未満のため FTS5 (trigram) では検索できません。"${abbr}" は本文とタイトルの部分一致 (LIKE) で、正式名 "${formal}" は${how}で探し、どちらかを含むものを返しました`;
+  }
+  return `"${abbr}" は 1 文字のため検索条件から外し、正式名 "${formal}" を${how}で探しました`;
 }
 
 /** LIKE 用にメタ文字をエスケープする */
@@ -135,28 +168,47 @@ export function cutAroundMatch(marked: string, width = SNIPPET_CONTEXT_CHARS): s
 }
 
 /**
+ * 英字（A〜Z）だけを小文字にする。ほかの文字は変えないので、文字列の長さと位置は変わらない。
+ * SPEC-NTA-SEARCH-RULES-021: 半角の英字の大文字と小文字を区別せずに比べるために使う
+ */
+function lowerAscii(s: string): string {
+  return s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+}
+
+/**
  * LIKE 補完で拾った行の snippet を JS で作る (FTS5 の snippet() は使えないため)。
  * 最初に見つかった短い語の前後 `width` 文字を切り出し `<b>` で囲む。
+ * 語の位置は英字の大文字と小文字を区別せずに探し、囲む中身は本文の表記のまま
+ * （v0.24.0、SPEC-NTA-SEARCH-RULES-003・021）
  */
 export function makeLikeSnippet(
   text: string,
   tokens: string[],
   width = SNIPPET_CONTEXT_CHARS
 ): string {
+  const haystack = lowerAscii(text);
   for (const t of tokens) {
-    const i = text.indexOf(t);
+    const i = haystack.indexOf(lowerAscii(t));
     if (i < 0) continue;
     return cutAroundMatch(
-      `${text.slice(0, i)}${MATCH_OPEN}${t}${MATCH_CLOSE}${text.slice(i + t.length)}`,
+      `${text.slice(0, i)}${MATCH_OPEN}${text.slice(i, i + t.length)}${MATCH_CLOSE}${text.slice(i + t.length)}`,
       width
     );
   }
   return text.slice(0, width * 2);
 }
 
-/** 短い語を全て含むか (AND 意味論)。title と full_text のどちらに含まれてもよい */
+/**
+ * 短い語を全て含むか (AND 意味論)。title と full_text のどちらに含まれてもよい。
+ * 英字の大文字と小文字は区別しない（v0.24.0、SPEC-NTA-SEARCH-RULES-004・021。#81）
+ */
 function includesAllShortTokens(title: string, fullText: string, tokens: string[]): boolean {
-  return tokens.every((t) => title.includes(t) || fullText.includes(t));
+  const t1 = lowerAscii(title);
+  const t2 = lowerAscii(fullText);
+  return tokens.every((t) => {
+    const needle = lowerAscii(t);
+    return t1.includes(needle) || t2.includes(needle);
+  });
 }
 
 /**
@@ -262,36 +314,37 @@ function runClauseQuery(
   options: SearchClauseOptions
 ): ClauseSearchHit[] {
   const limit = Math.min(Math.max(options.limit ?? 10, 1), 50);
-  // Issue #18: 略称展開で formal に置き換わった場合、短い語は展開に吸収されたとみなす
-  const shortTokens =
-    built.expandedFrom && !built.query.includes(' OR ') ? [] : analyzeKeyword(keyword).shortTokens;
-  if (!built.query && shortTokens.length === 0) return [];
+  const branches = planBranches(keyword, built);
+  if (branches.length === 0) return [];
 
   // Phase 6-1: re-rank のために要求 limit より多めに取る
   const fetchLimit = Math.min(limit * RERANK_FETCH_MULTIPLIER, RERANK_MAX_FETCH);
 
-  const params: Array<string | number> = [];
-  const conds: string[] = [];
-  const useFts = built.query !== '';
-  if (useFts) {
-    conds.push('clause_fts MATCH ?');
-    params.push(built.query);
-  } else {
-    // 短い語だけのクエリ: 本文 / タイトルの LIKE で補完 (AND 意味論)
-    for (const t of shortTokens) {
-      conds.push(`(c.full_text LIKE ? ESCAPE '\\' OR c.title LIKE ? ESCAPE '\\')`);
-      params.push(escapeLike(t), escapeLike(t));
+  type Row = ClauseSearchHit & { rowId: number; fullText: string };
+  const runBranch = (branch: QueryBranch): Row[] => {
+    const params: Array<string | number> = [];
+    const conds: string[] = [];
+    if (branch.kind === 'fts') {
+      conds.push('clause_fts MATCH ?');
+      params.push(branch.match);
+    } else {
+      // 短い語だけのクエリ: 本文 / タイトルの LIKE で補完 (AND 意味論)
+      for (const t of branch.tokens) {
+        conds.push(`(c.full_text LIKE ? ESCAPE '\\' OR c.title LIKE ? ESCAPE '\\')`);
+        params.push(escapeLike(t), escapeLike(t));
+      }
     }
-  }
-  if (options.formalName) {
-    conds.push('t.formal_name = ?');
-    params.push(options.formalName);
-  }
-  params.push(fetchLimit);
+    if (options.formalName) {
+      conds.push('t.formal_name = ?');
+      params.push(options.formalName);
+    }
+    params.push(fetchLimit);
 
-  const sql = useFts
-    ? `
+    const sql =
+      branch.kind === 'fts'
+        ? `
     SELECT
+      c.id          AS rowId,
       t.formal_name AS tsutatsu,
       t.abbr        AS abbr,
       c.clause_number AS clauseNumber,
@@ -307,8 +360,9 @@ function runClauseQuery(
     ORDER BY clause_fts.rank
     LIMIT ?
   `
-    : `
+        : `
     SELECT
+      c.id          AS rowId,
       t.formal_name AS tsutatsu,
       t.abbr        AS abbr,
       c.clause_number AS clauseNumber,
@@ -323,37 +377,158 @@ function runClauseQuery(
     ORDER BY c.id
     LIMIT ?
   `;
-
-  type Row = ClauseSearchHit & { fullText: string };
-  let rawRows = db.prepare(sql).all(...params) as Row[];
-  if (useFts && shortTokens.length > 0) {
-    // FTS ヒットのうち、短い語を本文に含むものだけ残す
-    rawRows = rawRows.filter((r) => includesAllShortTokens(r.title, r.fullText, shortTokens));
-  }
+    return db.prepare(sql).all(...params) as Row[];
+  };
 
   // Phase 6-1: relevance score を計算して降順で並べ替え、要求 limit 件に絞る
-  const scored = rawRows.map(({ fullText, ...hit }) => {
-    const { score, scoreReasons } = computeRelevance({
-      rank: hit.rank,
-      docType: 'tsutatsu',
-      clauseNumber: hit.clauseNumber,
-      query: keyword,
-    });
-    if (built.expandedFrom && scoreReasons) {
-      scoreReasons.push(`abbreviation expanded: ${built.expandedFrom} → ${built.expandedTo}`);
+  const scored = mergeBranchRows(branches, runBranch).map(
+    ({ row, viaFts, reasons, likeTokens }) => {
+      const { rowId: _rowId, fullText, ...hit } = row;
+      const { score, scoreReasons } = computeRelevance({
+        rank: hit.rank,
+        docType: 'tsutatsu',
+        clauseNumber: hit.clauseNumber,
+        query: keyword,
+      });
+      scoreReasons.push(...reasons);
+      // #97: FTS の行の snippet 列は highlight() で印を付けた本文全体。ここで前後を切り出す
+      const snippet = viaFts ? cutAroundMatch(hit.snippet) : makeLikeSnippet(fullText, likeTokens);
+      return { ...hit, snippet, score, scoreReasons };
     }
-    if (shortTokens.length > 0 && scoreReasons) {
-      scoreReasons.push(
-        useFts
-          ? `short token filter (LIKE): ${shortTokens.join(', ')}`
-          : `short token search (LIKE, no FTS rank): ${shortTokens.join(', ')}`
-      );
-    }
-    // #97: FTS の行の snippet 列は highlight() で印を付けた本文全体。ここで前後を切り出す
-    const snippet = useFts ? cutAroundMatch(hit.snippet) : makeLikeSnippet(fullText, shortTokens);
-    return { ...hit, snippet, score, scoreReasons };
-  });
+  );
   return sortByScoreDesc(scored).slice(0, limit);
+}
+
+/**
+ * 1 回の検索で行う問い合わせ 1 つ。全文検索（`fts`）か、本文と題名の部分一致（`like`）
+ *
+ * ふつうは 1 つだけだが、3 文字未満の略称を広げるとき（SPEC-NTA-SEARCH-RULES-009）は、
+ * 元の語と正式名をそれぞれの長さで探すので 2 つになり、結果を合わせる
+ */
+type QueryBranch =
+  | {
+      kind: 'fts';
+      /** FTS5 の MATCH 式 */
+      match: string;
+      /** 全文検索の結果を絞り込む 2 文字の語（小文字に寄せたもの。SPEC-NTA-SEARCH-RULES-004） */
+      filter: string[];
+      /** この問い合わせで当たった行の scoreReasons に足す文 */
+      reasons: string[];
+      /**
+       * 3 文字以上の略称を OR で広げたときの正式名。正式名を含む行にだけ
+       * `abbreviation expanded:` を足す（SPEC-NTA-SEARCH-RULES-009）
+       */
+      formalCheck?: { formal: string; reason: string };
+    }
+  | {
+      kind: 'like';
+      /** 部分一致で探す語（小文字に寄せたもの。すべて含む行を返す） */
+      tokens: string[];
+      reasons: string[];
+    };
+
+/** 検索の語と略称の展開から、行う問い合わせを決める */
+function planBranches(keyword: string, built: BuiltFtsQuery): QueryBranch[] {
+  const expandedReason =
+    built.expandedFrom && built.expandedTo
+      ? `abbreviation expanded: ${built.expandedFrom} → ${built.expandedTo}`
+      : undefined;
+
+  // SPEC-NTA-SEARCH-RULES-009（v0.24.0、#80）: 3 文字未満の略称は、元の語と正式名をそれぞれの長さで探す
+  const sa = built.shortAbbreviation;
+  if (sa && expandedReason) {
+    const branches: QueryBranch[] = [];
+    if (sa.originalFts) {
+      branches.push({ kind: 'fts', match: sa.originalFts, filter: [], reasons: [] });
+    }
+    if (sa.originalLike) {
+      branches.push({
+        kind: 'like',
+        tokens: [sa.originalLike],
+        reasons: [`short token search (LIKE, no FTS rank): ${sa.originalLabel}`],
+      });
+    }
+    if (sa.formalFts) {
+      branches.push({ kind: 'fts', match: sa.formalFts, filter: [], reasons: [expandedReason] });
+    }
+    if (sa.formalLike) {
+      branches.push({ kind: 'like', tokens: [sa.formalLike], reasons: [expandedReason] });
+    }
+    return branches;
+  }
+
+  // Issue #18: 略称展開で formal に置き換わった場合、短い語は展開に吸収されたとみなす
+  const absorbed = Boolean(built.expandedFrom) && !built.query.includes(' OR ');
+  const shortTokens = absorbed ? [] : analyzeKeyword(keyword).shortTokens;
+  // SPEC-NTA-SEARCH-RULES-003・004・006: scoreReasons の語は search_notes と同じ表記（大文字と小文字は渡したまま）
+  const labels = (absorbed ? [] : analyzeKeyword(keyword, { keepCase: true }).shortTokens).join(
+    ', '
+  );
+
+  if (built.query) {
+    const reasons: string[] = [];
+    let formalCheck: { formal: string; reason: string } | undefined;
+    if (expandedReason && built.expandedTo) {
+      if (built.expansionKind === 'abbreviation') {
+        formalCheck = { formal: built.expandedTo, reason: expandedReason };
+      } else {
+        reasons.push(expandedReason);
+      }
+    }
+    if (shortTokens.length > 0) reasons.push(`short token filter (LIKE): ${labels}`);
+    return [{ kind: 'fts', match: built.query, filter: shortTokens, reasons, formalCheck }];
+  }
+  if (shortTokens.length > 0) {
+    const reasons = expandedReason ? [expandedReason] : [];
+    reasons.push(`short token search (LIKE, no FTS rank): ${labels}`);
+    return [{ kind: 'like', tokens: shortTokens, reasons }];
+  }
+  return [];
+}
+
+/** 問い合わせごとの行を、同じ行（rowId）を 1 件にまとめて合わせる */
+function mergeBranchRows<R extends { rowId: number; title: string; fullText: string }>(
+  branches: QueryBranch[],
+  runBranch: (branch: QueryBranch) => R[]
+): Array<{ row: R; viaFts: boolean; reasons: string[]; likeTokens: string[] }> {
+  const merged = new Map<
+    number,
+    { row: R; viaFts: boolean; reasons: string[]; likeTokens: string[] }
+  >();
+  for (const branch of branches) {
+    let rows = runBranch(branch);
+    if (branch.kind === 'fts' && branch.filter.length > 0) {
+      // FTS ヒットのうち、短い語を本文に含むものだけ残す
+      rows = rows.filter((r) => includesAllShortTokens(r.title, r.fullText, branch.filter));
+    }
+    for (const row of rows) {
+      const reasons = [...branch.reasons];
+      if (branch.kind === 'fts' && branch.formalCheck) {
+        const formal = branch.formalCheck.formal;
+        if (includesAllShortTokens(row.title, row.fullText, [normalizeJpText(formal)])) {
+          reasons.unshift(branch.formalCheck.reason);
+        }
+      }
+      const prev = merged.get(row.rowId);
+      if (!prev) {
+        merged.set(row.rowId, {
+          row,
+          viaFts: branch.kind === 'fts',
+          reasons,
+          likeTokens: branch.kind === 'like' ? branch.tokens : [],
+        });
+        continue;
+      }
+      // 全文検索で当たった行は、全文検索の順位と snippet を使う
+      if (branch.kind === 'fts' && !prev.viaFts) {
+        prev.row = row;
+        prev.viaFts = true;
+      }
+      if (branch.kind === 'like' && prev.likeTokens.length === 0) prev.likeTokens = branch.tokens;
+      for (const r of reasons) if (!prev.reasons.includes(r)) prev.reasons.push(r);
+    }
+  }
+  return [...merged.values()];
 }
 
 /**
@@ -490,6 +665,12 @@ export function buildFtsQueryWithAbbreviation(
   expandedTo?: string;
   /** Issue #21: 略称そのもの（"消基通"・"消法"）か、通称（aliases。"インボイス"・"軽減税率"）か */
   expansionKind?: ExpansionKind;
+  /**
+   * SPEC-NTA-SEARCH-RULES-009（v0.24.0、#80）: 略称そのものを広げ、元の語か正式名が 3 文字未満のときの探し方。
+   * 元の語と正式名を、それぞれの長さで全文検索（3 文字以上）か部分一致（2 文字）で探し、1 文字は使わない。
+   * `query` は全文検索の式を OR でつないだもの（部分一致だけなら空文字）
+   */
+  shortAbbreviation?: ShortAbbreviationPlan;
 } {
   const enable = options.enableExpansion !== false;
   const trimmed = keyword?.trim() ?? '';
@@ -508,10 +689,32 @@ export function buildFtsQueryWithAbbreviation(
   if (abbr.formal === key) return { query: main };
 
   const formalPhrase = buildSanitizedPhrase(abbr.formal);
-  if (!formalPhrase) return { query: main };
   const expansionKind: ExpansionKind = abbr.abbr === key ? 'abbreviation' : 'alias';
 
-  // Issue #18: 「消法」のように略称自体が 3 文字未満で trigram に乗らない場合は formal だけで検索する
+  if (expansionKind === 'abbreviation') {
+    const original = normalizeSearchQuery(key).trim();
+    const formal = normalizeSearchQuery(abbr.formal).trim();
+    const plan: ShortAbbreviationPlan = {
+      originalLabel: key,
+      ...(main ? { originalFts: main } : {}),
+      ...(original.length === SHORT_TOKEN_MIN_LENGTH ? { originalLike: original } : {}),
+      ...(formalPhrase ? { formalFts: formalPhrase } : {}),
+      ...(!formalPhrase && formal.length === SHORT_TOKEN_MIN_LENGTH ? { formalLike: formal } : {}),
+    };
+    const hasFormal = Boolean(plan.formalFts || plan.formalLike);
+    if (!hasFormal) return { query: main };
+    const expanded = { expandedFrom: trimmed, expandedTo: abbr.formal, expansionKind };
+    // 元の語も正式名も 3 文字以上なら、従来どおり 1 つの全文検索の OR 式にする
+    if (plan.originalFts && plan.formalFts) {
+      return { query: `(${main}) OR (${formalPhrase})`, ...expanded };
+    }
+    const query = [plan.originalFts, plan.formalFts].filter(Boolean).join('');
+    return { query, ...expanded, shortAbbreviation: plan };
+  }
+
+  if (!formalPhrase) return { query: main };
+
+  // Issue #18: 通称自体が 3 文字未満で trigram に乗らない場合は formal だけで検索する
   if (!main) {
     return { query: formalPhrase, expandedFrom: trimmed, expandedTo: abbr.formal, expansionKind };
   }
@@ -522,6 +725,20 @@ export function buildFtsQueryWithAbbreviation(
     expandedTo: abbr.formal,
     expansionKind,
   };
+}
+
+/** SPEC-NTA-SEARCH-RULES-009: 3 文字未満の略称を広げるときの、元の語と正式名の探し方 */
+interface ShortAbbreviationPlan {
+  /** scoreReasons に出す元の語（半角に揃え、大文字と小文字は渡したまま） */
+  originalLabel: string;
+  /** 元の語が 3 文字以上のときの全文検索の式 */
+  originalFts?: string;
+  /** 元の語が 2 文字のときに部分一致で探す語 */
+  originalLike?: string;
+  /** 正式名が 3 文字以上のときの全文検索の式 */
+  formalFts?: string;
+  /** 正式名が 2 文字のときに部分一致で探す語 */
+  formalLike?: string;
 }
 
 /**
@@ -791,48 +1008,49 @@ function runDocumentQuery(
   options: SearchDocumentOptions
 ): DocumentSearchHit[] {
   const limit = Math.min(Math.max(options.limit ?? 10, 1), 50);
-  // Issue #18: 略称展開で formal に置き換わった場合、短い語は展開に吸収されたとみなす
-  const shortTokens =
-    built.expandedFrom && !built.query.includes(' OR ') ? [] : analyzeKeyword(keyword).shortTokens;
-  if (!built.query && shortTokens.length === 0) return [];
+  const branches = planBranches(keyword, built);
+  if (branches.length === 0) return [];
 
   // Phase 6-1: re-rank のために要求 limit より多めに取る
   const fetchLimit = Math.min(limit * RERANK_FETCH_MULTIPLIER, RERANK_MAX_FETCH);
 
-  const params: Array<string | number> = [];
-  const conds: string[] = [];
-  const useFts = built.query !== '';
-  if (useFts) {
-    conds.push('document_fts MATCH ?');
-    params.push(built.query);
-  } else {
-    // 短い語だけのクエリ: 本文 / タイトルの LIKE で補完 (AND 意味論)
-    for (const t of shortTokens) {
-      conds.push(`(d.full_text LIKE ? ESCAPE '\\' OR d.title LIKE ? ESCAPE '\\')`);
-      params.push(escapeLike(t), escapeLike(t));
+  type Row = DocumentSearchHit & { rowId: number; fullText: string };
+  const runBranch = (branch: QueryBranch): Row[] => {
+    const params: Array<string | number> = [];
+    const conds: string[] = [];
+    if (branch.kind === 'fts') {
+      conds.push('document_fts MATCH ?');
+      params.push(branch.match);
+    } else {
+      // 短い語だけのクエリ: 本文 / タイトルの LIKE で補完 (AND 意味論)
+      for (const t of branch.tokens) {
+        conds.push(`(d.full_text LIKE ? ESCAPE '\\' OR d.title LIKE ? ESCAPE '\\')`);
+        params.push(escapeLike(t), escapeLike(t));
+      }
     }
-  }
-  if (options.docType) {
-    conds.push('d.doc_type = ?');
-    params.push(options.docType);
-  }
-  pushTaxonomyCondition(conds, params, 'd.taxonomy', options.taxonomy);
-  if (options.hasPdf === true) {
-    // PDF を持つ文書だけ。NULL / '[]' / '' は全て除外
-    conds.push(
-      `d.attached_pdfs_json IS NOT NULL AND d.attached_pdfs_json != '[]' AND d.attached_pdfs_json != ''`
-    );
-  } else if (options.hasPdf === false) {
-    // PDF を持たない文書だけ
-    conds.push(
-      `(d.attached_pdfs_json IS NULL OR d.attached_pdfs_json = '[]' OR d.attached_pdfs_json = '')`
-    );
-  }
-  params.push(fetchLimit);
+    if (options.docType) {
+      conds.push('d.doc_type = ?');
+      params.push(options.docType);
+    }
+    pushTaxonomyCondition(conds, params, 'd.taxonomy', options.taxonomy);
+    if (options.hasPdf === true) {
+      // PDF を持つ文書だけ。NULL / '[]' / '' は全て除外
+      conds.push(
+        `d.attached_pdfs_json IS NOT NULL AND d.attached_pdfs_json != '[]' AND d.attached_pdfs_json != ''`
+      );
+    } else if (options.hasPdf === false) {
+      // PDF を持たない文書だけ
+      conds.push(
+        `(d.attached_pdfs_json IS NULL OR d.attached_pdfs_json = '[]' OR d.attached_pdfs_json = '')`
+      );
+    }
+    params.push(fetchLimit);
 
-  const sql = useFts
-    ? `
+    const sql =
+      branch.kind === 'fts'
+        ? `
     SELECT
+      d.id       AS rowId,
       d.doc_type AS docType,
       d.doc_id   AS docId,
       d.taxonomy AS taxonomy,
@@ -849,8 +1067,9 @@ function runDocumentQuery(
     ORDER BY document_fts.rank
     LIMIT ?
   `
-    : `
+        : `
     SELECT
+      d.id       AS rowId,
       d.doc_type AS docType,
       d.doc_id   AS docId,
       d.taxonomy AS taxonomy,
@@ -866,34 +1085,24 @@ function runDocumentQuery(
     ORDER BY d.id
     LIMIT ?
   `;
-
-  type Row = DocumentSearchHit & { fullText: string };
-  let rawRows = db.prepare(sql).all(...params) as Row[];
-  if (useFts && shortTokens.length > 0) {
-    rawRows = rawRows.filter((r) => includesAllShortTokens(r.title, r.fullText, shortTokens));
-  }
+    return db.prepare(sql).all(...params) as Row[];
+  };
 
   // Phase 6-1: relevance score を計算して降順で並べ替え、要求 limit 件に絞る
-  const scored = rawRows.map(({ fullText, ...hit }) => {
-    const { score, scoreReasons } = computeRelevance({
-      rank: hit.rank,
-      docType: dbDocTypeToScoring(hit.docType),
-      query: keyword,
-    });
-    if (built.expandedFrom && scoreReasons) {
-      scoreReasons.push(`abbreviation expanded: ${built.expandedFrom} → ${built.expandedTo}`);
+  const scored = mergeBranchRows(branches, runBranch).map(
+    ({ row, viaFts, reasons, likeTokens }) => {
+      const { rowId: _rowId, fullText, ...hit } = row;
+      const { score, scoreReasons } = computeRelevance({
+        rank: hit.rank,
+        docType: dbDocTypeToScoring(hit.docType),
+        query: keyword,
+      });
+      scoreReasons.push(...reasons);
+      // #97: FTS の行の snippet 列は highlight() で印を付けた本文全体。ここで前後を切り出す
+      const snippet = viaFts ? cutAroundMatch(hit.snippet) : makeLikeSnippet(fullText, likeTokens);
+      return { ...hit, snippet, score, scoreReasons };
     }
-    if (shortTokens.length > 0 && scoreReasons) {
-      scoreReasons.push(
-        useFts
-          ? `short token filter (LIKE): ${shortTokens.join(', ')}`
-          : `short token search (LIKE, no FTS rank): ${shortTokens.join(', ')}`
-      );
-    }
-    // #97: FTS の行の snippet 列は highlight() で印を付けた本文全体。ここで前後を切り出す
-    const snippet = useFts ? cutAroundMatch(hit.snippet) : makeLikeSnippet(fullText, shortTokens);
-    return { ...hit, snippet, score, scoreReasons };
-  });
+  );
   return sortByScoreDesc(scored).slice(0, limit);
 }
 

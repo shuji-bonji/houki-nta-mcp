@@ -12,7 +12,7 @@
  */
 
 import type { Tool } from '@modelcontextprotocol/server';
-import { DOMAINS, LIMITS, OUTPUT_FORMATS, QA_TOPICS } from '../constants.js';
+import { LIMITS, OUTPUT_FORMATS, QA_TOPICS } from '../constants.js';
 import { type ToolSpec, toMcpTool } from './tool-args.js';
 
 export const ntaSearchTsutatsuTool = {
@@ -83,12 +83,6 @@ export const ntaSearchQaTool = {
         minLength: 1,
         description:
           '検索キーワード。例: "社内会議 軽減税率", "テレワーク 必要経費"。3 文字以上の語を推奨（FTS5 trigram のため）。2 文字の語は本文の部分一致で補完し、その旨を応答の search_notes に示す',
-      },
-      domain: {
-        type: 'string',
-        enum: [...DOMAINS],
-        description:
-          '分野で絞り込み。質疑応答事例はすべて税務なので、"tax" は絞り込まず、それ以外は 0 件になる。税目で絞り込むときは topic を使う',
       },
       topic: {
         type: 'string',
