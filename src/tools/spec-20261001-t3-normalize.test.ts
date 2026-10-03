@@ -333,25 +333,25 @@ describe('SPEC-NTA-GET-KAISEI-TSUTATSU-011 SPEC-NTA-GET-JIMU-UNEI-011 SPEC-NTA-G
 /* db_schema                                                                   */
 /* -------------------------------------------------------------------------- */
 
-describe('SPEC-NTA-DB-SCHEMA-001 DB を開くとテーブルを作り、スキーマの版 11 を記録する', () => {
-  it('SPEC-NTA-DB-SCHEMA-001 新しい DB の schema_meta の schema_version は "11"', () => {
+describe('SPEC-NTA-DB-SCHEMA-001 DB を作るとテーブルを作り、スキーマの版 12 を記録する（差分 20261003-db-cli で 11 → 12）', () => {
+  it('SPEC-NTA-DB-SCHEMA-001 新しい DB の schema_meta の schema_version は "12"', () => {
     const db = new Database(':memory:');
     try {
       initSchema(db);
-      expect(SCHEMA_VERSION).toBe(11);
+      expect(SCHEMA_VERSION).toBe(12);
       const row = db
         .prepare(`SELECT value FROM schema_meta WHERE key = 'schema_version'`)
         .get() as {
         value: string;
       };
-      expect(row.value).toBe('11');
+      expect(row.value).toBe('12');
     } finally {
       db.close();
     }
   });
 });
 
-describe('SPEC-NTA-DB-SCHEMA-019 版 10 の DB を開くと、ダッシュ類も揃えた形で clause・section・document の文字列を入れ直し、版 11 にする', () => {
+describe('SPEC-NTA-DB-SCHEMA-019 版 10 の DB を開くと、ダッシュ類も揃えた形で clause・section・document の文字列を入れ直し、最新の版まで移行する', () => {
   let db: DatabaseT.Database;
 
   /** 今のスキーマにダッシュ類を含む行を入れ、schema_version だけ 10 に戻した DB を作る */
@@ -400,8 +400,8 @@ describe('SPEC-NTA-DB-SCHEMA-019 版 10 の DB を開くと、ダッシュ類も
     db.close();
   });
 
-  it('SPEC-NTA-DB-SCHEMA-019 schema_version は 11 になる', () => {
-    expect(getSchemaVersion(db)).toBe(11);
+  it('SPEC-NTA-DB-SCHEMA-019 schema_version は最新の版（v0.24.0 では 12）になる', () => {
+    expect(getSchemaVersion(db)).toBe(12);
   });
 
   it('SPEC-NTA-DB-SCHEMA-019 clause の条番号・題名・本文・段落 JSON のダッシュ類が - になる', () => {
@@ -437,7 +437,7 @@ describe('SPEC-NTA-DB-SCHEMA-019 版 10 の DB を開くと、ダッシュ類も
     const before = db.prepare('SELECT title, full_text, content_hash FROM document').all();
     initSchema(db);
     expect(db.prepare('SELECT title, full_text, content_hash FROM document').all()).toEqual(before);
-    expect(getSchemaVersion(db)).toBe(11);
+    expect(getSchemaVersion(db)).toBe(12);
   });
 
   it('SPEC-NTA-DB-SCHEMA-020 section の content_hash は NULL（未計算）に戻る', () => {
@@ -468,7 +468,7 @@ describe('SPEC-NTA-DB-SCHEMA-019 版 10 の DB を開くと、ダッシュ類も
 });
 
 describe('SPEC-NTA-DB-SCHEMA-019 版 4 の DB は、版 5 の入れ直しの後にこの入れ直しも通る', () => {
-  it('SPEC-NTA-DB-SCHEMA-019 版 4 の DB の 課消２―11 は 課消2-11 になり、版 11 になる', () => {
+  it('SPEC-NTA-DB-SCHEMA-019 版 4 の DB の 課消２―11 は 課消2-11 になり、版 12 になる', () => {
     const db = new Database(':memory:');
     try {
       initSchema(db);
@@ -478,7 +478,7 @@ describe('SPEC-NTA-DB-SCHEMA-019 版 4 の DB は、版 5 の入れ直しの後�
       ).run();
       db.prepare(`UPDATE schema_meta SET value = '4' WHERE key = 'schema_version'`).run();
       initSchema(db);
-      expect(getSchemaVersion(db)).toBe(11);
+      expect(getSchemaVersion(db)).toBe(12);
       const row = db.prepare('SELECT title, full_text FROM document').get() as {
         title: string;
         full_text: string;

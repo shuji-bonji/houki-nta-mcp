@@ -207,14 +207,15 @@ describe('classifyDrift', () => {
     expect(r.status).toBe('ok');
   });
 
-  it('SPEC-NTA-CLI-HEALTH-CHECK-001 kihon/ 配下でない baseline は対象外 (ok)', () => {
+  // 差分 20261003-db-cli（#111）: 判定の対象外は ok ではなく not-applicable
+  it('SPEC-NTA-CLI-HEALTH-CHECK-001 kihon/ 配下でない baseline は対象外 (not-applicable)', () => {
     const r = classifyDrift({
       doc_type: 'qa-jirei',
       label: '質疑応答事例',
       baselineUrl: 'https://www.nta.go.jp/law/shitsugi/shohi/02/19.htm',
       menuEntries,
     });
-    expect(r.status).toBe('ok');
+    expect(r.status).toBe('not-applicable');
     expect(r.message).toContain('drift 検知対象外');
   });
 

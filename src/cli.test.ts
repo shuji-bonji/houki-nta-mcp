@@ -81,9 +81,16 @@ describe('parseArgs', () => {
     expect(a.refreshStale).toBe(true);
   });
 
-  it('SPEC-NTA-CLI-REFRESH-006 不正な --refresh-stale 値は undefined のまま', () => {
-    expect(parseArgs(['--refresh-stale=abc']).staleDays).toBeUndefined();
-    expect(parseArgs(['--refresh-stale=-5']).staleDays).toBeUndefined();
+  // 差分 20261003-db-cli（#106）: 0 以上の整数でない日数は値のエラー（v0.23.x は無視して undefined）
+  it('SPEC-NTA-CLI-REFRESH-006 不正な --refresh-stale 値は値の誤りとして集め、staleDays は undefined', () => {
+    for (const v of ['abc', '-5']) {
+      const a = parseArgs([`--refresh-stale=${v}`]);
+      expect(a.staleDays).toBeUndefined();
+      expect(a.argError?.kind).toBe('value');
+      expect(a.argError?.messages).toEqual([
+        `[houki-nta-mcp] --refresh-stale="${v}" は使えません。0 以上の整数の日数を指定してください（例: --refresh-stale=90）`,
+      ]);
+    }
   });
 
   it('SPEC-NTA-CLI-ENTRY-004 SPEC-NTA-CLI-BULK-DOWNLOAD-002 --db-path / --tsutatsu の併用', () => {
@@ -253,14 +260,15 @@ describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
     expect(a.invalidTaxonomyValues).toHaveLength(1);
   });
 
-  it('SPEC-NTA-CLI-BULK-DOWNLOAD-010 一覧に無い値があると、投入せずに exit code 1 で終わる', async () => {
+  // 差分 20261003-db-cli（#106）: 引数の誤りの終了コードは 2（v0.23.x は 1）
+  it('SPEC-NTA-CLI-BULK-DOWNLOAD-010 一覧に無い値があると、投入せずに exit code 2 で終わる', async () => {
     const handled = await runCliIfRequested([
       '--bulk-download-bunshokaitou',
       '--bunsho-taxonomy=zzz',
       '--db-path=:memory:',
     ]);
     expect(handled).toBe(true);
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
     expect(bulkDownloadBunshokaitou).not.toHaveBeenCalled();
     expect(written.join('')).toContain('--bunsho-taxonomy="zzz" は使えません');
     expect(written.join('')).toContain('shotoku');
@@ -268,12 +276,27 @@ describe('Issue #25: 税目フラグの値を検証する (v0.14.2)', () => {
 
   it('SPEC-NTA-CLI-BULK-DOWNLOAD-010 複数指定で 1 つだけ誤っていても投入しない', async () => {
     await runCliIfRequested(['--bulk-download-qa', '--qa-topic=shohi,zzz', '--db-path=:memory:']);
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
     expect(bulkDownloadQa).not.toHaveBeenCalled();
   });
 
-  it('SPEC-NTA-CLI-ENTRY-005 SPEC-NTA-CLI-ENTRY-002 --help は一覧に無い値があっても使える値を表示する', async () => {
+  // 差分 20261003-db-cli（#106）: --help とほかの引数は一緒に渡すとエラー。値の誤りがあれば値のエラーを先に出す
+  it('SPEC-NTA-CLI-ENTRY-005 --help と一覧に無い値は、値のエラーを出して exit code 2（v0.23.x は使い方を出して 0）', async () => {
     const handled = await runCliIfRequested(['--help', '--qa-topic=zzz']);
+    expect(handled).toBe(true);
+    expect(process.exitCode).toBe(2);
+    expect(written.join('')).toContain(
+      '[houki-nta-mcp] --qa-topic="zzz" は使えません。使える値: shotoku, gensen'
+    );
+    const help = vi
+      .mocked(stdoutSpy)
+      .mock.calls.map((c) => String(c[0]))
+      .join('');
+    expect(help).not.toContain('使い方:');
+  });
+
+  it('SPEC-NTA-CLI-ENTRY-002 --help だけなら使える値を表示する', async () => {
+    const handled = await runCliIfRequested(['--help']);
     expect(handled).toBe(true);
     expect(process.exitCode).toBeUndefined();
     const help = vi
