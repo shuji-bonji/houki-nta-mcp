@@ -68,7 +68,7 @@ npx -y @shuji-bonji/houki-nta-mcp --quickstart
 - **高速応答**: bulk DL 済なら DB から即時応答（~10ms）。未投入のときの動きは取得ツールごとに違います（[取得ツールが DB をどう使うか](#取得ツールが-db-をどう使うか)）
 - **正規化済み検索**: Normalize-everywhere 原則で全角・半角ゆらぎを吸収（数字・英字・ハイフン・チルダ・空白。実装は houki-hub family 共通の `@shuji-bonji/houki-abbreviations`）
 - **改正検知**: SHA-1 content_hash で個別文書の変化を検知、4 パターン集計（新規 / 更新 / 削除 / 移動）
-- **HP 構造変更耐性 (v0.6.0 / v0.9.4)**: 9 種別 baseline で履歴管理 + `--health-check` CLI で週次 canary 検証 + `--check-baseline-drift` で `menu.htm` を真の正典として世代移行 (`sozoku2` / `hyoka_new` 等) を**事前検知** + soft-404 (`/error/404.htm` 着地) を `fetchNtaPage` で自動 fail させる二重防御
+- **HP 構造変更耐性 (v0.6.0 / v0.9.4)**: 9 種別 baseline で履歴管理 + `--health-check` CLI で週次 canary 検証 + `--check-baseline-drift` で `menu.htm` を真の正典として世代移行 (`sozoku2` / `hyoka_new` 等) を**事前検知** + soft-404 (`/error/404.htm` 着地) を `fetchNtaPage` で自動 fail させる二重防御。`--check-baseline-drift` が判定するのは基本通達 4 種と改正通達の索引の 5 件で、ほかの 4 件は `not-applicable` です（v0.24.0）
 - **添付 PDF kind 分類 (v0.7.0)**: タイトルから 6 種別（新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）に自動分類。Markdown 出力は kind 優先度ソートの表 + `pdf-reader-mcp` 呼び出し例つき
 - **`hasPdf` 検索フィルタ + `nta_inspect_pdf_meta` (v0.7.1)**: PDF 付きの重要文書だけを抽出 / PDF メタだけを軽量に返す軽量 API を提供
 - **添付 PDF の読み方を返し、読み手は固定しない (v0.19.0)**: 添付 PDF の kind（`comparison`=新旧対照表 / `attachment`=別紙・別表 など。「新旧**対応**表」の表記ゆれにも対応）ごとに `read_strategy`（表として取る / 本文として読む / 先頭を見て決める）と `layout_note`（紙面の組み方）を付ける。`save: true` で PDF をサーバー側に保存して絶対パスを返す。`next_actions` に pdf-reader-mcp の呼び出し例（保存済みなら `extract_tables` / `read_text` に `file_path`、未保存なら `read_url` に `url`）と、他の PDF 読み取りツール向けの汎用の 1 件を置く。houki-nta-mcp 自身は PDF の本文を読まない。改正通達で「別紙 N」とだけ題した PDF は新旧対照表本体のことが多いので、`comparison` として返す (v0.20.0)
@@ -158,6 +158,8 @@ flowchart TB
 
 `nta_get_qa` と `nta_get_tax_answer` は、国税庁サイトにそのページが無い（HTTP 404・410、または `/error/404.htm` への転送）と、番号の誤りとして `DOC_NOT_FOUND`（`retryable: false`）を返し、`next_actions` で検索ツールを案内します。v0.21.x までは `SOURCE_API_ERROR`（`retryable: true`）でした。
 
+`nta_get_tax_answer` は、DB に無い記事の URL を国税庁の索引（`/taxes/shiraberu/taxanswer/code/`）で決めます（v0.24.0）。8xxx（災害）の記事も取れます。索引は DB に保存して使い回し、番号が見つからないときだけ取り直します。索引に無い番号は、記事を取りに行かずに `DOC_NOT_FOUND` を返します。v0.23.0 までは番号の先頭の桁で税目のフォルダを決めていたため、8xxx は `INVALID_ARGUMENT` になり、先頭の桁とフォルダが合わない記事（`2010`・`4402`・`7400` など）は `DOC_NOT_FOUND` になっていました。
+
 改正通達・事務運営指針・文書回答事例の 3 つは、docId から個別ページの URL を組み立てるのに税目フォルダの世代差（`sozoku` / `sozoku2` など）を解く必要があるため、国税庁サイトへは取りに行きません。エラーには `--bulk-download-*` の案内が付きます。
 
 `nta_get_qa` と `nta_get_tax_answer` が DB から返せるのは、**`structured_json` を持つ行**だけです。この列は v0.16.0 で増えたので、v0.15.x までに投入した行は持っていません。持っていない行は国税庁サイトから取得して書き戻すので、1 度引けば次からは DB から返ります。`--bulk-download-qa` / `--bulk-download-tax-answer` を実行しても埋まります（この 2 種別では、構造を持たない行は条件付き GET を使わずに取り直します）。
@@ -227,7 +229,7 @@ v0.14.2 以前に作った DB は、v0.15.0 で最初にサーバーを起動し
 
 #### `nta_search_qa` の税目の絞り込み
 
-v0.13.0 から、`nta_search_qa` は `topic`（`shotoku` / `gensen` / `joto` / `sozoku` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei`。`--qa-topic` と同じ値）で税目を絞り込めます。v0.12.0 までの `domain` は分野（`tax` / `labor` など）の値を税目と比べていたため、指定すると必ず 0 件でした。質疑応答事例はすべて税務なので、`domain: "tax"` は絞り込まずに検索し、それ以外の値は 0 件と、`topic` を使うよう案内する `hint` を返します。
+`nta_search_qa` は `topic`（`shotoku` / `gensen` / `joto` / `sozoku` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei`。`--qa-topic` と同じ値）で税目を絞り込みます。v0.24.0 で `domain` を外しました。税目は `topic` で絞り込みます。`domain` を渡すと、どの値でも `INVALID_ARGUMENT` になります（v0.23.0 までは `domain: "tax"` は絞り込まずに検索し、それ以外の値は 0 件でした）。
 
 ### 質疑応答事例の関係法令通達（v0.12.0、Issue #22）
 
@@ -319,7 +321,7 @@ v0.10.2 以前に構築した DB の文書回答事例には本文が入って�
 //   + pdf-reader-mcp の read_text 呼び出し例 JSON
 //    PDF 本文は pdf-reader-mcp に委譲
 
-// nta_get_tax_answer — 番号で取得（先頭桁から税目自動判定）
+// nta_get_tax_answer — 番号で取得（国税庁の索引で URL を決める）
 { "no": "6101" }
 // → "# No.6101 消費税の基本的なしくみ ..." sections + 法令時点 + 出典
 
@@ -391,6 +393,7 @@ houki-nta-mcp --refresh-stale=30 --apply
 houki-nta-mcp --health-check
 
 # menu.htm を真の正典として CANARY_TARGETS の世代移行を事前検知（canary より前段の予兆検知 / v0.9.4+）
+# 判定するのは基本通達 4 種と改正通達の索引の 5 件。ほかの 4 件は not-applicable（v0.24.0）
 houki-nta-mcp --check-baseline-drift
 ```
 
@@ -404,6 +407,18 @@ houki-nta-mcp --check-baseline-drift
 | 質疑応答事例      | 約 1,840 docs     | 約 35 分                   |
 
 DB は `${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db`。詳細は [`docs/DATABASE.md`](docs/DATABASE.md)。
+
+#### DB の版（v0.24.0）
+
+v0.24.0 で DB のスキーマの版を 12 に上げました。タックスアンサーの索引を保存する `tax_answer_index`・`tax_answer_index_page` を足し、`document.doc_type` を 5 つの値（`kaisei`・`jimu-unei`・`bunshokaitou`・`tax-answer`・`qa-jirei`）に限る制約を付けています。v0.3.0〜v0.23.x で作った DB（版 3〜11）は、v0.24.0 の CLI かツールが最初に開いたときに、行を保ったまま版 12 に移行します。取り込み直しは要りません。
+
+DB の版による扱いは次のとおりです。
+
+- この版より新しい版の DB と、版を読めない DB は、どの入口も変更しません。CLI は終了コード 1 で終わり、読むだけのツールは `hint` で状態を伝えます
+- DB を作るのは、投入のフラグ（`--quickstart`・`--bulk-download*`）と、国税庁サイトから取ったものを書き戻すツール（`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer`）だけです。検索ツールと `--refresh-stale` は DB を作りません
+- 版 1・2 の DB（v0.3.0 より前）は移行できないので、投入のフラグが作り直します（取り込んだ中身は消えます）
+
+> **注意**: 0.24.0 に上げた後は、同じ DB を 0.23.x 以前の CLI や MCP サーバーで開かないでください。0.23.x は版が新しい DB を全テーブルを消して作り直します。
 
 ### 投入済みかどうかを素早く確認する
 
@@ -430,12 +445,12 @@ sqlite3 "$HOME/.cache/houki-nta-mcp/cache.db" \
 
 bunsho-taxonomy / tax-answer-taxonomy / qa-topic で範囲を絞らない場合、`bunshokaitou` と `qa-jirei` は数千件単位になるため、初回は taxonomy/topic を絞って投入することを推奨します。
 
-税目に渡せる値は次のとおりです。v0.14.2 から、ここに無い値を渡すと、何も投入せずに使える値を表示して終了します（終了コード 1）。`--help` にも同じ一覧を載せています。
+税目に渡せる値は次のとおりです。v0.14.2 から、ここに無い値を渡すと、何も投入せずに使える値を表示して終了します（v0.24.0 から終了コード 2。v0.23.x までは 1）。`--help` にも同じ一覧を載せています。
 
 | フラグ | 使える値 |
 | --- | --- |
 | `--bunsho-taxonomy` | `shotoku` / `gensen` / `joto-sanrin` / `sozoku` / `zoyo` / `hyoka` / `hojin` / `shohi` / `shozei` / `sonota`（国税局の表記 `souzoku` / `gensenshotoku` / `joto_sanrin` も可） |
-| `--tax-answer-taxonomy` | `shotoku` / `gensen` / `joto` / `sozoku` / `hojin` / `shohi` / `inshi` / `osirase` |
+| `--tax-answer-taxonomy` | `shotoku` / `gensen` / `joto` / `sozoku` / `zoyo` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei` / `fufuku` / `saigai` / `osirase`（国税庁の索引の税目フォルダ。v0.24.0 で `zoyo` / `hyoka` / `hotei` / `fufuku` / `saigai` を足しました） |
 | `--qa-topic` | `shotoku` / `gensen` / `joto` / `sozoku` / `hyoka` / `hojin` / `shohi` / `inshi` / `hotei` |
 
 v0.14.1 までは値を見ずに受け取っていたため、税目を打ち間違えても投入が 0 件のまま正常終了していました。
@@ -498,7 +513,7 @@ flowchart LR
 | ------------ | ------------------------------------------ | -------------------------------------------------------------------------------------- |
 | 月 1 回      | `houki-nta-mcp --bulk-download-everything` | 4 パターン集計 + baseline 永続化                                                       |
 | 週 1 回      | `houki-nta-mcp --health-check`             | 9 種別の代表 URL を canary fetch + parse                                               |
-| 週 1 回      | `houki-nta-mcp --check-baseline-drift`     | menu.htm を正典として世代移行 (`sozoku2` 等) を事前検知 (v0.9.4+、canary より早期)     |
+| 週 1 回      | `houki-nta-mcp --check-baseline-drift`     | menu.htm を正典として世代移行 (`sozoku2` 等) を事前検知 (v0.9.4+、canary より早期)。判定するのは基本通達 4 種と改正通達の索引の 5 件で、ほかの 4 件は `not-applicable` |
 | 週 1 回 (CI) | GitHub Actions cron                        | `--health-check --strict` で自動検知 + `--check-baseline-drift` で drift 警告 (別 job) |
 
 cron 設定例:
@@ -657,6 +672,20 @@ handler が `LawServiceError`（上の JSON 形式）を返した場合も `isEr
   "tool": "nta_get_kaisei_tsutatsu"
 }
 ```
+
+### 国税庁サイトとの通信の失敗（v0.24.0）
+
+`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer` が国税庁サイトから取れなかったときは、失敗の種類で次の code を返します（houki-egov-mcp と同じ 4 つ）。ページが無い（404・410・`/error/404.htm` への転送）ことは `DOC_NOT_FOUND` で、この表には入りません。
+
+| `code` | 場面 | `retryable` | `next_actions` |
+| --- | --- | --- | --- |
+| `SOURCE_TIMEOUT` | 国税庁サイトが 30 秒以内に応答しなかった（取り直しても） | `true` | `retry_later` |
+| `SOURCE_RATE_LIMITED` | 国税庁サイトが HTTP 429 を返した（取り直しません） | `true` | `retry_later` |
+| `SOURCE_UNAVAILABLE` | 国税庁サイトに接続できなかった（`ENOTFOUND` など。`detail.cause` に入ります） | `true` | `retry_later` |
+| `SOURCE_API_ERROR` | HTTP 5xx・そのほかのネットワークの失敗 | `true` | `retry_later` |
+| `SOURCE_API_ERROR` | 403・400 などは `retryable: false`（取り直しても結果が変わりにくいため） | `false` | 付けません |
+
+v0.23.0 までは、どれも `SOURCE_API_ERROR`・`retryable: true` でした。
 
 ### 引数の検査（v0.22.0）
 

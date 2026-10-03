@@ -204,6 +204,17 @@ INDEX idx_document_taxonomy (doc_type, taxonomy)
 | `tax-answer`   | `6101` / `1120`                                           | タックスアンサー番号                     |
 | `qa-jirei`     | `shohi/02/19`                                             | 質疑応答事例 (`{topic}/{category}/{id}`) |
 
+### `tax_answer_index` / `tax_answer_index_page` — タックスアンサーの索引（v12 で追加）
+
+`nta_get_tax_answer` は、DB に無い記事の URL を国税庁の索引（`/taxes/shiraberu/taxanswer/code/`）で決める。索引は保存して使い回し、番号が見つからないときだけ前回の `Last-Modified` / `ETag` を付けて取り直す。`--bulk-download-tax-answer` も、税目で絞る前の索引のすべての記事を保存する。
+
+| テーブル | カラム | 説明 |
+| --- | --- | --- |
+| `tax_answer_index` | `no`（PK）・`url`・`taxonomy`・`title` | 索引の 1 記事につき 1 行。`taxonomy` は URL の `taxanswer/` の次の要素（例: `saigai`） |
+| `tax_answer_index_page` | `url`（PK）・`fetched_at`・`last_modified`・`etag` | 索引のページを取った記録。304 のときは `fetched_at` だけを書き換える |
+
+`document.doc_type` は v12 から `CHECK (doc_type IN ('kaisei','jimu-unei','bunshokaitou','tax-answer','qa-jirei'))`。`taxonomy` は制限しない（国税庁サイトの税目フォルダをそのまま入れる）。
+
 ## FTS5 全文検索
 
 ### `clause_fts` — 基本通達の FTS5 インデックス
@@ -285,8 +296,22 @@ bulk DL 時に `content_hash` の変化を集計（Phase 5 で `updatedDocs` カ
 | **v7**  | Issue #30  | `document.orphaned_at` 追加（国税庁の索引から消えた文書の印）                          |
 | **v8**  | Issue #45  | 文書回答事例の `full_text` から国税庁サイトの案内文の行（「←上記照会の内容に対する回答はこちら」「※PDFファイルが開けない…こちらをご覧ください。」）を除き、`content_hash` を計算し直す |
 | **v9**  | Issue #45  | 改正通達・事務運営指針の `full_text` からも同じ案内文の行を除き、`content_hash` を計算し直す |
+| **v10** | Issue #54  | `tsutatsu.bulk_completed_at` と、目次を保存する `tsutatsu_toc` を追加 |
+| **v11** | T3         | 投入済みの文字列を houki-abbreviations 0.7.0 の正規化（ダッシュ類も `-`）で入れ直す |
+| **v12** | #112・#128 | タックスアンサーの索引（`tax_answer_index`・`tax_answer_index_page`）を追加し、`document.doc_type` に 5 つの値の CHECK を付ける（`document` を作り直して `id` を含む列を写す）。v0.24.0 |
 
-**マイグレーション戦略**: v3 以降は 1 段ずつ順に適用し、bulk DL したデータを保つ（`migrate()` の if の数珠つなぎ。v3 の DB からでも最新まで辿り着く）。列を足すだけの版（v4 / v6 / v7）と、入っている文字列を直す版（v5 / v8 / v9）があり、どちらも国税庁サイトへのアクセスは発生しない。想定外の遷移（v1 / v2 からなど）だけ **DROP & CREATE** で再構築する（bulk DL のキャッシュなので、次回の bulk DL で復元できる）。
+**マイグレーション戦略**: v3 以降は 1 段ずつ順に適用し、bulk DL したデータを保つ（`initSchema()` の if の数珠つなぎ。v3 の DB からでも最新まで辿り着く）。列や表を足す版（v4 / v6 / v7 / v10 / v12）と、入っている文字列を直す版（v5 / v8 / v9 / v11）があり、どちらも国税庁サイトへのアクセスは発生しない。
+
+**版の扱い（v0.24.0、SPEC-NTA-DB-SCHEMA-021）**:
+
+| DB の状態 | 投入（`--quickstart`・`--bulk-download*`） | `--refresh-stale` | 読むだけのツール | 書き戻すツール（`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer`） |
+| --- | --- | --- | --- | --- |
+| ファイルが無い | 作る | 作らない（一覧は `[]`、`--apply` は終了コード 1） | 作らない（「DB に 1 件も無い」応答） | 国税庁サイトから取れたら作る |
+| 版 3〜11 | 移行する | 移行する | 移行する | 移行する |
+| 版 1・2 | 取得の前に作り直す | 終了コード 1 | 使わない（`hint` で案内） | 取って返し、書かない |
+| この版より新しい版・読めない版 | 変更せずに終了コード 1 | 終了コード 1 | 使わない（`hint` で案内） | 取って返し、書かない |
+
+v0.23.x までは、版 1・2 とこの版より新しい版の DB を、どの入口でも全テーブルを消して作り直していた。v0.24.0 で版 12 に移行した DB を 0.23.x 以前で開くと作り直されるので、0.24.0 に上げた後は戻さない。
 
 ## Normalize-everywhere 原則
 

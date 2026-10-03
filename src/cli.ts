@@ -4,7 +4,7 @@
  * 使い方:
  *   houki-nta-mcp                              # MCP サーバ起動（既定）
  *   houki-nta-mcp --bulk-download              # 消基通を bulk DL（5〜10 分）
- *   houki-nta-mcp --bulk-download --tsutatsu=消基通
+ *   houki-nta-mcp --bulk-download --tsutatsu=消費税法基本通達
  *   houki-nta-mcp --db-path=/path/to/cache.db --bulk-download
  *   houki-nta-mcp --version
  *   houki-nta-mcp --help
@@ -445,7 +445,8 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
 まず試す（数分）:
   houki-nta-mcp --quickstart                 消費税法基本通達 1 本だけを投入（約 3〜5 分）。終わると、その通達に対して
                                              nta_search_tsutatsu / nta_get_tsutatsu が使える。--tsutatsu=<正式名> で別の通達にもできる
-  ※ DB が無くても nta_get_* は国税庁サイトから直接取る（約 700ms）。検索（nta_search_*）だけは DB が要る
+  ※ DB が無くても nta_get_tsutatsu / nta_get_qa / nta_get_tax_answer は国税庁サイトから直接取る（約 700ms）。取ったものは DB に入る。
+    検索（nta_search_*）と nta_get_kaisei_tsutatsu / nta_get_jimu_unei / nta_get_bunshokaitou は DB が要る
 
 種別を足す（必要なものだけ）:
   houki-nta-mcp --bulk-download              特定通達を 1 本投入（--tsutatsu=<正式名>。既定: 消費税法基本通達）
@@ -465,7 +466,8 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
 
 保守:
   houki-nta-mcp --refresh-stale=<日数>       N 日より古い section を列挙（dry-run。ちょうど N 日前の section は含まない）
-  houki-nta-mcp --refresh-stale=<日数> --apply  N 日より古い section の通達を実際に再 DL
+  houki-nta-mcp --refresh-stale=<日数> --apply  N 日より古い section の通達を実際に再 DL（差分更新）
+  houki-nta-mcp --refresh-stale=<日数> --apply --refresh  同じ通達を、条件付き取得を使わずに取り直す
   houki-nta-mcp --health-check               6 大コンテンツ + 4 通達（計 9 種別）の代表 URL を canary fetch + parse 検証
   houki-nta-mcp --health-check --strict      fail があれば exit code 1（CI 用）
   houki-nta-mcp --check-baseline-drift       /law/tsutatsu/menu.htm を正典として CANARY_TARGETS の世代移行を事前検知（Phase 5 Lv-3b）
@@ -476,7 +478,8 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
   houki-nta-mcp --help                       このメッセージを表示
 
 オプション:
-  --tsutatsu=<formal名>   --quickstart / --bulk-download 用。投入する通達の正式名（既定: 消費税法基本通達）
+  --tsutatsu=<正式名>     --quickstart / --bulk-download 用。投入する通達の正式名（基本通達 4 種の正式名。既定: 消費税法基本通達）
+                          使える値: ${TSUTATSU_NAMES.join(', ')}
   --db-path=<path>        DB ファイルパスを上書き（既定: \${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db）
   --refresh               投入する通達の節と条項を消して取り直します。文書系は取り直した内容で置き換えます
                           （ほかの通達・ほかの種別の行と、索引から消えた文書の行は残ります）
@@ -488,6 +491,9 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
   XDG_CACHE_HOME          デフォルト DB の親ディレクトリ
   HOUKI_NTA_BASELINE_DIR  bulk download の記録と --health-check の baseline の置き場所
   HOUKI_NTA_FILES_DIR     nta_inspect_pdf_meta の save: true の保存先
+
+終了コード:
+  引数の誤りは終了コード 2、処理の失敗（DB を開けない、DB の版が合わないなど）は 1
 `;
 
 /**

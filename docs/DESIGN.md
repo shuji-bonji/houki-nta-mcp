@@ -264,7 +264,7 @@ CREATE VIRTUAL TABLE clause_fts USING fts5(
 
 - 場所: `${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db`
 - 改正検知: 各節の `fetched_at` + ETag 風のハッシュ比較
-- 強制再取得: 環境変数 `HOUKI_NTA_REFRESH=1` で全件再 DL
+- 強制再取得: 投入のフラグに `--refresh`
 
 ### ツール挙動の変化
 

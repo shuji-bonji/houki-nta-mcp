@@ -178,7 +178,7 @@ export const ntaSearchTaxAnswerTool = {
 export const ntaGetTaxAnswerTool = {
   name: 'nta_get_tax_answer',
   description:
-    '国税庁のタックスアンサー（よくある税の質問）本文を番号で取得する。番号の先頭桁から税目フォルダを自動判定。例: 6101 → 消費税の基本的なしくみ。国税庁サイトにそのページが無いときはエラー DOC_NOT_FOUND を返し、nta_search_tax_answer を案内する',
+    '国税庁のタックスアンサー（よくある税の質問）本文を番号で取得する。国税庁の索引で番号から記事の URL を決める。8xxx（災害）も取れる。例: 6101 → 消費税の基本的なしくみ。国税庁の索引に番号が無いとき、または国税庁サイトにそのページが無いときはエラー DOC_NOT_FOUND を返し、nta_search_tax_answer を案内する',
   inputSchema: {
     type: 'object',
     properties: {
@@ -186,7 +186,7 @@ export const ntaGetTaxAnswerTool = {
         type: 'string',
         minLength: 1,
         description:
-          'タックスアンサー番号。4 桁の数字（全角の数字は半角に揃えて読む）。先頭桁で税目決定: 1xxx=所得税, 2xxx=源泉, 3xxx=譲渡, 4xxx=相続・贈与, 5xxx=法人税, 6xxx=消費税, 7xxx=印紙税, 9xxx=お知らせ。例: "6101", "1120"',
+          'タックスアンサー番号。4 桁の数字（全角の数字は半角に揃えて読む）。国税庁の索引で番号から記事の URL を決める。8xxx（災害）も取れる。例: "6101", "1120", "8001"',
       },
       format: {
         type: 'string',
