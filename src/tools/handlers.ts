@@ -19,8 +19,6 @@ import {
   NTA_HINT,
   QA_BASE_URL,
   QA_TOPICS,
-  TAX_ANSWER_BASE_URL,
-  TAX_ANSWER_FOLDER_MAP,
   TSUTATSU_BASE_LAWS,
   TSUTATSU_LEGAL_STATUS,
   TSUTATSU_LIVE_FETCH,
@@ -60,7 +58,7 @@ import {
   REMOVED_FROM_INDEX,
   REMOVED_FROM_INDEX_NOTICE,
 } from '../services/index-status.js';
-import { fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
+import { type FetchNtaPageOptions, fetchNtaPage, NtaFetchError } from '../services/nta-scraper.js';
 import { pdfFileNamesForUrls, type SavedPdf, savePdf } from '../services/pdf-files.js';
 import {
   buildPdfNextActions,
@@ -72,7 +70,20 @@ import {
 import { buildQaFullText, parseQaJirei } from '../services/qa-parser.js';
 import type { RelatedLawRef, RelatedTsutatsuRef } from '../services/related-law-parser.js';
 import { parseRelatedReferences } from '../services/related-law-parser.js';
-import { extractPdfs, parseEffectiveDate } from '../services/tax-answer-bulk-downloader.js';
+import {
+  extractPdfs,
+  parseEffectiveDate,
+  parseTaxAnswerIndex,
+  TAX_ANSWER_INDEX_URL,
+} from '../services/tax-answer-bulk-downloader.js';
+import {
+  readStoredTaxAnswerIndex,
+  saveTaxAnswerIndex,
+  type TaxAnswerIndexPage,
+  type TaxAnswerIndexRow,
+  taxAnswerFolderOf,
+  touchTaxAnswerIndexPage,
+} from '../services/tax-answer-index.js';
 import { buildTaxAnswerFullText, parseTaxAnswer } from '../services/tax-answer-parser.js';
 import {
   type DocumentSource,
@@ -124,6 +135,7 @@ import {
   ntaSearchTsutatsuTool,
   resolveAbbreviationTool,
 } from './definitions.js';
+import { sourceFetchError } from './source-errors.js';
 import {
   badFormArgument,
   bindTool,
@@ -477,14 +489,10 @@ function renderLiveResult(
 ) {
   switch (live.kind) {
     case 'fetch_error':
-      return makeError('SOURCE_API_ERROR', `国税庁サイトからの取得に失敗: ${live.error.message}`, {
-        url: live.url,
-        retryable: true,
-        next_actions: [NEXT_ACTIONS.retryLater()],
-        detail:
-          live.error.status !== undefined
-            ? { status: live.error.status, url: live.url }
-            : { url: live.url },
+      // v0.24.0（SPEC-NTA-GET-TSUTATSU-009・SPEC-NTA-COMMON-ERRORS-018）: 失敗の種類ごとの SOURCE_* にし、tool を付ける。
+      // 候補ページの 404 は次の候補へ進むので、ここに来る 404・410 は目次のページ（このサーバーが決めた URL）
+      return sourceFetchError(live.error, live.url, 'nta_get_tsutatsu', {
+        missingPageHint: `${formal}の目次のページ（${live.url}）が国税庁サイトに見つかりません（HTTP ${live.error.status}）。国税庁サイトの構成が変わった可能性があります。報告してください`,
       });
     case 'parse_error':
       return makeError('INTERNAL_ERROR', `通達ページのパースに失敗: ${live.error.message}`, {
@@ -989,10 +997,7 @@ export async function handleNtaGetQa(args: GetQaArgs) {
  *
  * 応答の `source` が `"db"` か `"live"` かで、どちらから返したかが分かる。
  */
-export async function getQa(
-  args: GetQaArgs,
-  options: { fetchImpl?: typeof fetch; dbPath?: string } = {}
-) {
+export async function getQa(args: GetQaArgs, options: LiveDocumentFetchOptions = {}) {
   const topic = args.topic;
   if (!QA_TOPICS.includes(topic as QaTopic)) {
     return makeError('INVALID_ARGUMENT', `topic "${topic}" は houki-nta-mcp では未対応です`, {
@@ -1035,7 +1040,7 @@ export async function getQa(
   let sourceUrl: string;
   let fetchedAt: string;
   try {
-    const fetched = await fetchNtaPage(url, { fetchImpl: options.fetchImpl });
+    const fetched = await fetchNtaPage(url, fetchOptionsOf(options));
     html = fetched.html;
     sourceUrl = fetched.sourceUrl;
     fetchedAt = fetched.fetchedAt;
@@ -1083,11 +1088,32 @@ export async function getQa(
 }
 
 /**
+ * `nta_get_qa` / `nta_get_tax_answer` の国税庁サイトの経路の options。
+ * `fetchImpl`・`retryBaseMs`・`timeoutMs`・`maxRetries` はテスト用（`fetchNtaPage` にそのまま渡す）
+ */
+export interface LiveDocumentFetchOptions {
+  fetchImpl?: typeof fetch;
+  dbPath?: string;
+  retryBaseMs?: number;
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
+function fetchOptionsOf(options: LiveDocumentFetchOptions): FetchNtaPageOptions {
+  const o: FetchNtaPageOptions = {};
+  if (options.fetchImpl) o.fetchImpl = options.fetchImpl;
+  if (options.retryBaseMs !== undefined) o.retryBaseMs = options.retryBaseMs;
+  if (options.timeoutMs !== undefined) o.timeoutMs = options.timeoutMs;
+  if (options.maxRetries !== undefined) o.maxRetries = options.maxRetries;
+  return o;
+}
+
+/**
  * 国税庁サイトから 1 件を取るときの失敗を code に分ける（v0.22.0、houki-nta-mcp #65、SPEC-NTA-COMMON-ERRORS-016）。
  *
  * - ページが無い（HTTP 404・410、`/error/404.htm` への転送。転送は nta-scraper が status 404 の NtaFetchError にする）
  *   → `DOC_NOT_FOUND`・`retryable: false`。番号の誤りなので、検索ツールを案内する（SPEC-NTA-GET-QA-014、SPEC-NTA-GET-TAX-ANSWER-013）
- * - それ以外（接続できない・時間切れ・5xx・429）→ `SOURCE_API_ERROR`・`retryable: true`（015・014）
+ * - それ以外 → 失敗の種類ごとの `SOURCE_*`（v0.24.0、SPEC-NTA-COMMON-ERRORS-018・019。`sourceFetchError`）
  */
 function liveFetchError(
   err: NtaFetchError,
@@ -1117,13 +1143,8 @@ function liveFetchError(
       tool: o.tool,
     });
   }
-  return makeError('SOURCE_API_ERROR', `国税庁サイトからの取得に失敗: ${err.message}`, {
-    url,
-    retryable: true,
-    next_actions: [NEXT_ACTIONS.retryLater()],
-    detail,
-    tool: o.tool,
-  });
+  // v0.24.0（SPEC-NTA-COMMON-ERRORS-018・019）: 429・時間切れ・5xx・403/400・接続できない・そのほかを分ける
+  return sourceFetchError(err, url, o.tool);
 }
 
 /**
@@ -1338,11 +1359,8 @@ export async function handleNtaGetTaxAnswer(args: GetTaxAnswerArgs) {
  *
  * 応答の `source` が `"db"` か `"live"` かで、どちらから返したかが分かる。
  */
-export async function getTaxAnswer(
-  args: GetTaxAnswerArgs,
-  options: { fetchImpl?: typeof fetch; dbPath?: string } = {}
-) {
-  // 空白だけ（SPEC-NTA-GET-TAX-ANSWER-001）、数字以外（001）、4 桁でない（012）は、先頭の桁で税目を決める前に返す
+export async function getTaxAnswer(args: GetTaxAnswerArgs, options: LiveDocumentFetchOptions = {}) {
+  // 空白だけ（SPEC-NTA-GET-TAX-ANSWER-001）、数字以外（001）、4 桁でない（012）は、DB と索引を引く前に返す
   if (isBlank(args.no)) {
     return blankArgument(
       'nta_get_tax_answer',
@@ -1361,28 +1379,32 @@ export async function getTaxAnswer(
       'タックスアンサー番号は "6101"（消費税の基本的なしくみ）、"1120"（医療費控除）のような 4 桁の数字です。番号が分からないときは nta_search_tax_answer で探してください'
     );
   }
-  const folder = TAX_ANSWER_FOLDER_MAP[no[0]];
-  if (!folder) {
-    return makeError(
-      'INVALID_ARGUMENT',
-      `番号 "${no}" の先頭桁 "${no[0]}" は houki-nta-mcp v0.2.x では未対応`,
-      {
-        hint: '対応番号帯: 1xxx=所得税, 2xxx=源泉, 3xxx=譲渡, 4xxx=相続・贈与, 5xxx=法人税, 6xxx=消費税, 7xxx=印紙税, 9xxx=お知らせ。8xxx 帯は未対応（Phase 2 で対応予定）',
-      }
-    );
-  }
-
-  const url = `${TAX_ANSWER_BASE_URL}${folder}/${no}.htm`;
+  // v0.24.0（#128）: 先頭の桁では断らない（SPEC-NTA-GET-TAX-ANSWER-002 は REMOVED）。URL は DB の行 → 国税庁の索引で決める
 
   // Issue #29: DB を先に引く。bulk DL 済みなら国税庁サイトへ行かない
   const fromDb = readTaxAnswerFromDb(no, options.dbPath);
-  if (fromDb) return taxAnswerResponse(fromDb.taxAnswer, args.format, 'db', fromDb.orphanedAt);
+  if (fromDb && 'taxAnswer' in fromDb) {
+    return taxAnswerResponse(fromDb.taxAnswer, args.format, 'db', fromDb.orphanedAt);
+  }
+
+  // SPEC-NTA-GET-TAX-ANSWER-003: 節の構造を持たない行があればその行の出典 URL、無ければ国税庁の索引で決める
+  let url: string;
+  if (fromDb) {
+    url = fromDb.sourceUrl;
+  } else {
+    const resolved = await resolveTaxAnswerUrl(no, options);
+    if (resolved.kind === 'error') return resolved.error;
+    if (resolved.kind === 'not_in_index') return taxAnswerNotInIndex(no);
+    url = resolved.url;
+    // SPEC-NTA-GET-TAX-ANSWER-016: 索引を取ったときは、索引と記事のページのあいだを 0.3 秒あける
+    if (resolved.fetchedIndex) await sleepMs(TSUTATSU_LIVE_FETCH.pageIntervalMs);
+  }
 
   let html: string;
   let sourceUrl: string;
   let fetchedAt: string;
   try {
-    const fetched = await fetchNtaPage(url, { fetchImpl: options.fetchImpl });
+    const fetched = await fetchNtaPage(url, fetchOptionsOf(options));
     html = fetched.html;
     sourceUrl = fetched.sourceUrl;
     fetchedAt = fetched.fetchedAt;
@@ -1424,21 +1446,150 @@ export async function getTaxAnswer(
   return taxAnswerResponse(taxAnswer, args.format, 'live');
 }
 
+/** 記事の URL を国税庁の索引で決めた結果 */
+type TaxAnswerUrlResolution =
+  | { kind: 'url'; url: string; fetchedIndex: boolean }
+  | { kind: 'not_in_index' }
+  | { kind: 'error'; error: LawServiceError };
+
+/**
+ * 記事の URL を国税庁の索引で決める（v0.24.0、SPEC-NTA-GET-TAX-ANSWER-003・016・017、#128）。
+ *
+ * - 保存した索引が無ければ取って保存し、そこで探す（番号が無くても取り直さない）
+ * - 保存した索引にあればそれを使う。無ければ前回の Last-Modified / ETag を付けて 1 回だけ取り直す。
+ *   304 なら取得日時だけを書き換えて「索引に無い」、200 なら保存し直して探し直す
+ * - 取得の失敗は SOURCE_*、記事の URL が 1 件も読めない索引は INTERNAL_ERROR（保存してあった一覧は書き換えない）
+ */
+async function resolveTaxAnswerUrl(
+  no: string,
+  options: LiveDocumentFetchOptions
+): Promise<TaxAnswerUrlResolution> {
+  const db = openDb(options.dbPath);
+  try {
+    const stored = readStoredTaxAnswerIndex(db);
+    const hit = stored?.entries.get(no);
+    if (hit) return { kind: 'url', url: hit.url, fetchedIndex: false };
+
+    const loaded = await fetchTaxAnswerIndex(stored?.page, options);
+    if ('error' in loaded) return { kind: 'error', error: loaded.error };
+    if (loaded.notModified) {
+      try {
+        touchTaxAnswerIndexPage(db, loaded.fetchedAt);
+      } catch {
+        // best effort
+      }
+      return { kind: 'not_in_index' };
+    }
+    try {
+      saveTaxAnswerIndex(db, loaded.rows, loaded.page);
+    } catch {
+      // best effort: 保存に失敗しても、取った索引で URL は決められる
+    }
+    const found = loaded.rows.find((r) => r.no === no);
+    return found ? { kind: 'url', url: found.url, fetchedIndex: true } : { kind: 'not_in_index' };
+  } finally {
+    closeDb(db);
+  }
+}
+
+/** 索引を取って読む。`previous` を渡すと条件付きで取る */
+async function fetchTaxAnswerIndex(
+  previous: TaxAnswerIndexPage | undefined,
+  options: LiveDocumentFetchOptions
+): Promise<
+  | { error: LawServiceError }
+  | { notModified: true; fetchedAt: string }
+  | { notModified: false; rows: TaxAnswerIndexRow[]; page: TaxAnswerIndexPage }
+> {
+  const fetchOpts = fetchOptionsOf(options);
+  if (previous?.lastModified) fetchOpts.ifModifiedSince = previous.lastModified;
+  if (previous?.etag) fetchOpts.ifNoneMatch = previous.etag;
+  let fetched: Awaited<ReturnType<typeof fetchNtaPage>>;
+  try {
+    fetched = await fetchNtaPage(TAX_ANSWER_INDEX_URL, fetchOpts);
+  } catch (err) {
+    if (err instanceof NtaFetchError) {
+      // SPEC-NTA-GET-TAX-ANSWER-017: 索引の URL はこのサーバーが決めた値なので、404・410 も DOC_NOT_FOUND にしない
+      return {
+        error: sourceFetchError(err, TAX_ANSWER_INDEX_URL, 'nta_get_tax_answer', {
+          missingPageHint: `国税庁のタックスアンサーの索引（${TAX_ANSWER_INDEX_URL}）が見つかりません（HTTP ${err.status}）。国税庁サイトの構成が変わった可能性があります。報告してください`,
+        }),
+      };
+    }
+    throw err;
+  }
+  if (fetched.notModified) return { notModified: true, fetchedAt: fetched.fetchedAt };
+  const rows = parseTaxAnswerIndex(fetched.html, fetched.sourceUrl).map((e) => ({
+    no: e.no,
+    url: e.url,
+    taxonomy: e.taxonomy,
+    title: e.title,
+  }));
+  if (rows.length === 0) {
+    const cause = '記事の URL（/taxes/shiraberu/taxanswer/<税目>/<番号>.htm）が 1 件もありません';
+    return {
+      error: makeError('INTERNAL_ERROR', `タックスアンサーの索引のパースに失敗: ${cause}`, {
+        url: TAX_ANSWER_INDEX_URL,
+        retryable: false,
+        hint: 'パーサのバグまたは国税庁ページの構造変更の可能性。報告してください',
+        detail: { url: TAX_ANSWER_INDEX_URL, cause },
+        tool: 'nta_get_tax_answer',
+      }),
+    };
+  }
+  return {
+    notModified: false,
+    rows,
+    page: {
+      fetchedAt: fetched.fetchedAt,
+      ...(fetched.lastModified ? { lastModified: fetched.lastModified } : {}),
+      ...(fetched.etag ? { etag: fetched.etag } : {}),
+    },
+  };
+}
+
+/** SPEC-NTA-GET-TAX-ANSWER-013: DB にも国税庁の索引にも無い番号。記事のページは取りに行かない */
+function taxAnswerNotInIndex(no: string): LawServiceError {
+  return makeError(
+    'DOC_NOT_FOUND',
+    `タックスアンサー no="${no}" は国税庁の索引（${TAX_ANSWER_INDEX_URL}）にありません`,
+    {
+      url: TAX_ANSWER_INDEX_URL,
+      hint: '番号を確かめてください。番号が分からないときは nta_search_tax_answer でキーワードから探せます',
+      retryable: false,
+      next_actions: [
+        {
+          action: 'nta_search_tax_answer',
+          reason: 'キーワード検索で正しい番号を探せます',
+          example: { keyword: '<探したい語>' },
+        },
+      ],
+      detail: { url: TAX_ANSWER_INDEX_URL },
+      tool: 'nta_get_tax_answer',
+    }
+  );
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * DB からタックスアンサー 1 件を読む（Issue #29）。
  *
- * `structured_json` を持つ行だけを返す。v0.16.0 より前に投入した行は構造を持たないので、
- * `null` を返して呼び出し側に国税庁サイトから取り直させる。
- * 返す `taxAnswer.no` は引数の `no`（#73）。
+ * `structured_json` を持つ行は `taxAnswer` を返す。構造を持たない行（v0.16.0 より前に投入した行）は、
+ * その行の出典 URL を返し、呼び出し側はその URL を国税庁サイトから取り直す（SPEC-NTA-GET-TAX-ANSWER-003）。
+ * 行が無ければ null。返す `taxAnswer.no` は引数の `no`（#73）。
  */
 function readTaxAnswerFromDb(
   no: string,
   dbPath?: string
-): { taxAnswer: TaxAnswer; orphanedAt?: string } | null {
+): { taxAnswer: TaxAnswer; orphanedAt?: string } | { sourceUrl: string } | null {
   const db = openDb(dbPath);
   try {
     const doc = getDocumentFromDb(db, 'tax-answer', no);
-    if (!doc?.structured) return null;
+    if (!doc) return null;
+    if (!doc.structured) return doc.sourceUrl ? { sourceUrl: doc.sourceUrl } : null;
     const structured = doc.structured as StoredTaxAnswerStructure;
     return {
       // #73: 行に記録された番号が空（見出しに No. の無いページを bulk download で入れた行）でも、
@@ -1453,7 +1604,10 @@ function readTaxAnswerFromDb(
   }
 }
 
-/** 取得したタックスアンサーを DB に書き戻す（Issue #29）。失敗は無視する */
+/**
+ * 取得したタックスアンサーを DB に書き戻す（Issue #29）。失敗は無視する。
+ * 行の税目は取得した URL の税目フォルダ（v0.24.0、SPEC-NTA-GET-TAX-ANSWER-006・011）
+ */
 function writeBackTaxAnswer(ta: TaxAnswer, html: string, dbPath?: string): void {
   try {
     const db = openDb(dbPath);
@@ -1462,7 +1616,8 @@ function writeBackTaxAnswer(ta: TaxAnswer, html: string, dbPath?: string): void 
       writeBackLiveDocument(db, {
         docType: 'tax-answer',
         docId: ta.no,
-        taxonomy: TAX_ANSWER_FOLDER_MAP[ta.no[0]],
+        taxonomy: taxAnswerFolderOf(ta.sourceUrl),
+
         // bulk download と同じ行になるように、題名にも同じ正規化を通す（content_hash が揃う）
         title: normalizeJpText(ta.title),
         issuedAt: parseEffectiveDate(ta.effectiveDate),
@@ -1779,7 +1934,8 @@ export async function handleNtaSearchJimuUnei(
         keyword: args.keyword,
         ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
         ...zero,
-        legal_status: TSUTATSU_LEGAL_STATUS,
+        // v0.24.0（SPEC-NTA-SEARCH-JIMU-UNEI-002・003、#131）: nta_get_jimu_unei の json と同じ値にする
+        legal_status: JIMU_UNEI_LEGAL_STATUS,
       };
     }
 
@@ -1795,7 +1951,7 @@ export async function handleNtaSearchJimuUnei(
       results: hits.map(docSearchResult),
       ...(freshness ? { freshness } : {}),
       ...describeIndexStatusNotes(hits, searchNotes),
-      legal_status: TSUTATSU_LEGAL_STATUS,
+      legal_status: JIMU_UNEI_LEGAL_STATUS,
     };
   } catch (err) {
     const unreadable = unreadableFetchedAt(

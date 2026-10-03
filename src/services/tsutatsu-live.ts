@@ -406,6 +406,8 @@ export interface LiveFetchOptions {
   maxRetries?: number;
   /** 再試行の待ちの基準値 (ms)（`fetchNtaPage` の `retryBaseMs`） */
   retryBaseMs?: number;
+  /** 1 回の要求で応答を待つ時間 (ms)（`fetchNtaPage` の `timeoutMs`。テスト用） */
+  timeoutMs?: number;
 }
 
 /** 国税庁サイトから条項を取った結果 */
@@ -457,6 +459,7 @@ export async function fetchTsutatsuClauseLive(
   if (options.fetchImpl) fetchOptions.fetchImpl = options.fetchImpl;
   if (options.maxRetries !== undefined) fetchOptions.maxRetries = options.maxRetries;
   if (options.retryBaseMs !== undefined) fetchOptions.retryBaseMs = options.retryBaseMs;
+  if (options.timeoutMs !== undefined) fetchOptions.timeoutMs = options.timeoutMs;
 
   const tocUrl = `${target.rootUrl}01.htm`;
   const tried = new Set<string>();

@@ -47,19 +47,61 @@ export interface NtaFetchResult {
   notModified?: boolean;
 }
 
-/** スクレイピング失敗時の例外。url / status / cause を保持 */
+/**
+ * 国税庁サイトへの要求がどう終わったか（v0.24.0、SPEC-NTA-COMMON-ERRORS-018・019）。
+ *
+ * - `http`: HTTP の応答を受け取った（`status` に HTTP ステータス。404 ページへの転送は 404）
+ * - `timeout`: このサーバーが応答を待ちきれずに打ち切った（`FETCH_CONFIG.timeoutMs`）
+ * - `unreachable`: 接続できなかった（例外の `cause.code` が `UNREACHABLE_CAUSE_CODES` のどれか）
+ * - `network`: そのほかのネットワークの失敗
+ */
+export type NtaFetchFailureKind = 'http' | 'timeout' | 'unreachable' | 'network';
+
+/** SPEC-NTA-COMMON-ERRORS-019: 「接続できない」とみなす例外の `cause.code`（houki-egov-mcp の 028 と同じ表） */
+export const UNREACHABLE_CAUSE_CODES: ReadonlySet<string> = new Set([
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+]);
+
+/** スクレイピング失敗時の例外。url / status / cause と、失敗の種類（kind）を保持 */
 export class NtaFetchError extends Error {
   public readonly url: string;
   public readonly status?: number;
   public readonly cause?: unknown;
+  /** 失敗の種類。指定しなければ、status があれば `http`、無ければ `network` */
+  public readonly kind: NtaFetchFailureKind;
+  /** `kind` が `unreachable` のときの `cause.code`（例: `ENOTFOUND`） */
+  public readonly causeCode?: string;
 
-  constructor(message: string, url: string, status?: number, cause?: unknown) {
+  constructor(
+    message: string,
+    url: string,
+    status?: number,
+    cause?: unknown,
+    failure: { kind?: NtaFetchFailureKind; causeCode?: string } = {}
+  ) {
     super(message);
     this.name = 'NtaFetchError';
     this.url = url;
     if (status !== undefined) this.status = status;
     if (cause !== undefined) this.cause = cause;
+    this.kind = failure.kind ?? (status !== undefined ? 'http' : 'network');
+    if (failure.causeCode !== undefined) this.causeCode = failure.causeCode;
   }
+}
+
+/** 例外の `cause.code`（無ければ例外そのものの `code`）を読む */
+function causeCodeOf(err: unknown): string | undefined {
+  const pick = (v: unknown): string | undefined => {
+    if (typeof v !== 'object' || v === null) return undefined;
+    const code = (v as { code?: unknown }).code;
+    return typeof code === 'string' ? code : undefined;
+  };
+  if (typeof err !== 'object' || err === null) return undefined;
+  return pick((err as { cause?: unknown }).cause) ?? pick(err);
 }
 
 /** `fetchNtaPage` のオプション */
@@ -141,11 +183,20 @@ export async function fetchNtaPage(
       // 最後の試行でも失敗 → ラップして throw
       if (attempt === maxRetries) {
         const msg = err instanceof Error ? err.message : String(err);
+        // 失敗の種類（時間切れ・接続できない など）は最後の試行のものを引き継ぐ（SPEC-NTA-COMMON-ERRORS-018）
+        const failure =
+          err instanceof NtaFetchError
+            ? {
+                kind: err.kind,
+                ...(err.causeCode !== undefined ? { causeCode: err.causeCode } : {}),
+              }
+            : {};
         throw new NtaFetchError(
           `failed after ${maxRetries + 1} attempt(s): ${msg}`,
           url,
           err instanceof NtaFetchError ? err.status : undefined,
-          err
+          err,
+          failure
         );
       }
       // それ以外は次の retry へ
@@ -253,6 +304,25 @@ async function doFetch(
     if (lastMod) result.lastModified = lastMod;
     if (etag) result.etag = etag;
     return result;
+  } catch (err) {
+    if (err instanceof NtaFetchError) throw err;
+    // v0.24.0（SPEC-NTA-COMMON-ERRORS-018・019）: 例外を失敗の種類に分ける
+    const msg = err instanceof Error ? err.message : String(err);
+    if (controller.signal.aborted) {
+      throw new NtaFetchError(`timeout after ${timeoutMs}ms`, url, undefined, err, {
+        kind: 'timeout',
+      });
+    }
+    const code = causeCodeOf(err);
+    if (code !== undefined && UNREACHABLE_CAUSE_CODES.has(code)) {
+      throw new NtaFetchError(`${msg} (${code})`, url, undefined, err, {
+        kind: 'unreachable',
+        causeCode: code,
+      });
+    }
+    throw new NtaFetchError(code !== undefined ? `${msg} (${code})` : msg, url, undefined, err, {
+      kind: 'network',
+    });
   } finally {
     clearTimeout(timer);
   }

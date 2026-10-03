@@ -29,6 +29,7 @@ export type LawErrorCode =
   | 'SOURCE_API_ERROR'
   | 'SOURCE_TIMEOUT'
   | 'SOURCE_RATE_LIMITED'
+  | 'SOURCE_UNAVAILABLE'
   // システム
   | 'INTERNAL_ERROR';
 

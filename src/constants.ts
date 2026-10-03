@@ -132,11 +132,12 @@ export const TSUTATSU_BASE_LAWS: Readonly<Record<string, readonly string[]>> = {
 export const TAX_ANSWER_BASE_URL = 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/';
 
 /**
- * タックスアンサー番号の先頭桁 → 税目フォルダのマッピング。
+ * タックスアンサー番号の先頭桁 → 税目フォルダのおおよその対応。
  *
- * 例: 6101 → "shohi" → /taxes/shiraberu/taxanswer/shohi/6101.htm
- *
- * 8xxx 帯は要追加調査（2026-05 時点で sake/8001 は 404）。Phase 2 で対応予定。
+ * v0.24.0（SPEC-NTA-GET-TAX-ANSWER-003、houki-nta-mcp #128）から `nta_get_tax_answer` の URL には使わない。
+ * 記事の URL は国税庁の索引（`/taxes/shiraberu/taxanswer/code/`）で決める。番号の先頭の桁と
+ * 索引の税目フォルダは 2026-10-03 JST の索引で 129 件食い違っていた（`2xxx` の一部は `shotoku`、
+ * `4xxx` は `zoyo`・`hyoka` も、`7xxx` は `hotei`・`fufuku` も、`8xxx` は `saigai`）。
  */
 export const TAX_ANSWER_FOLDER_MAP: Readonly<Record<string, string>> = {
   '1': 'shotoku', // 所得税
@@ -148,6 +149,28 @@ export const TAX_ANSWER_FOLDER_MAP: Readonly<Record<string, string>> = {
   '7': 'inshi', // 印紙税
   '9': 'osirase', // お知らせ（税目横断）
 } as const;
+
+/**
+ * `--tax-answer-taxonomy` で使える税目フォルダ（v0.24.0、cli_bulk_download の入力の表、houki-nta-mcp #128）。
+ *
+ * 2026-10-03 JST の国税庁のタックスアンサーの索引にある税目フォルダ 13 個。索引にこの一覧に無いフォルダが
+ * 現れても、`--tax-answer-taxonomy` を付けない投入では取り込む。絞り込みに使えるのはこの一覧の値だけ
+ */
+export const TAX_ANSWER_TAXONOMIES = [
+  'shotoku',
+  'gensen',
+  'joto',
+  'sozoku',
+  'zoyo',
+  'hyoka',
+  'hojin',
+  'shohi',
+  'inshi',
+  'hotei',
+  'fufuku',
+  'saigai',
+  'osirase',
+] as const;
 
 /**
  * タックスアンサー / 質疑応答事例の法的位置付け。
@@ -185,8 +208,9 @@ export const BUNSHOKAITOU_LEGAL_STATUS = {
  * 載せる `legal_status` を、docType に応じて適切に出し分けるための map。
  *
  * 設計:
- *  - `kaisei` / `jimu-unei`: 通達 (kaisei は改正通達, jimu-unei は事務運営指針も
- *    通達の 1 種)。`TSUTATSU_LEGAL_STATUS` (binds_tax_office: true) を再利用
+ *  - `kaisei`: 改正通達。`TSUTATSU_LEGAL_STATUS` (binds_tax_office: true) を再利用
+ *  - `jimu-unei`: 事務運営指針。拘束力は通達と同じで、`note` は事務運営指針を名指しする
+ *    `JIMU_UNEI_LEGAL_STATUS`（v0.24.0、SPEC-NTA-INSPECT-PDF-META-016、houki-nta-mcp #131）
  *  - `bunshokaitou`: 個別事案回答 → `BUNSHOKAITOU_LEGAL_STATUS`
  *  - `tax-answer` / `qa-jirei`: 解説資料 → `NTA_GENERAL_INFO_LEGAL_STATUS`
  *
@@ -197,7 +221,7 @@ export const BUNSHOKAITOU_LEGAL_STATUS = {
  */
 export const LEGAL_STATUS_BY_DOCTYPE = {
   kaisei: TSUTATSU_LEGAL_STATUS,
-  'jimu-unei': TSUTATSU_LEGAL_STATUS,
+  'jimu-unei': JIMU_UNEI_LEGAL_STATUS,
   bunshokaitou: BUNSHOKAITOU_LEGAL_STATUS,
   'tax-answer': NTA_GENERAL_INFO_LEGAL_STATUS,
   'qa-jirei': NTA_GENERAL_INFO_LEGAL_STATUS,

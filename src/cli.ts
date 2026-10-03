@@ -20,7 +20,7 @@ import {
   BUNSHO_TAXONOMY_GROUPS,
   bunshoMainTaxonomy,
   QA_TOPICS,
-  TAX_ANSWER_FOLDER_MAP,
+  TAX_ANSWER_TAXONOMIES,
   TSUTATSU_URL_ROOTS,
 } from './constants.js';
 import { closeDb, defaultDbPath, openDb } from './db/index.js';
@@ -102,9 +102,6 @@ const BUNSHO_TAXONOMY_ALIASES: readonly string[] = BUNSHO_TAXONOMY_GROUPS.flatMa
   g.slice(1)
 );
 
-/** タックスアンサーの税目フォルダ（`TAX_ANSWER_FOLDER_MAP` の値） */
-const TAX_ANSWER_TAXONOMIES: readonly string[] = Object.values(TAX_ANSWER_FOLDER_MAP);
-
 /**
  * Issue #25: `--bunsho-taxonomy` などの CSV を分割し、一覧に無い値を集める。
  *
@@ -183,7 +180,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
         a.slice('--tax-answer-taxonomy='.length),
         '--tax-answer-taxonomy',
         TAX_ANSWER_TAXONOMIES,
-        (v) => (TAX_ANSWER_TAXONOMIES.includes(v) ? v : undefined)
+        (v) => ((TAX_ANSWER_TAXONOMIES as readonly string[]).includes(v) ? v : undefined)
       );
       args.taxAnswerTaxonomies = parsed.values;
       args.invalidTaxonomyValues.push(...parsed.invalid);

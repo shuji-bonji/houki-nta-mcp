@@ -199,6 +199,25 @@ CREATE TRIGGER IF NOT EXISTS document_au AFTER UPDATE ON document BEGIN
   INSERT INTO document_fts(rowid, doc_type, taxonomy, title, full_text)
   VALUES (new.id, new.doc_type, new.taxonomy, new.title, new.full_text);
 END;
+
+-- ========================================================================
+-- v12 (houki-nta-mcp #128、SPEC-NTA-DB-SCHEMA-025): タックスアンサーの索引
+-- ========================================================================
+-- nta_get_tax_answer は記事の URL を国税庁の索引（/taxes/shiraberu/taxanswer/code/）で決める。
+-- 索引は 1 記事 1 行で保存して使い回し、番号が見つからないときにだけ条件付き取得で取り直す。
+-- 取り直して 200 なら行をすべて置き換え、304 なら tax_answer_index_page.fetched_at だけを書き換える
+CREATE TABLE IF NOT EXISTS tax_answer_index (
+  no TEXT PRIMARY KEY,                      -- 4 桁の番号。例: '8001'
+  url TEXT NOT NULL,                        -- 記事の URL
+  taxonomy TEXT NOT NULL,                   -- URL の taxanswer/ の次の要素。例: 'saigai'
+  title TEXT NOT NULL                       -- 索引の題名
+);
+CREATE TABLE IF NOT EXISTS tax_answer_index_page (
+  url TEXT PRIMARY KEY,                     -- 索引のページの URL
+  fetched_at TEXT NOT NULL,
+  last_modified TEXT,
+  etag TEXT
+);
 `;
 
 /**
@@ -658,6 +677,8 @@ function dropAndRecreate(db: DatabaseT.Database): void {
     DROP TABLE IF EXISTS chapter;
     DROP TABLE IF EXISTS tsutatsu_toc;
     DROP TABLE IF EXISTS tsutatsu;
+    DROP TABLE IF EXISTS tax_answer_index;
+    DROP TABLE IF EXISTS tax_answer_index_page;
     DROP TABLE IF EXISTS schema_meta;
   `);
   db.exec(SCHEMA_SQL);
