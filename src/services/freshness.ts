@@ -146,7 +146,7 @@ export function summarizeFreshnessFromDocument(
   nowMs: number = Date.now()
 ): FreshnessRange | null {
   let sql = `SELECT MIN(fetched_at) as oldest, MAX(fetched_at) as newest, COUNT(*) as cnt
-             FROM document WHERE doc_type = ?`;
+             FROM document WHERE doc_type = ? AND orphaned_at IS NULL`;
   const params: string[] = [doc_type];
   if (taxonomyFilter && taxonomyFilter.length > 0) {
     const placeholders = taxonomyFilter.map(() => '?').join(', ');
