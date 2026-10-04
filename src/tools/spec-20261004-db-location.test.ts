@@ -9,19 +9,30 @@
  *   SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001、SPEC-NTA-SEARCH-JIMU-UNEI-001、SPEC-NTA-SEARCH-BUNSHOKAITOU-001・002、
  *   SPEC-NTA-GET-KAISEI-TSUTATSU-001・002、SPEC-NTA-GET-JIMU-UNEI-001・002、SPEC-NTA-GET-BUNSHOKAITOU-002・003、
  *   SPEC-NTA-INSPECT-PDF-META-001、SPEC-NTA-SEARCH-TSUTATSU-004（freshness.db_path）
+ * - nta_get_tax_answer: SPEC-NTA-GET-TAX-ANSWER-018（ADDED。#137）、db_schema: SPEC-NTA-DB-SCHEMA-025（MODIFIED）
  *
  * 期待値は差分の spec.md の本文・表・「例:」から決めている。例のホームディレクトリ `/Users/bonji` は、一時ディレクトリの
  * 下のフォルダー（HOME）に置き換える。ツールには DB のパスを渡さず、MCP サーバーと同じく環境変数
  * （HOUKI_NTA_DB_PATH・XDG_CACHE_HOME・HOME）で DB の場所を決める。国税庁サイトには取りに行かない。
  */
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TAX_ANSWER_INDEX_URL, withTaxAnswerIndex } from '../../tests/support/tax-answer-index.js';
 import { initSchema } from '../db/schema.js';
 import {
+  getTaxAnswer,
   handleNtaGetBunshokaitou,
   handleNtaGetJimuUnei,
   handleNtaGetKaiseiTsutatsu,
@@ -1044,5 +1055,274 @@ describe('SPEC-NTA-SEARCH-QA-005 topic の範囲に事例が 1 件も無いと�
     })) as FreshnessBody;
     expect(body.freshness?.oldest_fetched_at).toBe('2026-10-04T04:26:15.744Z');
     expect(body.freshness?.db_path).toBe('~/.cache/houki-nta-mcp/cache.db');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* SPEC-NTA-GET-TAX-ANSWER-018・SPEC-NTA-DB-SCHEMA-025（#137）                  */
+/* -------------------------------------------------------------------------- */
+
+const ARTICLE_HTML = readFileSync(
+  join(
+    import.meta.dirname,
+    '../../tests/fixtures/www.nta.go.jp_taxes_shiraberu_taxanswer_shohi_6101.htm'
+  ),
+  'utf8'
+);
+
+interface TaxAnswerBody extends Body {
+  source?: string;
+  taxAnswer?: { no?: string };
+  isError?: boolean;
+}
+
+interface WarnLine {
+  level: string;
+  scope: string;
+  msg: string;
+  meta: { table: string; db_path: string; error: { name: string; message: string } };
+}
+
+/** 索引の要求のヘッダーを記録しながら、測った索引と No.6101 の記事を返す fetch */
+function siteRecordingIndexHeaders(indexInits: Array<Record<string, string>>): typeof fetch {
+  const article = (async () =>
+    new Response(ARTICLE_HTML, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=UTF-8' },
+    })) as unknown as typeof fetch;
+  const inner = withTaxAnswerIndex(article);
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url === TAX_ANSWER_INDEX_URL) {
+      indexInits.push(Object.fromEntries(new Headers(init?.headers ?? {}).entries()));
+    }
+    return inner(input, init);
+  }) as typeof fetch;
+}
+
+function captureWarns(): { lines: () => WarnLine[]; restore: () => void } {
+  const chunks: string[] = [];
+  const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+    chunks.push(String(chunk));
+    return true;
+  });
+  return {
+    lines: () =>
+      chunks
+        .join('')
+        .split('\n')
+        .filter((l) => l.startsWith('{'))
+        .map((l) => JSON.parse(l) as WarnLine)
+        .filter((l) => l.level === 'warn' && l.scope === 'nta_get_tax_answer'),
+    restore: () => spy.mockRestore(),
+  };
+}
+
+function pageFetchedAt(path: string): string | undefined {
+  const db = new Database(path, { readonly: true });
+  try {
+    return (
+      db.prepare('SELECT fetched_at FROM tax_answer_index_page').get() as
+        | { fetched_at: string }
+        | undefined
+    )?.fetched_at;
+  } finally {
+    db.close();
+  }
+}
+
+/** 例の壊れた表の DB（tax_answer_index に url の列が無く、tax_answer_index_page に行がある） */
+function makeBrokenIndexDb(path: string): void {
+  makeDb(path);
+  const db = new Database(path);
+  db.exec(
+    'DROP TABLE tax_answer_index; CREATE TABLE tax_answer_index (no TEXT PRIMARY KEY, taxonomy TEXT NOT NULL, title TEXT NOT NULL);'
+  );
+  db.prepare(
+    `INSERT INTO tax_answer_index_page(url, fetched_at, last_modified, etag) VALUES (?, ?, NULL, ?)`
+  ).run(TAX_ANSWER_INDEX_URL, '2026-10-01T00:00:00.000Z', '"25b0a-65b81bf96ae40"');
+  db.close();
+}
+
+describe('SPEC-NTA-GET-TAX-ANSWER-018 保存した索引を読めない・保存できないときも記事を返し、MCP サーバーのログに warn で残す', () => {
+  it('SPEC-NTA-GET-TAX-ANSWER-018 例（壊れた表の DB）: 索引を条件なしで取り、記事を返し、読めない・保存できないの warn を 2 行出し、tax_answer_index_page は前のまま', async () => {
+    const path = join(dir, 'broken.db');
+    makeBrokenIndexDb(path);
+    const indexInits: Array<Record<string, string>> = [];
+    const warns = captureWarns();
+    let body: TaxAnswerBody;
+    try {
+      body = (await getTaxAnswer(
+        { no: '6101', format: 'json' },
+        { fetchImpl: siteRecordingIndexHeaders(indexInits), dbPath: path }
+      )) as TaxAnswerBody;
+    } finally {
+      warns.restore();
+    }
+    expect(body.code).toBeUndefined();
+    expect(body.isError).toBeUndefined();
+    expect(body.source).toBe('live');
+    expect(body.taxAnswer?.no).toBe('6101');
+    expect(indexInits).toHaveLength(1);
+    expect(indexInits[0]['if-none-match']).toBeUndefined();
+    expect(indexInits[0]['if-modified-since']).toBeUndefined();
+    const lines = warns.lines();
+    expect(lines).toHaveLength(2);
+    expect(lines[0].msg).toBe(
+      `保存したタックスアンサーの索引を読めないため、国税庁サイトから取り直します（表: tax_answer_index、DB: ${path}）`
+    );
+    expect(lines[0].meta.table).toBe('tax_answer_index');
+    expect(lines[0].meta.db_path).toBe(path);
+    expect(typeof lines[0].meta.error.name).toBe('string');
+    expect(lines[0].meta.error.message).toContain('url');
+    expect(lines[1].msg).toBe(
+      `タックスアンサーの索引を DB に保存できませんでした（表: tax_answer_index、DB: ${path}）`
+    );
+    expect(lines[1].meta).toMatchObject({ table: 'tax_answer_index', db_path: path });
+    expect(lines[1].meta.error.message).toContain('url');
+    expect(pageFetchedAt(path)).toBe('2026-10-01T00:00:00.000Z');
+  });
+
+  it('SPEC-NTA-GET-TAX-ANSWER-018 例: 同じ DB でもう一度、記事の URL を索引で決める呼び出しをすると（1 回目に書き戻した記事の行を消してから呼ぶ。記事の行があると 016 の前の DB の経路で返り、索引を引かない）、同じく索引を条件なしで取り、同じ 2 行の warn を出す', async () => {
+    const path = join(dir, 'broken.db');
+    makeBrokenIndexDb(path);
+    for (let i = 0; i < 2; i++) {
+      // 018 は「記事の URL を国税庁の索引で決めるとき」の規則。1 回目で記事 6101 が document に書き戻されるので、
+      // 2 回目も索引で URL を決めるよう、記事の行を消してから呼ぶ（houki-hub の 0.25.0 の報告の「止めて聞いたこと」）
+      if (i > 0) {
+        const db = new Database(path);
+        db.prepare(`DELETE FROM document WHERE doc_type = 'tax-answer' AND doc_id = '6101'`).run();
+        db.close();
+      }
+      const indexInits: Array<Record<string, string>> = [];
+      const warns = captureWarns();
+      try {
+        await getTaxAnswer(
+          { no: '6101', format: 'json' },
+          { fetchImpl: siteRecordingIndexHeaders(indexInits), dbPath: path }
+        );
+      } finally {
+        warns.restore();
+      }
+      expect(indexInits[0]['if-none-match']).toBeUndefined();
+      expect(warns.lines().map((l) => l.meta.table)).toEqual([
+        'tax_answer_index',
+        'tax_answer_index',
+      ]);
+    }
+  });
+
+  it('SPEC-NTA-GET-TAX-ANSWER-018 tax_answer_index_page に索引の行が無い（まだ保存していない）ときは warn を出さない', async () => {
+    const path = join(dir, 'fresh.db');
+    makeDb(path);
+    const warns = captureWarns();
+    let body: TaxAnswerBody;
+    try {
+      body = (await getTaxAnswer(
+        { no: '6101', format: 'json' },
+        { fetchImpl: siteRecordingIndexHeaders([]), dbPath: path }
+      )) as TaxAnswerBody;
+    } finally {
+      warns.restore();
+    }
+    expect(body.taxAnswer?.no).toBe('6101');
+    expect(warns.lines()).toEqual([]);
+  });
+
+  it('SPEC-NTA-GET-TAX-ANSWER-018 取った索引の保存が tax_answer_index_page で失敗したときは、取った索引で記事を返し、表の名前を tax_answer_index_page にした warn を出す', async () => {
+    const path = join(dir, 'blocked.db');
+    makeDb(path);
+    const db = new Database(path);
+    db.exec(
+      `CREATE TRIGGER block_page BEFORE INSERT ON tax_answer_index_page BEGIN SELECT RAISE(ABORT, 'blocked'); END;`
+    );
+    db.close();
+    const warns = captureWarns();
+    let body: TaxAnswerBody;
+    try {
+      body = (await getTaxAnswer(
+        { no: '6101', format: 'json' },
+        { fetchImpl: siteRecordingIndexHeaders([]), dbPath: path }
+      )) as TaxAnswerBody;
+    } finally {
+      warns.restore();
+    }
+    expect(body.taxAnswer?.no).toBe('6101');
+    const lines = warns.lines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0].msg).toBe(
+      `タックスアンサーの索引を DB に保存できませんでした（表: tax_answer_index_page、DB: ${path}）`
+    );
+    expect(lines[0].meta.error.message).toContain('blocked');
+    // 途中で失敗したので、tax_answer_index は前の行（空）のまま（SPEC-NTA-DB-SCHEMA-025）
+    const check = new Database(path, { readonly: true });
+    const n = (check.prepare('SELECT COUNT(*) AS n FROM tax_answer_index').get() as { n: number })
+      .n;
+    check.close();
+    expect(n).toBe(0);
+  });
+
+  it('SPEC-NTA-GET-TAX-ANSWER-018 304 のときの取得日時の書き換えが失敗したときは、013 の DOC_NOT_FOUND を返し、取得日時の warn を出す', async () => {
+    const path = join(dir, 'touch.db');
+    makeDb(path);
+    const db = new Database(path);
+    db.prepare('INSERT INTO tax_answer_index(no, url, taxonomy, title) VALUES (?, ?, ?, ?)').run(
+      '6101',
+      'https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6101.htm',
+      'shohi',
+      '題名'
+    );
+    db.prepare(
+      `INSERT INTO tax_answer_index_page(url, fetched_at, last_modified, etag) VALUES (?, ?, NULL, ?)`
+    ).run(TAX_ANSWER_INDEX_URL, '2026-10-01T00:00:00.000Z', '"v1"');
+    db.exec(
+      `CREATE TRIGGER block_touch BEFORE UPDATE ON tax_answer_index_page BEGIN SELECT RAISE(ABORT, 'blocked'); END;`
+    );
+    db.close();
+    const notModified = (async () =>
+      new Response(null, { status: 304 })) as unknown as typeof fetch;
+    const warns = captureWarns();
+    let body: TaxAnswerBody;
+    try {
+      body = (await getTaxAnswer(
+        { no: '6999', format: 'json' },
+        { fetchImpl: notModified, dbPath: path }
+      )) as TaxAnswerBody;
+    } finally {
+      warns.restore();
+    }
+    expect(body.code).toBe('DOC_NOT_FOUND');
+    const lines = warns.lines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0].msg).toBe(
+      `タックスアンサーの索引の取得日時を DB に書き換えられませんでした（表: tax_answer_index_page、DB: ${path}）`
+    );
+    expect(lines[0].meta.table).toBe('tax_answer_index_page');
+    expect(pageFetchedAt(path)).toBe('2026-10-01T00:00:00.000Z');
+  });
+});
+
+describe('SPEC-NTA-DB-SCHEMA-025 タックスアンサーの索引は tax_answer_index に 1 記事 1 行で保存し、取り直したら置き換える', () => {
+  it('SPEC-NTA-DB-SCHEMA-025 「まだ保存していない」とみなすのは tax_answer_index_page に索引の URL の行が無いときだけ。url の列の無い表では置き換えは始まる前に失敗し、tax_answer_index_page の行は前の値のまま', async () => {
+    const path = join(dir, 'broken.db');
+    makeBrokenIndexDb(path);
+    const warns = captureWarns();
+    try {
+      await getTaxAnswer(
+        { no: '6101', format: 'json' },
+        { fetchImpl: siteRecordingIndexHeaders([]), dbPath: path }
+      );
+    } finally {
+      warns.restore();
+    }
+    // 読めないことを「保存していない」と区別してログに出す
+    expect(warns.lines()[0].msg.startsWith('保存したタックスアンサーの索引を読めないため')).toBe(
+      true
+    );
+    expect(pageFetchedAt(path)).toBe('2026-10-01T00:00:00.000Z');
+    const check = new Database(path, { readonly: true });
+    const page = check.prepare('SELECT etag FROM tax_answer_index_page').get() as { etag: string };
+    check.close();
+    expect(page.etag).toBe('"25b0a-65b81bf96ae40"');
   });
 });
