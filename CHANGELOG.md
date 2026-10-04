@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-10-04
+
+**patch リリース** — 検索ツールの `freshness` の範囲から、国税庁の索引から消えた文書を外した（#139）。応答のフィールドは変えず、`freshness` の値の計算だけが変わる。DB のスキーマは変えていない（版 12 のまま）。仕様 PR は #140（SPEC-NTA-SEARCH-RULES-017 の MODIFIED）。
+
+0.24.1 から、検索ツールの `freshness` は国税庁の索引にある文書だけで判定します。索引から消えた文書（`index_status: "removed_from_index"`）は取り直されないため、0.24.0 までは、その古い取得日時のせいで投入をやり直しても `stale` や `outdated` のままになることがありました。DB を作り直す必要はありません。
+
+閉じる Issue: #139
+
+### Fixed
+
+- **文書系 5 ツールの `freshness` が、国税庁の索引から消えた文書の古い取得日時で止まっていた**（#139、SPEC-NTA-SEARCH-RULES-017）: `nta_search_qa`・`nta_search_tax_answer`・`nta_search_kaisei_tsutatsu`・`nta_search_jimu_unei`・`nta_search_bunshokaitou` の `freshness` は、その種別（税目で絞ったときはその税目）の文書すべての取得日時の範囲から決めていた。bulk download は索引から消えた文書の行を消さずに `orphaned_at` を付けて残し、取り直さないので、その行の古い取得日時が `oldest_fetched_at` になり、投入をやり直しても `fresh` に戻らなかった。30 日を過ぎると `outdated` になり、`warning` が案内するフラグを実行しても直らなかった（2026-10-04 JST の DB ではタックスアンサー No.2882 の 1 行が原因で、`--bulk-download-everything` の直後の `nta_search_tax_answer` が `stale` だった）。範囲を `orphaned_at` の無い行だけにした。範囲に索引にある文書が 1 件も無いときは `freshness` を付けない。0 件の応答の `freshness` も同じ範囲で決める。検索結果・`index_status`・`orphaned_at`・`search_notes`・0 件の `hint` の件数・`DOC_NOT_FOUND` の判定は変えない。`nta_search_tsutatsu`（通達の節）は索引から消えた印を持たないので変わらない
+
+### 互換性
+
+| 場面 | 0.24.0 | 0.24.1 |
+| --- | --- | --- |
+| 範囲に索引から消えた文書があり、その取得日時が範囲の中で最も古い | その日時が `oldest_fetched_at` になり、`staleness` が投入をやり直しても `fresh` に戻らない。30 日を過ぎると `outdated` と `warning` | 索引にある文書の最も古い取得日時が `oldest_fetched_at` になる。投入をやり直せば `fresh` に戻る |
+| 範囲に索引から消えた文書があり、その取得日時が範囲の中で最も新しい | その日時が `newest_fetched_at` | 索引にある文書の最も新しい取得日時が `newest_fetched_at`（実際には起きにくい。消えた文書は取り直されないため） |
+| 範囲の文書がすべて索引から消えている | `freshness` が付く | `freshness` が付かない |
+| 索引から消えた文書が無い | — | 変わらない |
+| `nta_search_tsutatsu` | — | 変わらない |
+
+### Tests
+
+- 仕様の差分 `20261004-freshness-orphaned` の受入テスト（`src/tools/spec-20261004-freshness-orphaned.test.ts`、35 件）を足した。017 の例 2・3・4 を 5 種別で、範囲がすべて印付きの DB、`nta_search_tsutatsu` が変わらないことを確かめる
+
 ## [0.24.0] - 2026-10-04
 
 **minor リリース** — 段階 5（houki-hub `docs/notes/2026-09-29-plan-spec-issues.md`）。検索の規則（#81・#80・#72）、国税庁サイトから取る経路（#120・#128・#131）、ローカル DB と CLI（#106・#107・#109・#110・#111・#112）を、承認済みの仕様の差分どおりに直した。仕様 PR は #132（specs/current の直し漏れ、#123）・#133（検索の規則）・#134（国税庁サイトから取る経路）・#135（DB と CLI）。
