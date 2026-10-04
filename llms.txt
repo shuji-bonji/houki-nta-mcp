@@ -82,6 +82,7 @@ DB に無ければ `DOC_NOT_FOUND` を返す（docId から URL を組み立て�
 - `nta_search_*` の各件: `index_status: "removed_from_index"` + `orphaned_at`、`search_notes` に件数の 1 行
 - `nta_get_*`: `index_status` + `orphaned_at` + `notice`
 - 印は `--bulk-download-*` のときに付け外しする。索引に戻れば外れる
+- 検索の `freshness` は索引にある文書だけで判定する（v0.24.1 / Issue #139）。索引から消えた文書は取り直されないため、範囲に入れると投入をやり直しても `fresh` に戻らない。範囲に索引にある文書が 1 件も無いときは `freshness` を付けない
 
 ### PDF 軸 (Phase 4-2, v0.7.1)
 - `nta_inspect_pdf_meta`: docType + docId で指定文書の添付 PDF メタだけを返す軽量 API。本文を含まないので軽い。`reader_hints.examples` に pdf-reader-mcp の `read_text` 呼び出し例 JSON が入る

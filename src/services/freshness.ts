@@ -135,8 +135,14 @@ export function freshnessForFetchedAt(
  * document テーブルから doc_type 範囲の最古 / 最新 fetched_at を取得し、
  * FreshnessRange を返す。
  *
+ * 範囲は国税庁の索引にある文書（`orphaned_at` が NULL の行）だけにする（v0.24.1、Issue #139、
+ * SPEC-NTA-SEARCH-RULES-017）。bulk download は索引から消えた文書を取り直さないので、その取得日時は
+ * 投入をやり直しても新しくならない。範囲に入れると staleness が fresh に戻らず、warning が案内する
+ * フラグを実行しても直らない。検索結果からは除かない（呼び出し側の検索はこの関数と別）。
+ *
  * @param taxonomyFilter 部分実行時のスナップショット範囲を絞り込み
- * @returns データが 1 件もない場合は null
+ * @returns 範囲に索引にある文書が 1 件も無い場合は null（印が付いた行しか無い範囲を含む）。
+ *          呼び出し側は freshness を付けない
  */
 export function summarizeFreshnessFromDocument(
   db: DatabaseT.Database,

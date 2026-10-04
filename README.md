@@ -175,6 +175,8 @@ bulk download を再実行したときに、国税庁の索引から消えてい
 | `nta_search_*`（5 種別） | 各件に `index_status: "removed_from_index"` と `orphaned_at`、`search_notes` に「N 件のうち M 件は索引から外れています」の 1 行 |
 | `nta_get_*`（5 種別） | `index_status` / `orphaned_at` / `notice`（Markdown 形式では「索引の状態」の行と注記） |
 
+0.24.1 から、検索ツールの `freshness` は国税庁の索引にある文書だけで判定します。索引から消えた文書（`index_status: "removed_from_index"`）は取り直されないため、0.24.0 までは、その古い取得日時のせいで投入をやり直しても `stale` や `outdated` のままになることがありました。DB を作り直す必要はありません。
+
 検索結果から除外はしません。除外すると、過去の期間を調べたい利用者が引けなくなります。
 
 印の付け外しは `--bulk-download-*` のときに行います。

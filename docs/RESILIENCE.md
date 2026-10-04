@@ -387,6 +387,8 @@ stateDiagram-v2
 
 `outdated` 時のみ warning を出す。`fresh` / `stale` でも staleness フィールドは入れるが、`warning` は省略 or 任意。
 
+文書系 5 ツール（`nta_search_qa`・`nta_search_tax_answer`・`nta_search_kaisei_tsutatsu`・`nta_search_jimu_unei`・`nta_search_bunshokaitou`）の範囲は、国税庁の索引にある文書（`document.orphaned_at` の無い行）だけです（v0.24.1、Issue #139、SPEC-NTA-SEARCH-RULES-017）。索引から消えた文書は bulk download が取り直さないので、範囲に入れると再 bulk DL で `fresh` に戻りません。
+
 ### 6.3 既存のレスポンスとの互換性
 
 `freshness` は新規フィールドなので、既存クライアントは無視可能。MCP プロトコル的に破壊的変更にはならない。
