@@ -3,9 +3,9 @@
 - 機能 ID: NTA
 - 種類: 共通
 - 版: current
-- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）
+- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261004-db-location` は 2026-10-05（PR #142）
 - 起こした元: v0.21.0 の `src/server.ts`、`src/tools/tool-args.ts`、`src/errors.ts`、`src/tools/definitions.ts`、`src/tools/handlers.ts`（ツールの登録の表）、`src/server.test.ts`、`src/tools/handlers.test.ts`
-- 関連する Issue: houki-nta-mcp #120（通信の失敗の code）
+- 関連する Issue: houki-nta-mcp #120（通信の失敗の code）、#138（案内のコマンドの形。0.25.0）
 
 この文書は、複数のツールに共通する、tools/call のエラー応答の形と引数の検査を書きます。どう実装しているか（関数名・テーブル名）は書きません。
 
@@ -274,8 +274,8 @@ houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ規則である。
 
 - `retryable`: `false`（時間をおいても DB の値は変わらない）
 - `error`: `取得時点を読めません: <fetched_at の値>`
-- `hint`: その種別の投入フラグ（`--bulk-download-qa` など。基本通達は `--bulk-download-all`）で取り込みをやり直す案内
-- `next_actions`: `{ action: "cli_bulk_download", example: { command: "houki-nta-mcp <フラグ>" } }` の 1 件
+- `hint`: ``ローカル DB の取得時点（fetched_at）が日付・時刻の形ではないため、鮮度を判定できません。`<コマンド>` で取り込みをやり直すと、取得時点が書き直されます``。`<コマンド>` は、その種別の投入フラグ（`--bulk-download-qa` など。基本通達は `--bulk-download-all`）を付けた案内のコマンド（SPEC-NTA-DB-SCHEMA-027）
+- `next_actions`: `{ action: "cli_bulk_download", example: { command: "<コマンド>" } }` の 1 件
 - `detail.cause`: 元の例外の文（houki-abbreviations の `computeDaysSince` が投げる `RangeError` の文）
 - `tool`: 呼んだツールの名前
 
@@ -283,7 +283,7 @@ houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-027 と同じ規則である。
 
 取り込みが書く `fetched_at` は `new Date().toISOString()` の形（`2026-10-01T00:30:00.000Z`）なので、取り込みを通した DB ではこのエラーは起きない。houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-031 と同じ形である。
 
-例: `document.fetched_at` を `2026/05/08` に書き換えた質疑応答事例だけがある DB で `nta_search_qa` に `{ keyword: "軽減税率" }` を渡すと、`code: "INTERNAL_ERROR"`、`retryable: false`、`error` に `2026/05/08` を含み、`hint` に `--bulk-download-qa` を含み、`results` は返さない（v0.22.0 の本文は対象に「取得 6 ツール」を含めていたが、0.22.0 の実装と受入テストは検索 6 ツールだけだった。houki-nta-mcp #71 の 2026-10-02 のコメント）。
+例: `document.fetched_at` を `2026/05/08` に書き換えた質疑応答事例だけがある DB で、環境変数を付けずに起動した MCP サーバーの `nta_search_qa` に `{ keyword: "軽減税率" }` を渡すと、`code: "INTERNAL_ERROR"`、`retryable: false`、`error` に `2026/05/08` を含み、`hint` に `` `npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-qa` `` を含み、`next_actions[0].example.command` は `npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-qa`、`results` は返さない（v0.24.x のコマンドは `houki-nta-mcp --bulk-download-qa`。v0.22.0 の本文は対象に「取得 6 ツール」を含めていたが、0.22.0 の実装と受入テストは検索 6 ツールだけだった。houki-nta-mcp #71 の 2026-10-02 のコメント）。
 
 ### SPEC-NTA-COMMON-ERRORS-018 国税庁サイトへの要求の終わり方で、取り直すか・どの code にするか・`retryable` を決める
 

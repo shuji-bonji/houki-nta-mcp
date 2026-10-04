@@ -3,7 +3,7 @@
 - 対象: `db_schema` / `search_rules` / `cli_status`（新規）/ `cli_entry` / `common_errors` / `nta_search_tsutatsu` / `nta_search_qa` / `nta_search_tax_answer` / `nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` / `nta_search_bunshokaitou` / `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` / `nta_get_tax_answer` / `nta_inspect_pdf_meta` の `specs/current/<dir>/spec.md`
 - 実装の変更: 要（下の「実装の変更」）
 - 承認日: 2026-10-05（PR #142）
-- 状態: 草案
+- 状態: 取り込み済み（v0.25.0）
 - 起こした日: 2026-10-04（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #138（開いている DB のパスが応答に出ず、残っている別の DB にも気付けない）、#137（`readStoredTaxAnswerIndex` が SQL の例外をすべて受け取って `null` を返すため、壊れた表と表が無い DB を区別できない）

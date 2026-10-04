@@ -2,9 +2,9 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261002-t1-docid-forms` は 2026-10-02（PR #121）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261002-t1-docid-forms` は 2026-10-02（PR #121）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261004-db-location` は 2026-10-05（PR #142）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaGetBunshokaitou`、`explainDocIdNotFound`、`renderDocumentMarkdown`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/index-status.ts`、`src/services/pdf-meta.ts`、`src/constants.ts`、`src/errors.ts`、`src/tools/get-doc-not-found.test.ts`
-- 関連する Issue: houki-nta-mcp #2（文書回答事例の `legal_status` の文言）、#23（文書系の bulk download の案内）、#30（索引から消えた文書の印）
+- 関連する Issue: houki-nta-mcp #2（文書回答事例の `legal_status` の文言）、#23（文書系の bulk download の案内）、#30（索引から消えた文書の印）、#138（DB の場所の見え方。0.25.0）
 
 この文書は「このツールは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。
 
@@ -50,28 +50,32 @@ flowchart TD
 
 ### SPEC-NTA-GET-BUNSHOKAITOU-002 DB に文書回答事例が 1 件も無いときは投入を案内する
 
-ローカル DB に文書回答事例が 1 件も無い（DB が空、または質疑応答事例など他の種別の文書しか入っていない）ときは、エラー `DOC_NOT_FOUND` を返す。この応答は次を持つ。
+ローカル DB に文書回答事例が 1 件も無い（DB が空、質疑応答事例など他の種別の文書しか入っていない、DB のファイルが無い・版の記録が無い・版が合わない）ときは、エラー `DOC_NOT_FOUND` を返す。この応答は次を持つ。
 
-| フィールド     | 内容                                                                                                                                                                                                                         |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `error`        | `ローカル DB に文書回答事例が 1 件も無いため、docId="<渡した docId>" を取得できません`                                                                                                                                       |
-| `hint`         | MCP サーバーが開いている DB のパスと、`houki-nta-mcp --bulk-download-bunshokaitou` で投入する案内。投入したはずのときは環境変数 `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` が bulk download を実行した環境と同じかを確かめる案内 |
-| `next_actions` | 1 件。`action: "cli_bulk_download"`、`example.command: "houki-nta-mcp --bulk-download-bunshokaitou"`                                                                                                                         |
-| `tool`         | `nta_get_bunshokaitou`                                                                                                                                                                                                       |
+| フィールド | 内容 |
+| --- | --- |
+| `error` | `ローカル DB に文書回答事例が 1 件も無いため、docId="<渡した docId>" を取得できません` |
+| `hint` | DB の状態ごとの文（SPEC-NTA-DB-SCHEMA-029。`<種別>` は `文書回答事例`、フラグは `--bulk-download-bunshokaitou`）。どの文も開こうとした DB のパスを含む |
+| `next_actions` | 1 件。`action: "cli_bulk_download"`、`example.command` は `--bulk-download-bunshokaitou` を付けた案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。版が新しい・読めない DB では入れない（SPEC-NTA-DB-SCHEMA-021） |
+| `tool` | `nta_get_bunshokaitou` |
 
 `available_doc_ids` は付けない（選ばせる文書が無い）。
+
+例: 環境変数を付けずに起動し（ホームディレクトリが `/Users/bonji`）、改正通達だけを入れた DB で `{ docId: "shotoku/250416" }` を渡すと、`hint` は ``ローカル DB（~/.cache/houki-nta-mcp/cache.db）に文書回答事例（doc_type="bunshokaitou"）が入っていません。`npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-bunshokaitou` で投入してください。…`` で始まる（v0.24.x では `MCP サーバーが開いている DB（/Users/bonji/.cache/houki-nta-mcp/cache.db）に…` で始まり、コマンドは `houki-nta-mcp --bulk-download-bunshokaitou`）。
 
 ### SPEC-NTA-GET-BUNSHOKAITOU-003 文書はあるが docId が無いときは「見つかりません」と候補を返す
 
 ローカル DB に文書回答事例はあるが、渡した `docId` の文書が無いときは、エラー `DOC_NOT_FOUND` を返す。「投入されていない」とは書かず、docId の誤りとして案内する。この応答は次を持つ。
 
-| フィールド          | 内容                                                                                                                                                                                                                                                                             |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `error`             | `文書回答事例 docId="<渡した docId>" は見つかりません`                                                                                                                                                                                                                           |
-| `hint`              | DB にある文書回答事例の件数（例: `DB の文書回答事例 1,841 件に、この docId はありません`）、`available_doc_ids` から選ぶか `nta_search_bunshokaitou` で探す案内、DB を投入した後に公開された文書は `houki-nta-mcp --bulk-download-bunshokaitou` をもう一度実行すると取り込める旨 |
-| `available_doc_ids` | DB にある文書回答事例の docId を発出日の新しい順に最大 30 件。要素は `docId`・`title`・`issuedAt`。他の種別（改正通達・質疑応答事例など）の docId は入らない                                                                                                                     |
-| `next_actions`      | 1 件。`{ action: "nta_search_bunshokaitou", reason: "キーワード検索で正しい docId を探せます" }`                                                                                                                                                                                 |
-| `tool`              | `nta_get_bunshokaitou`                                                                                                                                                                                                                                                           |
+| フィールド | 内容 |
+| --- | --- |
+| `error` | `文書回答事例 docId="<渡した docId>" は見つかりません` |
+| `hint` | DB にある文書回答事例の件数（例: `DB の文書回答事例 1,841 件に、この docId はありません`）、`available_doc_ids` から選ぶか `nta_search_bunshokaitou` で探す案内、DB を投入した後に公開された文書は `` `<コマンド>` `` をもう一度実行すると取り込める旨。`<コマンド>` は `--bulk-download-bunshokaitou` を付けた案内のコマンド（SPEC-NTA-DB-SCHEMA-027） |
+| `available_doc_ids` | DB にある文書回答事例の docId を発出日の新しい順に最大 30 件。要素は `docId`・`title`・`issuedAt`。他の種別（改正通達・質疑応答事例など）の docId は入らない |
+| `next_actions` | 1 件。`{ action: "nta_search_bunshokaitou", reason: "キーワード検索で正しい docId を探せます" }` |
+| `tool` | `nta_get_bunshokaitou` |
+
+例: 環境変数を付けずに起動すると、`hint` の末尾は ``DB を投入した後に国税庁が公開した文書は、`npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-bunshokaitou` をもう一度実行すると取り込めます``（v0.24.x では `houki-nta-mcp --bulk-download-bunshokaitou`）。
 
 ### SPEC-NTA-GET-BUNSHOKAITOU-004 国税庁の索引から消えた文書に印を付け、索引にある文書では印のキーを null にする
 
