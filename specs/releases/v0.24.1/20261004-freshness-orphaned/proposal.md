@@ -3,7 +3,7 @@
 - 対象: `specs/current/search_rules/spec.md`（SPEC-NTA-SEARCH-RULES-017）
 - 実装の変更: 要（下の「実装の変更」）
 - 承認日: 2026-10-04（PR #140）
-- 状態: 草案
+- 状態: 取り込み済み（v0.24.1）
 - 起こした日: 2026-10-04（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #139（検索ツールの `freshness` が、国税庁の索引から消えた文書の古い取得日時で止まり、投入をやり直しても `fresh` に戻らない）
