@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-10-05
+
+**minor リリース** — ローカル DB の場所を、応答・案内のコマンド・起動時のログ・新しい `--status` で確かめられるようにした（#138、houki-hub `docs/DECISIONS.md` 2026-10-04 の T6）。あわせて、保存したタックスアンサーの索引を読めない・保存できないことをログに出す（#137）。仕様 PR は #142（差分 `20261004-db-location`）。DB のスキーマの版は 12 のまま。
+
+> 検索 6 ツールの `freshness` の形、「DB に 1 件も無い」ときの `hint` の文、案内のコマンドの形が変わる。`hint` の先頭の文で場面を見分けているスクリプトは直す必要がある（下の「互換性」）。
+
+既定の DB のファイル名（`cache.db`）に DB の版は入れない（T6 の (f)）。これは houki-hub の DECISIONS.md の決定で、houki-nta-mcp では Issue を立てていない。
+
+閉じる Issue: #138 #137
+
+### 互換性
+
+| 場面 | 0.24.x | 0.25.0 |
+| --- | --- | --- |
+| 検索 6 ツールの成功の応答の `freshness` | `db_path` が無い | `freshness.db_path` に引いた DB のパス（ホームは `~`） |
+| 範囲に文書が無いときの `freshness` | キーが無い | 取得日時の 4 つが `null`、`db_path` は DB のパス |
+| `freshness.warning` のコマンド | `` `--bulk-download-qa` ``（フラグだけ） | `` `npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-qa` ``（環境変数で起動したときは前に変数が付く） |
+| 「DB に 1 件も無い」ときの `hint` の先頭 | どの場面でも `MCP サーバーが開いている DB（<絶対パス>）に…が入っていません`（`nta_search_tsutatsu` は `初回は …` でパスなし） | `ローカル DB（<パス>）がありません` / `HOUKI_NTA_DB_PATH が指すファイル（<パス>）がありません` / `ローカル DB（<パス>）にはまだ何も投入されていません` / `ローカル DB（<パス>）に…が入っていません`。`hint` の先頭で場面を見分けているスクリプトは直す必要がある |
+| 版の合わない DB の `hint` の先頭 | `MCP サーバーが開いている DB（<絶対パス>）の版 …` | `ローカル DB（<パス>）の版 …` |
+| `nta_inspect_pdf_meta` で DB が無いときの `hint` | `` `--bulk-download-<docType>` で投入済みか確認してください。… `` | DB の状態の文（パスと投入のコマンド）。`qa-jirei` のフラグは `--bulk-download-qa` |
+| 案内のコマンド（`next_actions[].example.command`、`hint`、CLI のエラーの文） | `houki-nta-mcp --<フラグ>` | `npx -y @shuji-bonji/houki-nta-mcp@latest --<フラグ>`。`HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` で起動したときは `HOUKI_NTA_DB_PATH="$HOME/…" npx -y …` のように前に、CLI に `--db-path` を付けたときは後ろに `--db-path=…` が付く |
+| MCP サーバーの起動時のログ（標準エラー出力） | `started` の JSON の 1 行 | 次の行に `msg` が `DB: <絶対パス>（DB の場所の設定: <名前>）` の JSON |
+| CLI `--status` | 無い（`ERROR: 未知のフラグ: --status` で終了コード 2） | DB の場所・設定・件数を出す。DB を作らず移行もしない |
+| `nta_get_tax_answer` で保存した索引を読めない・保存できない | 何も出ない | MCP サーバーのログに `warn` の行。応答は変わらない |
+
+### Added
+
+- **CLI `--status`**（#138、SPEC-NTA-CLI-STATUS-001〜008）: 1〜3 行目に版・DB の場所・DB の場所を決めた設定（`--db-path` / `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` / `既定`）を出す。同じフォルダーにほかの `cache*.db` があれば `[WARN]` の行（ファイルは開かず、名前・大きさ・最終更新だけ）。版 12 の DB では `schema_version` と、基本通達と 5 種別ごとの件数・国税庁の索引から消えた件数・取得日時の範囲を出す。DB が無い・版の記録が無い・版 3〜11 は終了コード 0、版 1・2・新しい・読めない・開けないは 1。DB は読み取り専用で開き、作らず、版 3〜11 も移行しない（houki-hub DECISIONS.md 2026-10-05）。一緒に使えるのは `--db-path` だけ（SPEC-NTA-CLI-ENTRY-002・004・007）
+- **MCP サーバーの起動時のログに DB の場所**（#138、SPEC-NTA-CLI-ENTRY-009）: `started` の行の次に、`msg` が `DB: <絶対パス>（DB の場所の設定: <名前>）`、`meta` が `{ db_path, setting }` の JSON の行を出す。この行のために DB は開かない
+- **検索 6 ツールの `freshness.db_path`**（#138、SPEC-NTA-SEARCH-RULES-022）: エラーでない応答には `freshness` を常に置き、`db_path` に引いた DB のパス（ホームディレクトリの部分は `~`。SPEC-NTA-DB-SCHEMA-028）を入れる
+
+### Changed
+
+- **「DB に 1 件も無い」ときの `hint` を DB の状態ごとに分けた**（#138、SPEC-NTA-DB-SCHEMA-029・021）: ファイルが無い・`HOUKI_NTA_DB_PATH` が指すファイルが無い・版の記録が無い・その種別が無い、の 4 つ。どれも開こうとした DB のパスを含む。その種別が無いときは、投入したシェルで `--status` を実行して DB が同じか確かめる手順を書く。版の合わない DB の文の先頭も `ローカル DB（<パス>）` にした。`code`・`error`・`next_actions` の `action` は変えていない
+- **案内のコマンドを `npx -y @shuji-bonji/houki-nta-mcp@latest <フラグ>` にした**（#138、SPEC-NTA-DB-SCHEMA-026・027）: `next_actions` の `cli_bulk_download`、各ツールの `hint`、`freshness.warning`、取得時点を読めないときの案内（SPEC-NTA-COMMON-ERRORS-017）、CLI のエラーの文（SPEC-NTA-DB-SCHEMA-021）。DB の場所を環境変数で決めたときは同じ変数を前に、CLI の `--db-path` は後ろに、シェルでそのまま動く形で付ける。`--help` の使い方と `--quickstart` の後の「次に試すこと」、フラグだけを書いた文は変えていない
+- **範囲に文書が無いときも `freshness` を付ける**（SPEC-NTA-SEARCH-RULES-017・022）: 取得日時の 4 つを `null` にする。0.24.1 では `freshness` のキーが無かった
+- **同じ処理を選ぶフラグを 2 回渡したとき（`--status --status`）の 2 回目も「余分な引数」にした**（SPEC-NTA-CLI-ENTRY-007 の表の 1 行目）: 0.24.x は文字列で比べていたので、同じフラグの 2 回目を受け付けていた
+
+### Fixed
+
+- **保存したタックスアンサーの索引を読めない・保存できないことが、どこにも出なかった**（#137、SPEC-NTA-GET-TAX-ANSWER-018、SPEC-NTA-DB-SCHEMA-025）: 「まだ保存していない」とみなすのを `tax_answer_index_page` に索引の URL の行が無いときだけにし、表の列が足りないなどで SQL が失敗したときは、記事を返したうえで MCP サーバーのログに `warn`（`scope` は `nta_get_tax_answer`、`meta` は `table`・`db_path`・`error`）を出す。保存の失敗と、304 のときの取得日時の書き換えの失敗も同じ形で出す。応答は変えていない。`--bulk-download-tax-answer` の書き込みの失敗の扱いは変えていない
+- **`nta_inspect_pdf_meta` の `qa-jirei` の `hint` が、無いフラグ `--bulk-download-qa-jirei` を書いていた**（SPEC-NTA-INSPECT-PDF-META-001）: `--bulk-download-qa` に直した
+
+### Docs
+
+- README に「`hint` の先頭ごとの DB の状態」の表、MCP サーバーが開いた DB を確かめる 3 つの手段、`--status`、案内のコマンドの形を書いた。CONTRIBUTING.md に「ローカル DB を使う開発」の節を足した。docs/DATABASE.md の DB の場所に `--db-path` と設定の名前を書いた
+
+### Tests
+
+- 仕様の差分 `20261004-db-location` の受入テスト（`src/tools/spec-20261004-db-location.test.ts`・`src/spec-20261004-db-location.test.ts`）を足した。ADDED 15・MODIFIED 23 の ID を確かめる。MODIFIED の ID で期待値の変わる既存のテスト 8 ファイルを直した
+
 ## [0.24.1] - 2026-10-04
 
 **patch リリース** — 検索ツールの `freshness` の範囲から、国税庁の索引から消えた文書を外した（#139）。応答のフィールドは変えず、`freshness` の値の計算だけが変わる。DB のスキーマは変えていない（版 12 のまま）。仕様 PR は #140（SPEC-NTA-SEARCH-RULES-017 の MODIFIED）。
