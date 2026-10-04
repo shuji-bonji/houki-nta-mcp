@@ -12,8 +12,8 @@
 
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { runCliIfRequested } from './cli.js';
-import { PACKAGE_INFO } from './config.js';
 import { createServer } from './server.js';
+import { logServerStarted } from './startup-log.js';
 import { logger } from './utils/logger.js';
 
 // Start server (or run CLI subcommand)
@@ -30,10 +30,8 @@ async function main() {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
-  logger.info(
-    'server',
-    `${PACKAGE_INFO.name} v${PACKAGE_INFO.version} started (MCP SDK v2 / #36: 添付 PDF の read_strategy / layout_note + save: true + next_actions（読み手は固定しない） + 「新旧対応表」表記ゆれ対応 / Phase 4-2: has_pdf filter / nta_inspect_pdf_meta / Phase 4-1: PDF kind classification / Phase 5: Resilience + Lv-3a soft-404 detection + Lv-3b menu.htm baseline drift)`
-  );
+  // 起動時のログ（started の行と、DB の場所の行。SPEC-NTA-CLI-ENTRY-009）
+  logServerStarted();
 }
 
 main().catch((error) => {

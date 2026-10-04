@@ -13,6 +13,7 @@
  *       CLI モードでは stdout に出力して OK。
  */
 
+import { runStatus } from './cli-status.js';
 import { PACKAGE_INFO } from './config.js';
 import type { QaTopic } from './constants.js';
 import {
@@ -90,6 +91,8 @@ interface CliArgs {
   checkBaselineDrift: boolean;
   /** --health-check / --check-baseline-drift 時に fail があれば exit code 非ゼロ（CI 用） */
   strict: boolean;
+  /** v0.25.0（#138、cli_status）: DB の場所と、それを決めた設定、種別ごとの件数を出す。DB を作らず、移行もしない */
+  status: boolean;
   tsutatsu: string;
   dbPath: string | undefined;
   refresh: boolean;
@@ -170,6 +173,7 @@ type CliAction =
   | 'bulkDownloadQa'
   | 'bulkDownloadEverything'
   | 'refreshStale'
+  | 'status'
   | 'healthCheck'
   | 'checkBaselineDrift';
 
@@ -188,6 +192,7 @@ const ACTION_FLAGS: Readonly<Record<string, CliAction>> = {
   '--bulk-download-tax-answer': 'bulkDownloadTaxAnswer',
   '--bulk-download-qa': 'bulkDownloadQa',
   '--bulk-download-everything': 'bulkDownloadEverything',
+  '--status': 'status',
   '--health-check': 'healthCheck',
   '--check-baseline-drift': 'checkBaselineDrift',
 };
@@ -226,6 +231,8 @@ const ACCEPTED_FLAGS: Readonly<Record<CliAction, readonly string[]>> = {
   ],
   // --refresh は --apply があるときだけ（SPEC-NTA-CLI-REFRESH-007）
   refreshStale: ['--apply', '--db-path', '--refresh'],
+  // v0.25.0（SPEC-NTA-CLI-ENTRY-007）: --status は --db-path だけと一緒に使える
+  status: ['--db-path'],
   healthCheck: ['--strict'],
   checkBaselineDrift: ['--strict'],
 };
@@ -287,14 +294,16 @@ function findCombinationError(argv: readonly string[]): CliArgError | undefined 
     };
   }
   const first = actionArgs[0];
+  // 同じ処理を選ぶフラグを 2 回渡したとき（--status --status）の 2 回目も余分な引数にするため、位置で比べる（v0.25.0）
+  const firstIndex = argv.indexOf(first);
   const action = actionOf(first) as CliAction;
   const accepted = new Set(ACCEPTED_FLAGS[action]);
   const hasApply = argv.includes('--apply');
   const seen = new Set<string>();
-  for (const arg of argv) {
+  for (const [i, arg] of argv.entries()) {
     const name = flagName(arg);
     let extra: boolean;
-    if (arg === first) extra = false;
+    if (i === firstIndex) extra = false;
     else if (actionOf(arg) !== undefined) extra = true;
     else if (seen.has(name)) extra = true;
     else if (!accepted.has(name)) extra = true;
@@ -340,6 +349,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     healthCheck: false,
     checkBaselineDrift: false,
     strict: false,
+    status: false,
     tsutatsu: '消費税法基本通達',
     dbPath: undefined,
     refresh: false,
@@ -468,6 +478,8 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
                                              --bunsho-taxonomy / --tax-answer-taxonomy / --qa-topic で短縮可
 
 保守:
+  houki-nta-mcp --status                     DB の場所とそれを決めた設定（--db-path・環境変数・既定）、種別ごとの件数を表示。
+                                             DB を作らず、移行もしない。同じフォルダーにほかの cache*.db があれば [WARN] を出す
   houki-nta-mcp --refresh-stale=<日数>       N 日より古い section を列挙（dry-run。ちょうど N 日前の section は含まない）
   houki-nta-mcp --refresh-stale=<日数> --apply  N 日より古い section の通達を実際に再 DL（差分更新）
   houki-nta-mcp --refresh-stale=<日数> --apply --refresh  同じ通達を、条件付き取得を使わずに取り直す
@@ -483,7 +495,8 @@ const HELP_TEXT = `${PACKAGE_INFO.name} v${PACKAGE_INFO.version}
 オプション:
   --tsutatsu=<正式名>     --quickstart / --bulk-download 用。投入する通達の正式名（基本通達 4 種の正式名。既定: 消費税法基本通達）
                           使える値: ${TSUTATSU_NAMES.join(', ')}
-  --db-path=<path>        DB ファイルパスを上書き（既定: \${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db）
+  --db-path=<path>        DB ファイルパスを上書き（既定: \${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db）。
+                          投入・--refresh-stale・--status で使う。MCP サーバーには渡せない（環境変数 HOUKI_NTA_DB_PATH を使う）
   --refresh               投入する通達の節と条項を消して取り直します。文書系は取り直した内容で置き換えます
                           （ほかの通達・ほかの種別の行と、索引から消えた文書の行は残ります）
   --apply                 --refresh-stale と組み合わせて実際の再 DL を実行
@@ -581,6 +594,11 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
   }
   if (args.staleDays !== undefined) {
     await runRefreshStale(args, args.staleDays);
+    return true;
+  }
+  if (args.status) {
+    // v0.25.0（cli_status）: DB を読み取り専用で開き、作らず、移行もしない
+    process.exitCode = runStatus(resolveDbLocation(args.dbPath), formatDbEntryError);
     return true;
   }
   if (args.bulkDownloadAll) {
