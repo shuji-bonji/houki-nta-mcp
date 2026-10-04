@@ -132,10 +132,14 @@ function seedDocs(dbPath: string, docs: DocSeed[], clauses: ClauseSeed[] = []): 
   db.close();
 }
 
-/** SPEC-NTA-SEARCH-RULES-017 の warning の形。<日数> は呼んだ日で変わるので数字であることだけ確かめる */
+/**
+ * SPEC-NTA-SEARCH-RULES-017 の warning の形。<日数> は呼んだ日で変わるので数字であることだけ確かめる。
+ * v0.25.0 から `<コマンド>` は案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。このファイルはハンドラーに DB のパスを渡す
+ * （HOUKI_NTA_DB_PATH で起動したときと同じ）ので、前に `HOUKI_NTA_DB_PATH=<シェルに書くパス> ` が付く
+ */
 function warningPattern(flag: string): RegExp {
   return new RegExp(
-    `^一部ドキュメントが (\\d+) 日前のデータです。最新化するには \`${flag}\` を実行してください$`
+    `^一部ドキュメントが (\\d+) 日前のデータです。最新化するには \`HOUKI_NTA_DB_PATH=\\S+ npx -y @shuji-bonji/houki-nta-mcp@latest ${flag}\` を実行してください$`
   );
 }
 

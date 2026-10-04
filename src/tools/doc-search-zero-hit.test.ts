@@ -101,7 +101,10 @@ describe('文書系の検索: その種別の文書が DB に 1 件も無いと�
       expect(r.hint).toContain(':memory:');
       expect(r.hint).toContain('HOUKI_NTA_DB_PATH');
       expect(r.next_actions?.[0]?.action).toBe('cli_bulk_download');
-      expect(r.next_actions?.[0]?.example?.command).toBe(`houki-nta-mcp ${flag}`);
+      expect(r.next_actions?.[0]?.example?.command).toMatch(
+        // v0.25.0（SPEC-NTA-DB-SCHEMA-027）: DB のパスを渡すと HOUKI_NTA_DB_PATH で起動したときと同じで、変数が前に付く
+        new RegExp(`^HOUKI_NTA_DB_PATH=\\S+ npx -y @shuji-bonji/houki-nta-mcp@latest ${flag}$`)
+      );
     });
   }
 });
@@ -194,7 +197,9 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
     expect(r.code).toBeUndefined();
     expect(r.results).toEqual([]);
     expect(r.hint).toContain('topic="hojin"');
-    expect(r.hint).toContain('houki-nta-mcp --bulk-download-qa --qa-topic=hojin');
+    expect(r.hint).toContain(
+      'npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-qa --qa-topic=hojin'
+    );
     expect(r.available_taxonomies).toEqual(['shohi', 'shotoku']);
   });
 
@@ -280,7 +285,9 @@ describe('文書系の検索: 文書がある DB での 0 件', () => {
       { dbPath }
     )) as ZeroHitResponse;
     expect(r.code).toBeUndefined();
-    expect(r.hint).toContain('houki-nta-mcp --bulk-download-bunshokaitou --bunsho-taxonomy=hojin');
+    expect(r.hint).toContain(
+      'npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-bunshokaitou --bunsho-taxonomy=hojin'
+    );
     expect(r.available_taxonomies).toEqual(['shotoku']);
   });
 });

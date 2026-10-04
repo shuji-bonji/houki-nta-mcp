@@ -120,7 +120,10 @@ describe('取得系: その種別の文書が DB に 1 件も無いときは投�
       expect(r.hint).toContain('HOUKI_NTA_DB_PATH');
       expect(r.available_doc_ids).toBeUndefined();
       expect(r.next_actions?.[0]?.action).toBe('cli_bulk_download');
-      expect(r.next_actions?.[0]?.example?.command).toBe(`houki-nta-mcp ${flag}`);
+      expect(r.next_actions?.[0]?.example?.command).toMatch(
+        // v0.25.0（SPEC-NTA-DB-SCHEMA-027）: DB のパスを渡すと HOUKI_NTA_DB_PATH で起動したときと同じで、変数が前に付く
+        new RegExp(`^HOUKI_NTA_DB_PATH=\\S+ npx -y @shuji-bonji/houki-nta-mcp@latest ${flag}$`)
+      );
     });
   }
 });
@@ -157,7 +160,7 @@ describe('取得系: 文書がある DB で docId が無いときは「見つか
       expect(r.error).not.toContain('未投入');
       expect(r.hint).toContain(`DB の${label} 1 件に、この docId はありません`);
       expect(r.hint).toContain(searchTool);
-      expect(r.hint).toContain(`houki-nta-mcp ${flag}`);
+      expect(r.hint).toContain(`npx -y @shuji-bonji/houki-nta-mcp@latest ${flag}`);
       expect(r.available_doc_ids?.map((d) => d.docId)).toHaveLength(1);
       expect(r.next_actions).toEqual([
         { action: searchTool, reason: 'キーワード検索で正しい docId を探せます' },
@@ -171,7 +174,10 @@ describe('取得系: 文書がある DB で docId が無いときは「見つか
       const r = (await call(missingDocId(docType), otherTypeOnlyPath)) as NotFoundResponse;
       expect(r.code).toBe(code);
       expect(r.next_actions?.[0]?.action).toBe('cli_bulk_download');
-      expect(r.next_actions?.[0]?.example?.command).toBe(`houki-nta-mcp ${flag}`);
+      expect(r.next_actions?.[0]?.example?.command).toMatch(
+        // v0.25.0（SPEC-NTA-DB-SCHEMA-027）: DB のパスを渡すと HOUKI_NTA_DB_PATH で起動したときと同じで、変数が前に付く
+        new RegExp(`^HOUKI_NTA_DB_PATH=\\S+ npx -y @shuji-bonji/houki-nta-mcp@latest ${flag}$`)
+      );
     });
 
     it(`SPEC-NTA-GET-KAISEI-TSUTATSU-003 SPEC-NTA-GET-JIMU-UNEI-003 SPEC-NTA-GET-BUNSHOKAITOU-001 ${tool}: DB にある docId はこれまでどおり取得できる`, async () => {

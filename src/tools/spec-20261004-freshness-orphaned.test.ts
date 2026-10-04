@@ -6,6 +6,10 @@
  * 期待値は差分の spec.md の本文と例 2・3・4、proposal.md の「変えた後の動き」「変わらない振る舞い」から決めている。
  * DB は一時ディレクトリに作り、initSchema してから文書を入れる。国税庁サイトには取りに行かない。
  * 例の「呼んだ時点」は Date だけを偽の時計にして合わせる。
+ *
+ * v0.25.0（差分 20261004-db-location、SPEC-NTA-SEARCH-RULES-017・022 の MODIFIED / ADDED）で、`freshness` に
+ * `db_path` が入り、範囲に文書が無いときも取得日時の 4 つを null にして付けるようになったので、期待値を直した。
+ * ホームディレクトリは一時ディレクトリの下の別のフォルダーにし、DB のパスが `~` に置き換わらないようにしている。
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,10 +27,11 @@ import {
 } from './handlers.js';
 
 interface Freshness {
-  oldest_fetched_at: string;
-  newest_fetched_at: string;
-  days_since_oldest: number;
-  staleness: string;
+  oldest_fetched_at: string | null;
+  newest_fetched_at: string | null;
+  days_since_oldest: number | null;
+  staleness: string | null;
+  db_path?: string;
   warning?: string;
 }
 
@@ -181,6 +186,8 @@ const paths = {
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'houki-nta-spec-20261004-freshness-orphaned-'));
+  // DB のパスがホームディレクトリの下にならないようにする（SPEC-NTA-DB-SCHEMA-028 の置き換えをこのテストでは見ない）
+  vi.stubEnv('HOME', join(dir, 'home'));
 
   paths.ex2 = join(dir, 'ex2.db');
   seedDocs(paths.ex2, [
@@ -305,8 +312,20 @@ beforeAll(() => {
 });
 
 afterAll(() => {
+  vi.unstubAllEnvs();
   rmSync(dir, { recursive: true, force: true });
 });
+
+/** 範囲に文書が無いときの freshness（SPEC-NTA-SEARCH-RULES-017・022） */
+function nullRange(dbPath: string): Freshness {
+  return {
+    oldest_fetched_at: null,
+    newest_fetched_at: null,
+    staleness: null,
+    days_since_oldest: null,
+    db_path: dbPath,
+  };
+}
 
 describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索引から消えた文書を freshness の範囲に入れない', () => {
   /* ------------------------------------------------------------------------ */
@@ -325,6 +344,7 @@ describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索�
       newest_fetched_at: EX2.newest,
       days_since_oldest: 0,
       staleness: 'fresh',
+      db_path: paths.ex2,
     });
   });
 
@@ -339,6 +359,7 @@ describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索�
       newest_fetched_at: EX2.newest,
       days_since_oldest: 3,
       staleness: 'fresh',
+      db_path: paths.ex2,
     });
   });
 
@@ -368,6 +389,7 @@ describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索�
       newest_fetched_at: EX2.newest,
       days_since_oldest: 3,
       staleness: 'fresh',
+      db_path: paths.ex2,
     });
   });
 
@@ -396,7 +418,7 @@ describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索�
         callAt(EX3.calledAt);
         const r = await call(t, { keyword: KEYWORD, ...extra }, paths.ex3[t.docType]);
         expect(r.code).toBeUndefined();
-        expect(r.freshness).toEqual(ex3Expected);
+        expect(r.freshness).toEqual({ ...ex3Expected, db_path: paths.ex3[t.docType] });
         // 検索結果からは除かない（011）
         const removed = r.results?.find((x) => x.docId === ex3DocId(t.docType, 'orphaned'));
         expect(removed?.index_status).toBe('removed_from_index');
@@ -408,7 +430,7 @@ describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索�
         const r = await call(t, { keyword: ZERO_KEYWORD, ...extra }, paths.ex3[t.docType]);
         expect(r.code).toBeUndefined();
         expect(r.results).toEqual([]);
-        expect(r.freshness).toEqual(ex3Expected);
+        expect(r.freshness).toEqual({ ...ex3Expected, db_path: paths.ex3[t.docType] });
       });
     }
   }
@@ -418,23 +440,23 @@ describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索�
   /* ------------------------------------------------------------------------ */
 
   for (const t of DOC_TOOLS) {
-    it(`SPEC-NTA-SEARCH-RULES-017 ${t.tool}: その種別の文書がすべて索引から消えているときは freshness を付けず、検索は行って印付きの文書を返す`, async () => {
+    it(`SPEC-NTA-SEARCH-RULES-017 ${t.tool}: その種別の文書がすべて索引から消えているときは freshness の取得日時の 4 つを null にし（SPEC-NTA-SEARCH-RULES-022）、検索は行って印付きの文書を返す`, async () => {
       callAt(EX3.calledAt);
       const r = await call(t, { keyword: KEYWORD }, paths.allOrphaned[t.docType]);
       expect(r.code).toBeUndefined();
-      expect(r.freshness).toBeUndefined();
+      expect(r.freshness).toEqual(nullRange(paths.allOrphaned[t.docType]));
       expect(r.results?.map((x) => x.docId)).toEqual([ex3DocId(t.docType, 'orphaned')]);
       expect(r.results?.[0]?.index_status).toBe('removed_from_index');
       expect(r.results?.[0]?.orphaned_at).toBe(EX3.orphanedAt);
     });
 
-    it(`SPEC-NTA-SEARCH-RULES-017 ${t.tool}: その種別の文書がすべて索引から消えているときの 0 件の応答は、DOC_NOT_FOUND にならず freshness を付けない`, async () => {
+    it(`SPEC-NTA-SEARCH-RULES-017 ${t.tool}: その種別の文書がすべて索引から消えているときの 0 件の応答は、DOC_NOT_FOUND にならず freshness の取得日時の 4 つを null にする（SPEC-NTA-SEARCH-RULES-022）`, async () => {
       callAt(EX3.calledAt);
       const r = await call(t, { keyword: ZERO_KEYWORD }, paths.allOrphaned[t.docType]);
       expect(r.code).toBeUndefined();
       expect(r.results).toEqual([]);
       expect(r.hint).toBeDefined();
-      expect(r.freshness).toBeUndefined();
+      expect(r.freshness).toEqual(nullRange(paths.allOrphaned[t.docType]));
     });
   }
 
@@ -442,7 +464,7 @@ describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索�
   /* 例 4（税目で絞った範囲に索引にある文書が無い）                              */
   /* ------------------------------------------------------------------------ */
 
-  it('SPEC-NTA-SEARCH-RULES-017 例 4 nta_search_kaisei_tsutatsu: taxonomy: "hojin" では hojin の印付きの文書を返し、freshness を付けない', async () => {
+  it('SPEC-NTA-SEARCH-RULES-017 例 4 nta_search_kaisei_tsutatsu: taxonomy: "hojin" では hojin の印付きの文書を返し、freshness は取得日時の 4 つが null で db_path だけが値を持つ', async () => {
     callAt(EX3.calledAt);
     const r = (await handleNtaSearchKaiseiTsutatsu(
       { keyword: KEYWORD, taxonomy: 'hojin' },
@@ -451,7 +473,7 @@ describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索�
     expect(r.code).toBeUndefined();
     expect(r.results?.map((x) => x.docId)).toEqual(['kaisei-hojin-orphaned']);
     expect(r.results?.[0]?.index_status).toBe('removed_from_index');
-    expect(r.freshness).toBeUndefined();
+    expect(r.freshness).toEqual(nullRange(paths.ex4));
   });
 
   it('SPEC-NTA-SEARCH-RULES-017 例 4 nta_search_kaisei_tsutatsu: taxonomy を省くと、範囲は shohi の索引にある 1 件で freshness を付ける', async () => {
@@ -466,6 +488,7 @@ describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索�
       newest_fetched_at: '2026-10-04T03:30:00Z',
       days_since_oldest: 0,
       staleness: 'fresh',
+      db_path: paths.ex4,
     });
   });
 
@@ -485,6 +508,7 @@ describe('SPEC-NTA-SEARCH-RULES-017 文書系 5 ツールでは国税庁の索�
       newest_fetched_at: '2026-10-04T02:00:00Z',
       days_since_oldest: 0,
       staleness: 'fresh',
+      db_path: paths.tsutatsu,
     });
   });
 });

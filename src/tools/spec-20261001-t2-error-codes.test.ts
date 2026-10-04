@@ -250,9 +250,9 @@ describe('SPEC-NTA-GET-JIMU-UNEI-001 事務運営指針が DB に 1 件も無い
       'ローカル DB に事務運営指針が 1 件も無いため、docId="shotoku/shinkoku/170331" を取得できません'
     );
     expect(body.available_doc_ids).toBeUndefined();
-    expect(body.next_actions?.[0]?.example).toEqual({
-      command: 'houki-nta-mcp --bulk-download-jimu-unei',
-    });
+    expect((body.next_actions?.[0]?.example as { command?: string } | undefined)?.command).toMatch(
+      guidePattern('--bulk-download-jimu-unei')
+    );
   });
 });
 
@@ -278,9 +278,9 @@ describe('SPEC-NTA-GET-KAISEI-TSUTATSU-001 ローカル DB に改正通達が 1 
     expect(body.error).toBe(
       'ローカル DB に改正通達が 1 件も無いため、docId="0026003-067" を取得できません'
     );
-    expect(body.next_actions?.[0]?.example).toEqual({
-      command: 'houki-nta-mcp --bulk-download-kaisei',
-    });
+    expect((body.next_actions?.[0]?.example as { command?: string } | undefined)?.command).toMatch(
+      guidePattern('--bulk-download-kaisei')
+    );
   });
 });
 
@@ -377,6 +377,14 @@ function docIdFor(docType: string): string {
   return 'shotoku/250416';
 }
 
+/**
+ * 案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。このファイルはハンドラーに DB のパスを渡す（HOUKI_NTA_DB_PATH で起動したときと
+ * 同じ）ので、前に `HOUKI_NTA_DB_PATH=<シェルに書くパス> ` が付く（v0.25.0。v0.24.x は `houki-nta-mcp <フラグ>`）
+ */
+function guidePattern(flag: string): RegExp {
+  return new RegExp(`^HOUKI_NTA_DB_PATH=\\S+ npx -y @shuji-bonji/houki-nta-mcp@latest ${flag}$`);
+}
+
 function expectUnreadableFetchedAt(body: Body, tool: string, value: string, flag: string): void {
   expect(body.code).toBe('INTERNAL_ERROR');
   expect(body.retryable).toBe(false);
@@ -385,7 +393,9 @@ function expectUnreadableFetchedAt(body: Body, tool: string, value: string, flag
   expect(body.hint).toContain(flag);
   expect(body.next_actions).toHaveLength(1);
   expect(body.next_actions?.[0]?.action).toBe('cli_bulk_download');
-  expect(body.next_actions?.[0]?.example).toEqual({ command: `houki-nta-mcp ${flag}` });
+  const command = (body.next_actions?.[0]?.example as { command?: string } | undefined)?.command;
+  expect(command).toMatch(guidePattern(flag));
+  expect(body.hint).toContain(`\`${command}\` で取り込みをやり直すと`);
   expect(typeof body.detail?.cause).toBe('string');
   expect(body.results).toBeUndefined();
   expect(body.hits).toBeUndefined();

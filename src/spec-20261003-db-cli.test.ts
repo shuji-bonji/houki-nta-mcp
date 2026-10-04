@@ -89,9 +89,12 @@ beforeEach(() => {
   // 環境変数の DB は使わない（利用者の ~/.cache の DB に触れない）
   savedDbPath = process.env.HOUKI_NTA_DB_PATH;
   process.env.HOUKI_NTA_DB_PATH = join(dir, 'env-never-used.db');
+  // DB のパスがホームディレクトリの下にならないようにする（案内のコマンドのパスが '<パス>' の形になる）
+  vi.stubEnv('HOME', join(dir, 'home'));
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   vi.mocked(bulkDownloadTsutatsu).mockClear();
   vi.mocked(bulkDownloadJimuUnei).mockClear();
@@ -604,14 +607,19 @@ describe('SPEC-NTA-CLI-HEALTH-CHECK-007 --check-baseline-drift のまとめの�
 describe('SPEC-NTA-DB-SCHEMA-021 DB の状態と入口ごとの扱い（CLI の投入・取り直し・一覧）', () => {
   const NEW_VERSION = (v: string) =>
     `[ERROR] DB の版 (${v}) がこの houki-nta-mcp の版 (12) より新しいため、DB を変更しません。houki-nta-mcp を新しい版に更新するか、--db-path（MCP サーバーでは HOUKI_NTA_DB_PATH）で別のファイルを指定してください`;
-  const OLD_VERSION = (v: string) =>
-    `[ERROR] DB の版 (${v}) は古く移行できないため使えません。houki-nta-mcp --quickstart などの投入のフラグを実行すると作り直します（取り込んだ中身は消えます）`;
+  // v0.25.0（差分 20261004-db-location で SPEC-NTA-DB-SCHEMA-021 を MODIFIED）: <--quickstart のコマンド> は案内のコマンド
+  // （SPEC-NTA-DB-SCHEMA-027）。--db-path を付けて実行したので後ろに --db-path=… が付く。DB はホームディレクトリの外
+  // （beforeEach で HOME を別のフォルダーにしている）なので '<パス>' の形
+  const QUICKSTART = (path: string) =>
+    `npx -y @shuji-bonji/houki-nta-mcp@latest --quickstart --db-path='${path}'`;
+  const OLD_VERSION = (v: string, path: string) =>
+    `[ERROR] DB の版 (${v}) は古く移行できないため使えません。${QUICKSTART(path)} などの投入のフラグを実行すると作り直します（取り込んだ中身は消えます）`;
   const UNREADABLE = (raw: string, path: string) =>
-    `[ERROR] DB の版を読めないため (schema_version: ${raw})、DB を変更しません。DB ファイル (${path}) を消してから houki-nta-mcp --quickstart などの投入のフラグを実行してください`;
+    `[ERROR] DB の版を読めないため (schema_version: ${raw})、DB を変更しません。DB ファイル (${path}) を消してから ${QUICKSTART(path)} などの投入のフラグを実行してください`;
   const NO_DB_APPLY = (path: string) =>
-    `[ERROR] DB がまだありません (${path})。houki-nta-mcp --quickstart か --bulk-download-all で作ってください`;
+    `[ERROR] DB がまだありません (${path})。${QUICKSTART(path)} か --bulk-download-all で作ってください`;
   const NO_DB_LIST = (path: string) =>
-    `[refresh-stale] DB がまだありません (${path})。houki-nta-mcp --quickstart か --bulk-download-all で作ってください`;
+    `[refresh-stale] DB がまだありません (${path})。${QUICKSTART(path)} か --bulk-download-all で作ってください`;
 
   /* ---- ファイルが無い ---- */
 
@@ -707,7 +715,7 @@ describe('SPEC-NTA-DB-SCHEMA-021 DB の状態と入口ごとの扱い（CLI の�
       makeDb(path, '2', [['jimu-unei', 'shozei/090401']]);
       const r = await run([...argv, `--db-path=${path}`]);
       expect(r.exitCode).toBe(1);
-      expect(errLines()).toContain(OLD_VERSION('2'));
+      expect(errLines()).toContain(OLD_VERSION('2', path));
       expect(readVersion(path)).toBe('2');
       expect(countDocuments(path)).toBe(1);
     });

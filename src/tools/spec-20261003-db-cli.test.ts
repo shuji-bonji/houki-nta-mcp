@@ -66,8 +66,11 @@ beforeEach(() => {
   baselineDir = join(dir, 'baseline');
   savedBaseline = process.env.HOUKI_NTA_BASELINE_DIR;
   process.env.HOUKI_NTA_BASELINE_DIR = baselineDir;
+  // DB のパスがホームディレクトリの下にならないようにする（SPEC-NTA-DB-SCHEMA-028 の置き換えをこのファイルでは見ない）
+  vi.stubEnv('HOME', join(dir, 'home'));
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   if (savedBaseline === undefined) delete process.env.HOUKI_NTA_BASELINE_DIR;
   else process.env.HOUKI_NTA_BASELINE_DIR = savedBaseline;
   rmSync(dir, { recursive: true, force: true });
@@ -246,12 +249,17 @@ const READ_TOOLS: ReadTool[] = [
   },
 ];
 
+// v0.25.0（差分 20261004-db-location で SPEC-NTA-DB-SCHEMA-021 の注 2 を MODIFIED）: 先頭は「ローカル DB（<パス>）」、
+// コマンドは案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。ハンドラーに DB のパスを渡すと HOUKI_NTA_DB_PATH で起動したときと
+// 同じで、変数が前に付く。DB はホームディレクトリの外（beforeEach で HOME を別のフォルダーにしている）なので '<パス>' の形
+const QUICKSTART = (path: string) =>
+  `HOUKI_NTA_DB_PATH='${path}' npx -y @shuji-bonji/houki-nta-mcp@latest --quickstart`;
 const HINT_OLD = (path: string, v: string) =>
-  `MCP サーバーが開いている DB（${path}）の版 (${v}) は古く移行できないため、使っていません。houki-nta-mcp --quickstart などの投入のフラグを実行すると作り直します（取り込んだ中身は消えます）`;
+  `ローカル DB（${path}）の版 (${v}) は古く移行できないため、使っていません。\`${QUICKSTART(path)}\` などの投入のフラグを実行すると作り直します（取り込んだ中身は消えます）`;
 const HINT_NEW = (path: string, v: string) =>
-  `MCP サーバーが開いている DB（${path}）の版 (${v}) がこの houki-nta-mcp の版 (12) より新しいため、使っていません（DB は変更しません）。houki-nta-mcp を新しい版に更新してください`;
+  `ローカル DB（${path}）の版 (${v}) がこの houki-nta-mcp の版 (12) より新しいため、使っていません（DB は変更しません）。houki-nta-mcp を新しい版に更新してください`;
 const HINT_UNREADABLE = (path: string, raw: string) =>
-  `MCP サーバーが開いている DB（${path}）の版を読めないため (schema_version: ${raw})、使っていません（DB は変更しません）。DB ファイルを消してから houki-nta-mcp --quickstart などの投入のフラグを実行してください`;
+  `ローカル DB（${path}）の版を読めないため (schema_version: ${raw})、使っていません（DB は変更しません）。DB ファイルを消してから \`${QUICKSTART(path)}\` などの投入のフラグを実行してください`;
 
 describe('SPEC-NTA-DB-SCHEMA-021 読むだけのツール', () => {
   for (const t of READ_TOOLS) {

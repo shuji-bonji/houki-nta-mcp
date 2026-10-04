@@ -178,7 +178,10 @@ describe('SPEC-NTA-SEARCH-TSUTATSU-003 DB に条項が 1 件も無いときは�
     // 1 つの通達だけを先に入れる方法も併記する
     expect(body.hint).toContain('--bulk-download --tsutatsu=');
     expect(body.next_actions?.[0]?.action).toBe('cli_bulk_download');
-    expect(body.next_actions?.[0]?.example?.command).toBe('houki-nta-mcp --bulk-download-all');
+    expect(body.next_actions?.[0]?.example?.command).toMatch(
+      // v0.25.0（SPEC-NTA-DB-SCHEMA-027）: DB のパスを渡すと HOUKI_NTA_DB_PATH で起動したときと同じで、変数が前に付く
+      /^HOUKI_NTA_DB_PATH=\S+ npx -y @shuji-bonji\/houki-nta-mcp@latest --bulk-download-all$/
+    );
   });
 });
 
