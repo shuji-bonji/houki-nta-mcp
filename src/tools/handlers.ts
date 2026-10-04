@@ -6,6 +6,7 @@
  * `nta_search_*` 系は Phase 2 (bulk DL + FTS5) で対応予定。
  */
 
+import { resolve } from 'node:path';
 import { resolveAbbreviation } from '@shuji-bonji/houki-abbreviations';
 import type DatabaseT from 'better-sqlite3';
 import type { QaTopic, TsutatsuTocStyle } from '../constants.js';
@@ -94,7 +95,9 @@ import {
 } from '../services/tax-answer-bulk-downloader.js';
 import {
   readStoredTaxAnswerIndex,
+  type StoredTaxAnswerIndex,
   saveTaxAnswerIndex,
+  TaxAnswerIndexDbError,
   type TaxAnswerIndexPage,
   type TaxAnswerIndexRow,
   taxAnswerFolderOf,
@@ -135,6 +138,7 @@ import type {
 } from '../types/index.js';
 import type { QaJirei } from '../types/qa.js';
 import type { TaxAnswer } from '../types/tax-answer.js';
+import { logger, toMeta } from '../utils/logger.js';
 import {
   ntaGetBunshokaitouTool,
   ntaGetJimuUneiTool,
@@ -1702,29 +1706,64 @@ async function resolveTaxAnswerUrl(
   db: DatabaseT.Database,
   options: LiveDocumentFetchOptions
 ): Promise<TaxAnswerUrlResolution> {
-  {
-    const stored = readStoredTaxAnswerIndex(db);
-    const hit = stored?.entries.get(no);
-    if (hit) return { kind: 'url', url: hit.url, fetchedIndex: false };
-
-    const loaded = await fetchTaxAnswerIndex(stored?.page, options);
-    if ('error' in loaded) return { kind: 'error', error: loaded.error };
-    if (loaded.notModified) {
-      try {
-        touchTaxAnswerIndexPage(db, loaded.fetchedAt);
-      } catch {
-        // best effort
-      }
-      return { kind: 'not_in_index' };
-    }
-    try {
-      saveTaxAnswerIndex(db, loaded.rows, loaded.page);
-    } catch {
-      // best effort: 保存に失敗しても、取った索引で URL は決められる
-    }
-    const found = loaded.rows.find((r) => r.no === no);
-    return found ? { kind: 'url', url: found.url, fetchedIndex: true } : { kind: 'not_in_index' };
+  // v0.25.0（houki-nta-mcp #137、SPEC-NTA-GET-TAX-ANSWER-018）: 保存した索引を読めない・保存できないときも記事を返し、
+  // MCP サーバーのログに warn を出す。「まだ保存していない」とみなすのは索引の URL の行が無いときだけ
+  let stored: StoredTaxAnswerIndex | null = null;
+  try {
+    stored = readStoredTaxAnswerIndex(db);
+  } catch (err) {
+    if (!(err instanceof TaxAnswerIndexDbError)) throw err;
+    warnTaxAnswerIndex(
+      `保存したタックスアンサーの索引を読めないため、国税庁サイトから取り直します（表: ${err.table}、DB: ${dbFilePath(db)}）`,
+      err,
+      db
+    );
   }
+  const hit = stored?.entries.get(no);
+  if (hit) return { kind: 'url', url: hit.url, fetchedIndex: false };
+
+  const loaded = await fetchTaxAnswerIndex(stored?.page, options);
+  if ('error' in loaded) return { kind: 'error', error: loaded.error };
+  if (loaded.notModified) {
+    try {
+      touchTaxAnswerIndexPage(db, loaded.fetchedAt);
+    } catch (err) {
+      if (!(err instanceof TaxAnswerIndexDbError)) throw err;
+      warnTaxAnswerIndex(
+        `タックスアンサーの索引の取得日時を DB に書き換えられませんでした（表: tax_answer_index_page、DB: ${dbFilePath(db)}）`,
+        err,
+        db
+      );
+    }
+    return { kind: 'not_in_index' };
+  }
+  try {
+    saveTaxAnswerIndex(db, loaded.rows, loaded.page);
+  } catch (err) {
+    // 保存に失敗しても、取った索引で URL は決められる。保存は前の行のまま（SPEC-NTA-DB-SCHEMA-025）
+    if (!(err instanceof TaxAnswerIndexDbError)) throw err;
+    warnTaxAnswerIndex(
+      `タックスアンサーの索引を DB に保存できませんでした（表: ${err.table}、DB: ${dbFilePath(db)}）`,
+      err,
+      db
+    );
+  }
+  const found = loaded.rows.find((r) => r.no === no);
+  return found ? { kind: 'url', url: found.url, fetchedIndex: true } : { kind: 'not_in_index' };
+}
+
+/** 開いた DB のファイルの絶対パス（ログ用。ホームディレクトリを ~ に置き換えない。SPEC-NTA-DB-SCHEMA-026） */
+function dbFilePath(db: DatabaseT.Database): string {
+  return db.name === ':memory:' ? db.name : resolve(db.name);
+}
+
+/** 保存した索引の読み書きの失敗のログ（SPEC-NTA-GET-TAX-ANSWER-018）。応答は変えない */
+function warnTaxAnswerIndex(msg: string, err: TaxAnswerIndexDbError, db: DatabaseT.Database): void {
+  logger.warn('nta_get_tax_answer', msg, {
+    table: err.table,
+    db_path: dbFilePath(db),
+    error: toMeta(err.cause),
+  });
 }
 
 /** 索引を取って読む。`previous` を渡すと条件付きで取る */

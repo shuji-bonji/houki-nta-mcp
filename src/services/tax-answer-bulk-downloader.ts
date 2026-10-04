@@ -27,7 +27,11 @@ import type { HealthEvaluation } from './health-thresholds.js';
 import { markAndCount } from './index-status.js';
 import { fetchNtaPage } from './nta-scraper.js';
 import { extractPdfKind } from './pdf-meta.js';
-import { saveTaxAnswerIndex, TAX_ANSWER_INDEX_URL } from './tax-answer-index.js';
+import {
+  saveTaxAnswerIndex,
+  TAX_ANSWER_INDEX_URL,
+  TaxAnswerIndexDbError,
+} from './tax-answer-index.js';
 import { buildTaxAnswerFullText, parseTaxAnswer } from './tax-answer-parser.js';
 import { normalizeJpText } from './text-normalize.js';
 
@@ -134,16 +138,22 @@ export async function bulkDownloadTaxAnswer(
   // v0.24.0（SPEC-NTA-CLI-BULK-DOWNLOAD-013・SPEC-NTA-DB-SCHEMA-025、#128）: 税目で絞る前の索引のすべての記事を保存する。
   // nta_get_tax_answer はこの索引で記事の URL を決める。記事の URL が 1 件も読めない索引では保存を変えない
   if (entries.length > 0) {
-    saveTaxAnswerIndex(
-      db,
-      entries,
-      {
-        fetchedAt: indexFetched.fetchedAt,
-        ...(indexFetched.lastModified ? { lastModified: indexFetched.lastModified } : {}),
-        ...(indexFetched.etag ? { etag: indexFetched.etag } : {}),
-      },
-      indexUrl
-    );
+    try {
+      saveTaxAnswerIndex(
+        db,
+        entries,
+        {
+          fetchedAt: indexFetched.fetchedAt,
+          ...(indexFetched.lastModified ? { lastModified: indexFetched.lastModified } : {}),
+          ...(indexFetched.etag ? { etag: indexFetched.etag } : {}),
+        },
+        indexUrl
+      );
+    } catch (err) {
+      // v0.25.0（#137）で saveTaxAnswerIndex は表の名前を付けた例外を投げるようになったが、
+      // bulk download の書き込みの失敗の扱いは変えない（SPEC-NTA-DB-SCHEMA-025）ので、SQLite の元の例外を投げ直す
+      throw err instanceof TaxAnswerIndexDbError ? err.cause : err;
+    }
   }
   if (options.taxonomies && options.taxonomies.length > 0) {
     const allow = new Set(options.taxonomies);
