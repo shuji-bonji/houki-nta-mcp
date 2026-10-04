@@ -164,32 +164,38 @@ export const NEXT_ACTIONS = {
     reason: 'タックスアンサー検索で関連事例を探せます',
     example: { keyword },
   }),
-  bulkDownload: (target?: string): NextAction => ({
+  /**
+   * 基本通達 1 本の bulk download を案内する（`nta_get_tsutatsu`）。
+   *
+   * @param command 案内のコマンド（SPEC-NTA-DB-SCHEMA-027。`--bulk-download --tsutatsu="<正式名>"` を付けたもの）
+   */
+  bulkDownload: (command: string): NextAction => ({
     action: 'cli_bulk_download',
     reason: 'ローカル DB に未投入のため bulk download が必要',
-    example: target
-      ? { command: `houki-nta-mcp --bulk-download --tsutatsu="${target}"` }
-      : { command: 'houki-nta-mcp --bulk-download' },
+    example: { command },
   }),
   /**
    * v0.23.0（T5、SPEC-NTA-SEARCH-TSUTATSU-003）: 基本通達 4 種をまとめて投入する `--bulk-download-all` を案内する。
-   * `nta_search_tsutatsu` の DB が空のときに使う。1 つの通達を案内する `bulkDownload(target)` とは分けている
+   * `nta_search_tsutatsu` の DB が空のときに使う。
+   *
+   * @param command 案内のコマンド（SPEC-NTA-DB-SCHEMA-027。`--bulk-download-all` を付けたもの）
    */
-  bulkDownloadAll: (): NextAction => ({
+  bulkDownloadAll: (command: string): NextAction => ({
     action: 'cli_bulk_download',
     reason: 'ローカル DB に未投入のため bulk download が必要',
-    example: { command: 'houki-nta-mcp --bulk-download-all' },
+    example: { command },
   }),
   /**
    * Issue #23 (v0.13.0): 文書系（質疑応答事例・タックスアンサー・改正通達・事務運営指針・文書回答事例）の
-   * bulk download を案内する。`bulkDownload()` は基本通達用（`--bulk-download --tsutatsu=…`）なので分けている。
+   * bulk download を案内する。
    *
-   * @param flag 種別ごとの CLI フラグ。例: `--bulk-download-qa`
+   * @param command 案内のコマンド（SPEC-NTA-DB-SCHEMA-027。種別ごとのフラグを付けたもの。例: `npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-qa`）。
+   *   v0.24.x までは `houki-nta-mcp <フラグ>` の形だった
    */
-  bulkDownloadDocs: (flag: string): NextAction => ({
+  bulkDownloadDocs: (command: string): NextAction => ({
     action: 'cli_bulk_download',
     reason: 'ローカル DB に未投入のため bulk download が必要',
-    example: { command: `houki-nta-mcp ${flag}` },
+    example: { command },
   }),
   retryLater: (): NextAction => ({
     action: 'retry_later',

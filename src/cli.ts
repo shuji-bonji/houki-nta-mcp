@@ -26,11 +26,14 @@ import {
 import {
   closeDb,
   DbEntryError,
+  type DbLocation,
   type DbState,
   defaultDbPath,
+  guideCommand,
   openDb,
   openExistingDb,
   openIngestDb,
+  resolveDbLocation,
 } from './db/index.js';
 import { SCHEMA_VERSION } from './db/schema.js';
 import { detectBaselineDrift } from './services/baseline-drift.js';
@@ -546,7 +549,7 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
     const action = actionOf(a);
     return action !== undefined && INGEST_ACTIONS.has(action);
   });
-  if (isIngest && !prepareIngestDb(args.dbPath ?? defaultDbPath())) return true;
+  if (isIngest && !prepareIngestDb(resolveDbLocation(args.dbPath))) return true;
 
   if (args.quickstart) {
     await runQuickstart(args);
@@ -603,18 +606,22 @@ export async function runCliIfRequested(argv: readonly string[]): Promise<boolea
  * SPEC-NTA-DB-SCHEMA-021: CLI の入口が DB を使えないときの文（標準エラー出力）。
  * `<DB の場所>` は各フラグが出す `DB: ` の行と同じ
  */
-export function formatDbEntryError(state: DbState, dbPath: string): string {
+export function formatDbEntryError(state: DbState, location: DbLocation): string {
+  const dbPath = location.path;
+  // v0.25.0（SPEC-NTA-DB-SCHEMA-027）: 案内のコマンドは npx の形で、DB の場所の設定（--db-path・環境変数）を付ける。
+  // v0.24.x までは `houki-nta-mcp --quickstart`
+  const quickstart = guideCommand('--quickstart', location);
   switch (state.kind) {
     case 'too-old':
-      return `[ERROR] DB の版 (${state.version}) は古く移行できないため使えません。houki-nta-mcp --quickstart などの投入のフラグを実行すると作り直します（取り込んだ中身は消えます）`;
+      return `[ERROR] DB の版 (${state.version}) は古く移行できないため使えません。${quickstart} などの投入のフラグを実行すると作り直します（取り込んだ中身は消えます）`;
     case 'too-new':
       return `[ERROR] DB の版 (${state.version}) がこの houki-nta-mcp の版 (${SCHEMA_VERSION}) より新しいため、DB を変更しません。houki-nta-mcp を新しい版に更新するか、--db-path（MCP サーバーでは HOUKI_NTA_DB_PATH）で別のファイルを指定してください`;
     case 'unreadable':
-      return `[ERROR] DB の版を読めないため (schema_version: ${state.raw})、DB を変更しません。DB ファイル (${dbPath}) を消してから houki-nta-mcp --quickstart などの投入のフラグを実行してください`;
+      return `[ERROR] DB の版を読めないため (schema_version: ${state.raw})、DB を変更しません。DB ファイル (${dbPath}) を消してから ${quickstart} などの投入のフラグを実行してください`;
     case 'unopenable':
       return `[ERROR] DB を開けません: ${state.message}`;
     default:
-      return `[ERROR] DB がまだありません (${dbPath})。houki-nta-mcp --quickstart か --bulk-download-all で作ってください`;
+      return `[ERROR] DB がまだありません (${dbPath})。${quickstart} か --bulk-download-all で作ってください`;
   }
 }
 
@@ -622,9 +629,9 @@ export function formatDbEntryError(state: DbState, dbPath: string): string {
  * 投入の前に DB を作る・移行する・作り直す（SPEC-NTA-DB-SCHEMA-021 の「投入」の列）。
  * 使えないときは文を出して終了コード 1 にし、false を返す
  */
-function prepareIngestDb(dbPath: string): boolean {
+function prepareIngestDb(location: DbLocation): boolean {
   try {
-    const db = openIngestDb(dbPath, (version) => {
+    const db = openIngestDb(location.path, (version) => {
       process.stderr.write(
         `  DB の版 (${version}) は移行できないため、作り直します（取り込んだ中身は消えます）\n`
       );
@@ -633,7 +640,7 @@ function prepareIngestDb(dbPath: string): boolean {
     return true;
   } catch (err) {
     if (err instanceof DbEntryError) {
-      process.stderr.write(`${formatDbEntryError(err.state, dbPath)}\n`);
+      process.stderr.write(`${formatDbEntryError(err.state, location)}\n`);
       process.exitCode = 1;
       return false;
     }
@@ -1047,7 +1054,8 @@ async function runBulkDownloadKaisei(args: CliArgs): Promise<void> {
  * dry-run 時は何が古いかを JSON で stdout に出すのみで DB は変更しない。
  */
 async function runRefreshStale(args: CliArgs, staleDays: number): Promise<void> {
-  const dbPath = args.dbPath ?? defaultDbPath();
+  const location = resolveDbLocation(args.dbPath);
+  const dbPath = location.path;
   process.stderr.write(`[refresh-stale] DB: ${dbPath} (${staleDays} 日より古い section を対象)\n`);
 
   // SPEC-NTA-DB-SCHEMA-021: 一覧・取り直しは DB を作らない。版 3〜11 は移行してから使う
@@ -1056,7 +1064,7 @@ async function runRefreshStale(args: CliArgs, staleDays: number): Promise<void> 
     opened = openExistingDb(dbPath);
   } catch (err) {
     if (err instanceof DbEntryError) {
-      process.stderr.write(`${formatDbEntryError(err.state, dbPath)}\n`);
+      process.stderr.write(`${formatDbEntryError(err.state, location)}\n`);
       process.exitCode = 1;
       return;
     }
@@ -1064,11 +1072,11 @@ async function runRefreshStale(args: CliArgs, staleDays: number): Promise<void> 
   }
   if (!opened) {
     if (args.refreshStale) {
-      process.stderr.write(`${formatDbEntryError({ kind: 'missing' }, dbPath)}\n`);
+      process.stderr.write(`${formatDbEntryError({ kind: 'missing' }, location)}\n`);
       process.exitCode = 1;
     } else {
       process.stderr.write(
-        `[refresh-stale] DB がまだありません (${dbPath})。houki-nta-mcp --quickstart か --bulk-download-all で作ってください\n`
+        `[refresh-stale] DB がまだありません (${dbPath})。${guideCommand('--quickstart', location)} か --bulk-download-all で作ってください\n`
       );
       process.stdout.write('[]\n');
     }

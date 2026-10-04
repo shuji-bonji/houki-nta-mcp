@@ -19,11 +19,11 @@
  */
 
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import type DatabaseT from 'better-sqlite3';
 import Database from 'better-sqlite3';
 
+import { resolveDbLocation } from './location.js';
 import {
   initSchema,
   MIN_MIGRATABLE_VERSION,
@@ -33,12 +33,10 @@ import {
 
 /**
  * デフォルトキャッシュ DB のパスを返す（OS / 環境変数を考慮）。
+ * 設定の名前と絶対パスは `resolveDbLocation()`（SPEC-NTA-DB-SCHEMA-026）
  */
 export function defaultDbPath(): string {
-  if (process.env.HOUKI_NTA_DB_PATH) return process.env.HOUKI_NTA_DB_PATH;
-  const xdg = process.env.XDG_CACHE_HOME;
-  const cacheRoot = xdg && xdg.length > 0 ? xdg : resolve(homedir(), '.cache');
-  return resolve(cacheRoot, 'houki-nta-mcp', 'cache.db');
+  return resolveDbLocation().path;
 }
 
 /**
@@ -344,4 +342,14 @@ function totalChanges(db: DatabaseT.Database): number {
   return (db.prepare('SELECT total_changes() AS n').get() as { n: number }).n;
 }
 
+export {
+  bareCommand,
+  type DbLocation,
+  type DbLocationSetting,
+  dbLocationForEnvPath,
+  displayDbPath,
+  guideCommand,
+  resolveDbLocation,
+  shellPath,
+} from './location.js';
 export { getSchemaVersion, initSchema, SCHEMA_VERSION } from './schema.js';

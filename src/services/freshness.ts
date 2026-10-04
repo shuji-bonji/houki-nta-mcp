@@ -71,8 +71,8 @@ function daysSince(fetchedAt: string, nowMs: number): number {
   }
 }
 
-/** 検索範囲全体の freshness 情報（複数 doc を返す search 系で使用）*/
-export interface FreshnessRange {
+/** 範囲に文書があるときの、取得時点の範囲と鮮度（summarize* の戻り値）*/
+export interface FreshnessSummary {
   /** 範囲内の最古の fetched_at (ISO 8601) */
   oldest_fetched_at: string;
   /** 範囲内の最新の fetched_at (ISO 8601) */
@@ -83,6 +83,41 @@ export interface FreshnessRange {
   days_since_oldest: number;
   /** outdated 時のみ付く再 bulk DL 案内メッセージ */
   warning?: string;
+}
+
+/**
+ * 検索 6 ツールの応答の `freshness`（SPEC-NTA-SEARCH-RULES-017・022）。
+ *
+ * v0.25.0（houki-nta-mcp #138）から、エラーでない応答には常に付け、引いた DB のパス `db_path` を入れる。
+ * 範囲に文書が無いときは、取得日時の 4 つを `null` にする（v0.24.x までは `freshness` を付けなかった）
+ */
+export interface FreshnessRange {
+  oldest_fetched_at: string | null;
+  newest_fetched_at: string | null;
+  staleness: StalenessLevel | null;
+  days_since_oldest: number | null;
+  /** 引いた DB のパス（ホームディレクトリの部分は `~`。SPEC-NTA-DB-SCHEMA-028） */
+  db_path: string;
+  /** outdated のときだけ付く再投入の案内 */
+  warning?: string;
+}
+
+/**
+ * summarize* の結果と DB のパスから、応答の `freshness` を作る（SPEC-NTA-SEARCH-RULES-022）。
+ * 範囲に文書が無い（summary が null）ときは、取得日時の 4 つを `null` にする
+ */
+export function toFreshnessRange(summary: FreshnessSummary | null, dbPath: string): FreshnessRange {
+  if (!summary) {
+    return {
+      oldest_fetched_at: null,
+      newest_fetched_at: null,
+      staleness: null,
+      days_since_oldest: null,
+      db_path: dbPath,
+    };
+  }
+  const { warning, ...rest } = summary;
+  return { ...rest, db_path: dbPath, ...(warning ? { warning } : {}) };
 }
 
 /** 単一 doc の freshness 情報（get 系で使用）*/
@@ -107,6 +142,7 @@ export function buildWarning(
   daysSince: number,
   bulkDownloadHint = '`--bulk-download-everything`'
 ): string | undefined {
+  // bulkDownloadHint は v0.25.0 から、案内のコマンド（SPEC-NTA-DB-SCHEMA-027）を `` ` `` で囲んだもの
   if (staleness !== 'outdated') return undefined;
   return `一部ドキュメントが ${daysSince} 日前のデータです。最新化するには ${bulkDownloadHint} を実行してください`;
 }
@@ -133,7 +169,7 @@ export function freshnessForFetchedAt(
 
 /**
  * document テーブルから doc_type 範囲の最古 / 最新 fetched_at を取得し、
- * FreshnessRange を返す。
+ * FreshnessSummary を返す。
  *
  * 範囲は国税庁の索引にある文書（`orphaned_at` が NULL の行）だけにする（v0.24.1、Issue #139、
  * SPEC-NTA-SEARCH-RULES-017）。bulk download は索引から消えた文書を取り直さないので、その取得日時は
@@ -142,7 +178,7 @@ export function freshnessForFetchedAt(
  *
  * @param taxonomyFilter 部分実行時のスナップショット範囲を絞り込み
  * @returns 範囲に索引にある文書が 1 件も無い場合は null（印が付いた行しか無い範囲を含む）。
- *          呼び出し側は freshness を付けない
+ *          呼び出し側は toFreshnessRange で取得日時の 4 つを null にした freshness を付ける（v0.25.0）
  */
 export function summarizeFreshnessFromDocument(
   db: DatabaseT.Database,
@@ -150,7 +186,7 @@ export function summarizeFreshnessFromDocument(
   taxonomyFilter?: readonly string[],
   bulkDownloadHint?: string,
   nowMs: number = Date.now()
-): FreshnessRange | null {
+): FreshnessSummary | null {
   let sql = `SELECT MIN(fetched_at) as oldest, MAX(fetched_at) as newest, COUNT(*) as cnt
              FROM document WHERE doc_type = ? AND orphaned_at IS NULL`;
   const params: string[] = [doc_type];
@@ -171,7 +207,7 @@ export function summarizeFreshnessFromDocument(
   const days_since_oldest = daysSince(row.oldest, nowMs);
   daysSince(row.newest, nowMs);
   const staleness = judgeStaleness(days_since_oldest);
-  const result: FreshnessRange = {
+  const result: FreshnessSummary = {
     oldest_fetched_at: row.oldest,
     newest_fetched_at: row.newest,
     staleness,
@@ -184,7 +220,7 @@ export function summarizeFreshnessFromDocument(
 
 /**
  * section テーブル（基本通達）から、指定通達の fetched_at 範囲を取得して
- * FreshnessRange を返す。
+ * FreshnessSummary を返す。
  *
  * @param tsutatsu_abbr '消基通' / '所基通' / '法基通' / '相基通'
  */
@@ -193,7 +229,7 @@ export function summarizeFreshnessFromSection(
   tsutatsu_abbr?: string,
   bulkDownloadHint?: string,
   nowMs: number = Date.now()
-): FreshnessRange | null {
+): FreshnessSummary | null {
   let sql = `SELECT MIN(s.fetched_at) as oldest, MAX(s.fetched_at) as newest, COUNT(*) as cnt
              FROM section s`;
   const params: string[] = [];
@@ -213,7 +249,7 @@ export function summarizeFreshnessFromSection(
   const days_since_oldest = daysSince(row.oldest, nowMs);
   daysSince(row.newest, nowMs);
   const staleness = judgeStaleness(days_since_oldest);
-  const result: FreshnessRange = {
+  const result: FreshnessSummary = {
     oldest_fetched_at: row.oldest,
     newest_fetched_at: row.newest,
     staleness,

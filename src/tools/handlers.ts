@@ -26,13 +26,18 @@ import {
   TSUTATSU_URL_ROOTS,
 } from '../constants.js';
 import {
+  bareCommand,
   closeDb,
+  type DbLocation,
   type DbState,
-  defaultDbPath,
+  dbLocationForEnvPath,
+  displayDbPath,
+  guideCommand,
   isVersionProblem,
   openReadDb,
   openWriteBackDb,
   probeDbState,
+  resolveDbLocation,
 } from '../db/index.js';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import {
@@ -57,8 +62,10 @@ import {
 import { writeBackLiveDocument } from '../services/document-writeback.js';
 import {
   type FreshnessRange,
+  type FreshnessSummary,
   summarizeFreshnessFromDocument,
   summarizeFreshnessFromSection,
+  toFreshnessRange,
   UnreadableFetchedAtError,
 } from '../services/freshness.js';
 import {
@@ -217,22 +224,80 @@ const BUNSHOKAITOU_DOC_ID: DocIdForm = {
 function unreadableFetchedAt(
   err: unknown,
   tool: string,
-  flag: string
+  flag: string,
+  location: DbLocation
 ): LawServiceError | undefined {
   if (!(err instanceof UnreadableFetchedAtError)) return undefined;
+  // v0.25.0（SPEC-NTA-DB-SCHEMA-027）: 案内のコマンドは npx の形。v0.24.x までは `houki-nta-mcp <フラグ>`
+  const command = guideCommand(flag, location);
   return makeError('INTERNAL_ERROR', `取得時点を読めません: ${err.value}`, {
-    hint: `ローカル DB の取得時点（fetched_at）が日付・時刻の形ではないため、鮮度を判定できません。\`houki-nta-mcp ${flag}\` で取り込みをやり直すと、取得時点が書き直されます`,
+    hint: `ローカル DB の取得時点（fetched_at）が日付・時刻の形ではないため、鮮度を判定できません。\`${command}\` で取り込みをやり直すと、取得時点が書き直されます`,
     retryable: false,
     next_actions: [
       {
         action: 'cli_bulk_download',
         reason: '取り込みをやり直すと、DB の取得時点が日付・時刻の形で書き直されます',
-        example: { command: `houki-nta-mcp ${flag}` },
+        example: { command },
       },
     ],
     detail: { cause: err.causeMessage },
     tool,
   });
+}
+
+/**
+ * ツールが開く DB の場所（SPEC-NTA-DB-SCHEMA-026）。MCP サーバーでは環境変数で決まる（`--db-path` は当てはまらない）。
+ * ハンドラーに `dbPath` を渡したとき（テスト用）は、`HOUKI_NTA_DB_PATH` にそのパスを指定したときと同じに扱う
+ */
+function toolLocation(dbPath?: string): DbLocation {
+  return dbPath !== undefined ? dbLocationForEnvPath(dbPath) : resolveDbLocation();
+}
+
+/**
+ * 検索 6 ツールの応答の `freshness`（SPEC-NTA-SEARCH-RULES-017・022）。範囲に文書が無くても付け、
+ * `db_path` に引いた DB のパス（ホームディレクトリの部分は `~`。SPEC-NTA-DB-SCHEMA-028）を入れる
+ */
+function freshnessOf(summary: FreshnessSummary | null, location: DbLocation): FreshnessRange {
+  return toFreshnessRange(summary, displayDbPath(location.absolutePath));
+}
+
+/** `freshness.warning` に入れるコマンド（SPEC-NTA-SEARCH-RULES-017）。案内のコマンドを `` ` `` で囲む */
+function warningCommand(flag: string, location: DbLocation): string {
+  return `\`${guideCommand(flag, location)}\``;
+}
+
+/** 「DB に 1 件も無い」ときの hint の `<種別>` と投入のフラグ（SPEC-NTA-DB-SCHEMA-029 の下の表） */
+interface DbTarget {
+  label: string;
+  flag: string;
+}
+
+/**
+ * DB は使えるが、その種別が 1 件も無いときの hint（SPEC-NTA-DB-SCHEMA-029 の表の最後の行。文書系の 8 ツール）。
+ * `--status` のコマンドは、投入したシェルの設定で開く DB を確かめるためのものなので、変数も `--db-path` も付けない
+ */
+function kindMissingHint(target: DbTarget, docType: DocType, location: DbLocation): string {
+  return `ローカル DB（${displayDbPath(location.absolutePath)}）に${target.label}（doc_type="${docType}"）が入っていません。\`${guideCommand(target.flag, location)}\` で投入してください。投入したはずの場合は、投入したシェルで \`${bareCommand('--status')}\` を実行し、表示される DB がこの DB と同じか確かめてください（MCP クライアントから起動したサーバーは、シェルの環境変数 HOUKI_NTA_DB_PATH・XDG_CACHE_HOME を受け継がないことがあります）`;
+}
+
+/**
+ * DB のファイルが無い・版の記録が無いときの hint（SPEC-NTA-DB-SCHEMA-029 の表の 1〜3 行目）。
+ * どれも開こうとした DB のパス（ホームディレクトリの部分は `~`）を含む
+ */
+function dbAbsenceHint(
+  kind: 'missing' | 'unversioned',
+  location: DbLocation,
+  target: DbTarget
+): string {
+  const path = displayDbPath(location.absolutePath);
+  const command = guideCommand(target.flag, location);
+  if (kind === 'unversioned') {
+    return `ローカル DB（${path}）にはまだ何も投入されていません。\`${command}\` で${target.label}を投入してください`;
+  }
+  if (location.setting === 'HOUKI_NTA_DB_PATH') {
+    return `HOUKI_NTA_DB_PATH が指すファイル（${path}）がありません。HOUKI_NTA_DB_PATH を投入した DB のファイルに直すか、\`${command}\` でこのパスに${target.label}を投入してください`;
+  }
+  return `ローカル DB（${path}）がありません。\`${command}\` で${target.label}を投入してください`;
 }
 
 /**
@@ -280,7 +345,10 @@ export async function handleNtaSearchTsutatsu(args: SearchTsutatsuArgs) {
  * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
  */
 export async function searchTsutatsu(...a: Parameters<typeof searchTsutatsuInner>) {
-  return explainDbState(await searchTsutatsuInner(...a), a[1]?.dbPath);
+  return explainDbState(await searchTsutatsuInner(...a), a[1]?.dbPath, {
+    label: '基本通達',
+    flag: '--bulk-download-all',
+  });
 }
 
 async function searchTsutatsuInner(args: SearchTsutatsuArgs, options: { dbPath?: string } = {}) {
@@ -289,15 +357,18 @@ async function searchTsutatsuInner(args: SearchTsutatsuArgs, options: { dbPath?:
   }
   const keyword = args.keyword.trim();
 
-  const db = openReadDb(options.dbPath).db;
+  const location = toolLocation(options.dbPath);
+  const db = openReadDb(location.path).db;
   try {
     if (!hasAnyClause(db)) {
       // v0.23.0（T5）: このツールは基本通達 4 種をまとめて検索するので、説明文と freshness.warning と同じく
       // --bulk-download-all を案内する（SPEC-NTA-SEARCH-TSUTATSU-003）
+      // v0.25.0（#138）: 開こうとした DB のパスを入れる。ファイルが無い・版の記録が無い・版が合わないときは、
+      // explainDbState が SPEC-NTA-DB-SCHEMA-029 の文に置き換える
       return makeError('TSUTATSU_NOT_FOUND', 'ローカル DB に検索対象がありません', {
-        hint: '初回は `houki-nta-mcp --bulk-download-all` を実行して、基本通達 4 種をローカル DB に投入してください。1 つの通達だけを先に入れるときは `houki-nta-mcp --bulk-download --tsutatsu=<正式名>` でも投入できます',
+        hint: `ローカル DB（${displayDbPath(location.absolutePath)}）に基本通達の条項が入っていません。\`${guideCommand('--bulk-download-all', location)}\` を実行して、基本通達 4 種を投入してください。1 つの通達だけを先に入れるときは \`${guideCommand('--bulk-download --tsutatsu=<正式名>', location)}\` でも投入できます`,
         tool: 'nta_search_tsutatsu',
-        next_actions: [NEXT_ACTIONS.bulkDownloadAll()],
+        next_actions: [NEXT_ACTIONS.bulkDownloadAll(guideCommand('--bulk-download-all', location))],
       });
     }
 
@@ -312,7 +383,10 @@ async function searchTsutatsuInner(args: SearchTsutatsuArgs, options: { dbPath?:
     ];
 
     // Phase 5 Resilience: section テーブルから freshness を取得（4 通達横断、tsutatsu 絞り込みなし）
-    const freshness = summarizeFreshnessFromSection(db, undefined, '`--bulk-download-all`');
+    const freshness = freshnessOf(
+      summarizeFreshnessFromSection(db, undefined, warningCommand('--bulk-download-all', location)),
+      location
+    );
 
     if (hits.length === 0) {
       // v0.23.0（T4）: 文書系 5 ツールの 0 件と同じく count・freshness・legal_status を付ける
@@ -322,7 +396,7 @@ async function searchTsutatsuInner(args: SearchTsutatsuArgs, options: { dbPath?:
         count: 0,
         hits: [],
         message: `"${keyword}" にマッチする clause はありません`,
-        ...(freshness ? { freshness } : {}),
+        freshness,
         ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
         legal_status: TSUTATSU_LEGAL_STATUS,
       };
@@ -341,13 +415,18 @@ async function searchTsutatsuInner(args: SearchTsutatsuArgs, options: { dbPath?:
         ...(h.score !== undefined ? { score: h.score } : {}),
         ...(h.scoreReasons?.length ? { scoreReasons: h.scoreReasons } : {}),
       })),
-      ...(freshness ? { freshness } : {}),
+      freshness,
       ...(searchNotes.length > 0 ? { search_notes: searchNotes } : {}),
       legal_status: TSUTATSU_LEGAL_STATUS,
       ...searchBaseLawFields(hits.map((h) => h.tsutatsu)),
     };
   } catch (err) {
-    const unreadable = unreadableFetchedAt(err, 'nta_search_tsutatsu', '--bulk-download-all');
+    const unreadable = unreadableFetchedAt(
+      err,
+      'nta_search_tsutatsu',
+      '--bulk-download-all',
+      location
+    );
     if (unreadable) return unreadable;
     throw err;
   } finally {
@@ -456,12 +535,17 @@ export async function getTsutatsu(
 
     // 5. DB miss → 国税庁サイトから取る経路（基本通達 4 種）
     if (!rootUrl) {
+      // 案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。v0.24.x までは `houki-nta-mcp --bulk-download --tsutatsu="<正式名>"`
+      const bulkCommand = guideCommand(
+        `--bulk-download --tsutatsu="${resolved.formal}"`,
+        toolLocation(options.dbPath)
+      );
       return makeError(
         'TSUTATSU_NOT_FOUND',
         `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`,
         {
-          hint: `先に \`houki-nta-mcp --bulk-download --tsutatsu="${resolved.formal}"\` を実行して DB に投入してください。`,
-          next_actions: [NEXT_ACTIONS.bulkDownload(resolved.formal)],
+          hint: `先に \`${bulkCommand}\` を実行して DB に投入してください。`,
+          next_actions: [NEXT_ACTIONS.bulkDownload(bulkCommand)],
           supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
           resolved,
           tool: 'nta_get_tsutatsu',
@@ -490,7 +574,7 @@ export async function getTsutatsu(
       },
       options
     );
-    return renderLiveResult(live, args, resolved.formal, style);
+    return renderLiveResult(live, args, resolved.formal, style, toolLocation(options.dbPath));
   } finally {
     access.persist();
     closeDb(db);
@@ -506,8 +590,11 @@ function renderLiveResult(
   live: LiveFetchResult,
   args: GetTsutatsuArgs,
   formal: string,
-  style: TsutatsuTocStyle
+  style: TsutatsuTocStyle,
+  location: DbLocation
 ) {
+  // 案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。v0.24.x までは `houki-nta-mcp --bulk-download --tsutatsu="<正式名>"`
+  const bulkCommand = guideCommand(`--bulk-download --tsutatsu="${formal}"`, location);
   switch (live.kind) {
     case 'fetch_error':
       // v0.24.0（SPEC-NTA-GET-TSUTATSU-009・SPEC-NTA-COMMON-ERRORS-018）: 失敗の種類ごとの SOURCE_* にし、tool を付ける。
@@ -535,7 +622,7 @@ function renderLiveResult(
     case 'not_found': {
       const hints = [
         `${formal}の${describeClauseForm(style)}。番号の形を確かめてください`,
-        `\`nta_search_tsutatsu\` で条項を検索するか、\`houki-nta-mcp --bulk-download --tsutatsu="${formal}"\` で全節を DB に入れると、国税庁サイトに取りに行かずに引けます`,
+        `\`nta_search_tsutatsu\` で条項を検索するか、\`${bulkCommand}\` で全節を DB に入れると、国税庁サイトに取りに行かずに引けます`,
       ];
       if (live.skippedByLimit > 0) {
         hints.push(
@@ -553,7 +640,7 @@ function renderLiveResult(
         searched_urls: live.searchedUrls,
         next_actions: [
           NEXT_ACTIONS.searchTsutatsu(args.clause ?? ''),
-          NEXT_ACTIONS.bulkDownload(formal),
+          NEXT_ACTIONS.bulkDownload(bulkCommand),
         ],
       });
     }
@@ -721,7 +808,8 @@ export interface DocZeroHitInfo {
   hint: string;
   /** 絞り込んだ税目に文書が無いとき: その種別の文書が持つ税目の一覧 */
   available_taxonomies?: string[];
-  freshness?: FreshnessRange;
+  /** v0.25.0 から常に付ける（SPEC-NTA-SEARCH-RULES-022） */
+  freshness: FreshnessRange;
 }
 
 /**
@@ -748,15 +836,16 @@ export function explainDocZeroHits(
   options: { dbPath?: string } = {}
 ): LawServiceError | DocZeroHitInfo {
   const meta = DOC_SEARCH_META[docType];
+  const location = toolLocation(options.dbPath);
   const total = countDocuments(db, { docType });
   if (total === 0) {
-    const dbPath = options.dbPath ?? defaultDbPath();
+    // ファイルが無い・版の記録が無い・版が合わないときは、explainDbState が hint を DB の状態の文に置き換える
     return makeError(
       'DOC_NOT_FOUND',
       `ローカル DB に${meta.label}が 1 件も無いため、検索できません（「該当なし」という結果ではありません）`,
       {
-        hint: `MCP サーバーが開いている DB（${dbPath}）に${meta.label}（doc_type="${docType}"）が入っていません。\`houki-nta-mcp ${meta.flag}\` で投入してください。投入したはずの場合は、bulk download を実行した環境と MCP サーバーとで、環境変数 HOUKI_NTA_DB_PATH / XDG_CACHE_HOME が同じか確認してください`,
-        next_actions: [NEXT_ACTIONS.bulkDownloadDocs(meta.flag)],
+        hint: kindMissingHint(meta, docType, location),
+        next_actions: [NEXT_ACTIONS.bulkDownloadDocs(guideCommand(meta.flag, location))],
         tool: meta.tool,
       }
     );
@@ -765,19 +854,22 @@ export function explainDocZeroHits(
   // 数えるときの税目。文書回答事例は別表記（sozoku と souzoku など）をまとめて数える
   const taxonomies = args.taxonomy !== undefined ? (args.taxonomies ?? [args.taxonomy]) : undefined;
   const fresh = (filter?: readonly string[]) =>
-    summarizeFreshnessFromDocument(db, docType, filter, `\`${meta.flag}\``) ?? undefined;
+    freshnessOf(
+      summarizeFreshnessFromDocument(db, docType, filter, warningCommand(meta.flag, location)),
+      location
+    );
 
   const argName = meta.taxonomyArg ?? 'taxonomy';
   if (args.taxonomy !== undefined && countDocuments(db, { docType, taxonomy: taxonomies }) === 0) {
     const flagValue = meta.taxonomyFlagValue?.(args.taxonomy);
     const addCommand =
       meta.taxonomyFlag && flagValue !== undefined
-        ? `税目を絞って投入した場合は、\`houki-nta-mcp ${meta.flag} ${meta.taxonomyFlag}=${flagValue}\` で追加できます`
+        ? `税目を絞って投入した場合は、\`${guideCommand(`${meta.flag} ${meta.taxonomyFlag}=${flagValue}`, location)}\` で追加できます`
         : '';
     return {
       hint: `DB の${meta.label} ${formatCount(total)} 件のうち、${argName}="${args.taxonomy}" の文書はありません。${argName} を外すか、available_taxonomies の値を指定してください。${addCommand}`,
       available_taxonomies: listDocumentTaxonomies(db, docType),
-      ...withFreshness(fresh()),
+      freshness: fresh(),
     };
   }
 
@@ -790,7 +882,7 @@ export function explainDocZeroHits(
     const which = args.hasPdf ? 'PDF 付き' : 'PDF 無し';
     return {
       hint: `DB の${meta.label}${scopeLabel}${formatCount(scoped)} 件に、${which}の文書はありません。hasPdf を外して検索してください`,
-      ...withFreshness(fresh(taxonomies)),
+      freshness: fresh(taxonomies),
     };
   }
 
@@ -802,7 +894,7 @@ export function explainDocZeroHits(
   const scopeLabel = conditions.length > 0 ? `（${conditions.join('、')}）` : ' ';
   return {
     hint: `該当なし。DB の${meta.label}${scopeLabel}${formatCount(searched)} 件に「${args.keyword}」に合う文書はありません。別のキーワードで試してください`,
-    ...withFreshness(fresh(taxonomies)),
+    freshness: fresh(taxonomies),
   };
 }
 
@@ -827,21 +919,22 @@ export function explainDocIdNotFound(
   options: { dbPath?: string } = {}
 ): LawServiceError {
   const meta = DOC_SEARCH_META[docType];
+  const location = toolLocation(options.dbPath);
   const total = countDocuments(db, { docType });
   if (total === 0) {
-    const dbPath = options.dbPath ?? defaultDbPath();
+    // ファイルが無い・版の記録が無い・版が合わないときは、explainDbState が hint を DB の状態の文に置き換える
     return makeError(
       'DOC_NOT_FOUND',
       `ローカル DB に${meta.label}が 1 件も無いため、docId="${docId}" を取得できません`,
       {
-        hint: `MCP サーバーが開いている DB（${dbPath}）に${meta.label}（doc_type="${docType}"）が入っていません。\`houki-nta-mcp ${meta.flag}\` で投入してください。投入したはずの場合は、bulk download を実行した環境と MCP サーバーとで、環境変数 HOUKI_NTA_DB_PATH / XDG_CACHE_HOME が同じか確認してください`,
-        next_actions: [NEXT_ACTIONS.bulkDownloadDocs(meta.flag)],
+        hint: kindMissingHint(meta, docType, location),
+        next_actions: [NEXT_ACTIONS.bulkDownloadDocs(guideCommand(meta.flag, location))],
         tool: getTool,
       }
     );
   }
   return makeError('DOC_NOT_FOUND', `${meta.label} docId="${docId}" は見つかりません`, {
-    hint: `DB の${meta.label} ${formatCount(total)} 件に、この docId はありません。available_doc_ids（新しい順に 30 件）から選ぶか、${meta.tool} で検索して docId を確かめてください。DB を投入した後に国税庁が公開した文書は、\`houki-nta-mcp ${meta.flag}\` をもう一度実行すると取り込めます`,
+    hint: `DB の${meta.label} ${formatCount(total)} 件に、この docId はありません。available_doc_ids（新しい順に 30 件）から選ぶか、${meta.tool} で検索して docId を確かめてください。DB を投入した後に国税庁が公開した文書は、\`${guideCommand(meta.flag, location)}\` をもう一度実行すると取り込めます`,
     available_doc_ids: listAvailableDocIds(db, docType, 30),
     next_actions: [
       {
@@ -936,10 +1029,6 @@ function documentJson(doc: NtaDocument) {
   };
 }
 
-function withFreshness(freshness: FreshnessRange | undefined): { freshness?: FreshnessRange } {
-  return freshness ? { freshness } : {};
-}
-
 /**
  * nta_search_qa — 質疑応答事例の FTS5 検索。事前に `--bulk-download-qa` で DB 投入が必要。
  */
@@ -948,14 +1037,19 @@ function withFreshness(freshness: FreshnessRange | undefined): { freshness?: Fre
  * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
  */
 export async function handleNtaSearchQa(...a: Parameters<typeof handleNtaSearchQaInner>) {
-  return explainDbState(await handleNtaSearchQaInner(...a), a[1]?.dbPath);
+  return explainDbState(
+    await handleNtaSearchQaInner(...a),
+    a[1]?.dbPath,
+    DOC_SEARCH_META['qa-jirei']
+  );
 }
 
 async function handleNtaSearchQaInner(args: SearchQaArgs, options: { dbPath?: string } = {}) {
   if (isBlank(args.keyword)) return blankArgument('nta_search_qa', 'keyword', BLANK_KEYWORD_HINT);
   const limit = args.limit ?? 10;
   // v0.24.0（SPEC-NTA-SEARCH-QA-010、#72）: domain は inputSchema から外した。税目での絞り込みは topic で行う
-  const db = openReadDb(options.dbPath).db;
+  const location = toolLocation(options.dbPath);
+  const db = openReadDb(location.path).db;
   try {
     const opts: { docType: 'qa-jirei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'qa-jirei',
@@ -986,21 +1080,24 @@ async function handleNtaSearchQaInner(args: SearchQaArgs, options: { dbPath?: st
       };
     }
     const taxonomyFilter = args.topic ? [args.topic] : undefined;
-    const freshness = summarizeFreshnessFromDocument(
-      db,
-      'qa-jirei',
-      taxonomyFilter,
-      '`--bulk-download-qa`'
+    const freshness = freshnessOf(
+      summarizeFreshnessFromDocument(
+        db,
+        'qa-jirei',
+        taxonomyFilter,
+        warningCommand('--bulk-download-qa', location)
+      ),
+      location
     );
     return {
       keyword: args.keyword,
       results: hits.map(docSearchResult),
-      ...(freshness ? { freshness } : {}),
+      freshness,
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
     };
   } catch (err) {
-    const unreadable = unreadableFetchedAt(err, 'nta_search_qa', '--bulk-download-qa');
+    const unreadable = unreadableFetchedAt(err, 'nta_search_qa', '--bulk-download-qa', location);
     if (unreadable) return unreadable;
     throw err;
   } finally {
@@ -1146,15 +1243,19 @@ async function getQaWithDb(
  */
 function dbStateHint(
   state: Extract<DbState, { kind: 'too-old' | 'too-new' | 'unreadable' }>,
-  path: string
+  location: DbLocation
 ): string {
+  // v0.25.0（#138）: 先頭を「ローカル DB（<パス>）」に揃え、パスのホームディレクトリの部分を ~ にし、
+  // コマンドを npx の形にする。v0.24.x では「MCP サーバーが開いている DB（<絶対パス>）」と `houki-nta-mcp --quickstart`
+  const path = displayDbPath(location.absolutePath);
+  const quickstart = guideCommand('--quickstart', location);
   switch (state.kind) {
     case 'too-old':
-      return `MCP サーバーが開いている DB（${path}）の版 (${state.version}) は古く移行できないため、使っていません。houki-nta-mcp --quickstart などの投入のフラグを実行すると作り直します（取り込んだ中身は消えます）`;
+      return `ローカル DB（${path}）の版 (${state.version}) は古く移行できないため、使っていません。\`${quickstart}\` などの投入のフラグを実行すると作り直します（取り込んだ中身は消えます）`;
     case 'too-new':
-      return `MCP サーバーが開いている DB（${path}）の版 (${state.version}) がこの houki-nta-mcp の版 (${SCHEMA_VERSION}) より新しいため、使っていません（DB は変更しません）。houki-nta-mcp を新しい版に更新してください`;
+      return `ローカル DB（${path}）の版 (${state.version}) がこの houki-nta-mcp の版 (${SCHEMA_VERSION}) より新しいため、使っていません（DB は変更しません）。houki-nta-mcp を新しい版に更新してください`;
     case 'unreadable':
-      return `MCP サーバーが開いている DB（${path}）の版を読めないため (schema_version: ${state.raw})、使っていません（DB は変更しません）。DB ファイルを消してから houki-nta-mcp --quickstart などの投入のフラグを実行してください`;
+      return `ローカル DB（${path}）の版を読めないため (schema_version: ${state.raw})、使っていません（DB は変更しません）。DB ファイルを消してから \`${quickstart}\` などの投入のフラグを実行してください`;
   }
 }
 
@@ -1163,13 +1264,20 @@ function dbStateHint(
  *
  * 版の合わない DB のとき、ツールは空の DB を引いて「DB に 1 件も無い」ときの応答（TSUTATSU_NOT_FOUND / DOC_NOT_FOUND）を作る。
  * code はそのままにし、hint を DB の状態の文にする。新しい版・読めない版では、投入しても終了コード 1 になるので、
- * next_actions から投入の案内（cli_bulk_download）を外す。ファイルが無い・版の記録が無いときは応答を変えない
+ * next_actions から投入の案内（cli_bulk_download）を外す。
+ *
+ * v0.25.0（#138、SPEC-NTA-DB-SCHEMA-029）から、ファイルが無い・版の記録が無いときも hint をその状態の文にする
+ * （v0.24.x では応答を変えず、「その種別が入っていません」の文のままだった）。`target` は hint の `<種別>` と投入のフラグ
  */
-function explainDbState<T>(result: T, dbPath?: string): T {
+function explainDbState<T>(result: T, dbPath: string | undefined, target: DbTarget): T {
   if (!isLawServiceError(result)) return result;
   if (result.code !== 'DOC_NOT_FOUND' && result.code !== 'TSUTATSU_NOT_FOUND') return result;
-  const path = dbPath ?? defaultDbPath();
-  const state = probeDbState(path);
+  const location = toolLocation(dbPath);
+  const state = probeDbState(location.path);
+  // v0.25.0（SPEC-NTA-DB-SCHEMA-029）: ファイルが無い・版の記録が無いときも、事実に合う文にする
+  if (state.kind === 'missing' || state.kind === 'unversioned') {
+    return { ...result, hint: dbAbsenceHint(state.kind, location, target) } as T;
+  }
   if (!isVersionProblem(state)) return result;
   const { next_actions, ...rest } = result;
   const kept =
@@ -1178,7 +1286,7 @@ function explainDbState<T>(result: T, dbPath?: string): T {
       : next_actions?.filter((a) => a.action !== 'cli_bulk_download');
   return {
     ...rest,
-    hint: dbStateHint(state, path),
+    hint: dbStateHint(state, location),
     ...(kept && kept.length > 0 ? { next_actions: kept } : {}),
   } as T;
 }
@@ -1369,7 +1477,11 @@ function relatedNextActions(laws: RelatedLawRef[], tsutatsu: RelatedTsutatsuRef[
 export async function handleNtaSearchTaxAnswer(
   ...a: Parameters<typeof handleNtaSearchTaxAnswerInner>
 ) {
-  return explainDbState(await handleNtaSearchTaxAnswerInner(...a), a[1]?.dbPath);
+  return explainDbState(
+    await handleNtaSearchTaxAnswerInner(...a),
+    a[1]?.dbPath,
+    DOC_SEARCH_META['tax-answer']
+  );
 }
 
 async function handleNtaSearchTaxAnswerInner(
@@ -1380,7 +1492,8 @@ async function handleNtaSearchTaxAnswerInner(
     return blankArgument('nta_search_tax_answer', 'keyword', BLANK_KEYWORD_HINT);
   }
   const limit = args.limit ?? 10;
-  const db = openReadDb(options.dbPath).db;
+  const location = toolLocation(options.dbPath);
+  const db = openReadDb(location.path).db;
   try {
     const opts: { docType: 'tax-answer'; limit: number; hasPdf?: boolean } = {
       docType: 'tax-answer',
@@ -1409,16 +1522,19 @@ async function handleNtaSearchTaxAnswerInner(
         legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       };
     }
-    const freshness = summarizeFreshnessFromDocument(
-      db,
-      'tax-answer',
-      undefined,
-      '`--bulk-download-tax-answer`'
+    const freshness = freshnessOf(
+      summarizeFreshnessFromDocument(
+        db,
+        'tax-answer',
+        undefined,
+        warningCommand('--bulk-download-tax-answer', location)
+      ),
+      location
     );
     return {
       keyword: args.keyword,
       results: hits.map(docSearchResult),
-      ...(freshness ? { freshness } : {}),
+      freshness,
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: NTA_GENERAL_INFO_LEGAL_STATUS,
       // v0.23.0（T5）: 先頭の記事の本文を読む案内。docId は 4 桁の記事番号で、no にそのまま渡せる
@@ -1435,7 +1551,8 @@ async function handleNtaSearchTaxAnswerInner(
     const unreadable = unreadableFetchedAt(
       err,
       'nta_search_tax_answer',
-      '--bulk-download-tax-answer'
+      '--bulk-download-tax-answer',
+      location
     );
     if (unreadable) return unreadable;
     throw err;
@@ -1868,7 +1985,11 @@ import type {
 export async function handleNtaSearchKaiseiTsutatsu(
   ...a: Parameters<typeof handleNtaSearchKaiseiTsutatsuInner>
 ) {
-  return explainDbState(await handleNtaSearchKaiseiTsutatsuInner(...a), a[1]?.dbPath);
+  return explainDbState(
+    await handleNtaSearchKaiseiTsutatsuInner(...a),
+    a[1]?.dbPath,
+    DOC_SEARCH_META.kaisei
+  );
 }
 
 async function handleNtaSearchKaiseiTsutatsuInner(
@@ -1879,7 +2000,8 @@ async function handleNtaSearchKaiseiTsutatsuInner(
     return blankArgument('nta_search_kaisei_tsutatsu', 'keyword', BLANK_KEYWORD_HINT);
   }
   const limit = args.limit ?? 10;
-  const db = openReadDb(options.dbPath).db;
+  const location = toolLocation(options.dbPath);
+  const db = openReadDb(location.path).db;
   try {
     const opts: { docType: 'kaisei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'kaisei',
@@ -1912,16 +2034,19 @@ async function handleNtaSearchKaiseiTsutatsuInner(
     }
 
     const taxonomyFilter = args.taxonomy !== undefined ? [args.taxonomy] : undefined;
-    const freshness = summarizeFreshnessFromDocument(
-      db,
-      'kaisei',
-      taxonomyFilter,
-      '`--bulk-download-kaisei`'
+    const freshness = freshnessOf(
+      summarizeFreshnessFromDocument(
+        db,
+        'kaisei',
+        taxonomyFilter,
+        warningCommand('--bulk-download-kaisei', location)
+      ),
+      location
     );
     return {
       keyword: args.keyword,
       results: hits.map(docSearchResult),
-      ...(freshness ? { freshness } : {}),
+      freshness,
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: TSUTATSU_LEGAL_STATUS,
     };
@@ -1929,7 +2054,8 @@ async function handleNtaSearchKaiseiTsutatsuInner(
     const unreadable = unreadableFetchedAt(
       err,
       'nta_search_kaisei_tsutatsu',
-      '--bulk-download-kaisei'
+      '--bulk-download-kaisei',
+      location
     );
     if (unreadable) return unreadable;
     throw err;
@@ -1948,7 +2074,11 @@ async function handleNtaSearchKaiseiTsutatsuInner(
 export async function handleNtaGetKaiseiTsutatsu(
   ...a: Parameters<typeof handleNtaGetKaiseiTsutatsuInner>
 ) {
-  return explainDbState(await handleNtaGetKaiseiTsutatsuInner(...a), a[1]?.dbPath);
+  return explainDbState(
+    await handleNtaGetKaiseiTsutatsuInner(...a),
+    a[1]?.dbPath,
+    DOC_SEARCH_META.kaisei
+  );
 }
 
 async function handleNtaGetKaiseiTsutatsuInner(
@@ -2037,7 +2167,11 @@ function renderKaiseiMarkdown(doc: NtaDocument): string {
 export async function handleNtaSearchJimuUnei(
   ...a: Parameters<typeof handleNtaSearchJimuUneiInner>
 ) {
-  return explainDbState(await handleNtaSearchJimuUneiInner(...a), a[1]?.dbPath);
+  return explainDbState(
+    await handleNtaSearchJimuUneiInner(...a),
+    a[1]?.dbPath,
+    DOC_SEARCH_META['jimu-unei']
+  );
 }
 
 async function handleNtaSearchJimuUneiInner(
@@ -2048,7 +2182,8 @@ async function handleNtaSearchJimuUneiInner(
     return blankArgument('nta_search_jimu_unei', 'keyword', BLANK_KEYWORD_HINT);
   }
   const limit = args.limit ?? 10;
-  const db = openReadDb(options.dbPath).db;
+  const location = toolLocation(options.dbPath);
+  const db = openReadDb(location.path).db;
   try {
     const opts: { docType: 'jimu-unei'; limit: number; taxonomy?: string; hasPdf?: boolean } = {
       docType: 'jimu-unei',
@@ -2082,16 +2217,19 @@ async function handleNtaSearchJimuUneiInner(
     }
 
     const taxonomyFilter = args.taxonomy !== undefined ? [args.taxonomy] : undefined;
-    const freshness = summarizeFreshnessFromDocument(
-      db,
-      'jimu-unei',
-      taxonomyFilter,
-      '`--bulk-download-jimu-unei`'
+    const freshness = freshnessOf(
+      summarizeFreshnessFromDocument(
+        db,
+        'jimu-unei',
+        taxonomyFilter,
+        warningCommand('--bulk-download-jimu-unei', location)
+      ),
+      location
     );
     return {
       keyword: args.keyword,
       results: hits.map(docSearchResult),
-      ...(freshness ? { freshness } : {}),
+      freshness,
       ...describeIndexStatusNotes(hits, searchNotes),
       legal_status: JIMU_UNEI_LEGAL_STATUS,
     };
@@ -2099,7 +2237,8 @@ async function handleNtaSearchJimuUneiInner(
     const unreadable = unreadableFetchedAt(
       err,
       'nta_search_jimu_unei',
-      '--bulk-download-jimu-unei'
+      '--bulk-download-jimu-unei',
+      location
     );
     if (unreadable) return unreadable;
     throw err;
@@ -2116,7 +2255,11 @@ async function handleNtaSearchJimuUneiInner(
  * （v0.24.0、SPEC-NTA-DB-SCHEMA-021 の注 2）
  */
 export async function handleNtaGetJimuUnei(...a: Parameters<typeof handleNtaGetJimuUneiInner>) {
-  return explainDbState(await handleNtaGetJimuUneiInner(...a), a[1]?.dbPath);
+  return explainDbState(
+    await handleNtaGetJimuUneiInner(...a),
+    a[1]?.dbPath,
+    DOC_SEARCH_META['jimu-unei']
+  );
 }
 
 async function handleNtaGetJimuUneiInner(args: GetJimuUneiArgs, options: { dbPath?: string } = {}) {
@@ -2211,7 +2354,11 @@ function renderDocumentMarkdown(
 export async function handleNtaSearchBunshokaitou(
   ...a: Parameters<typeof handleNtaSearchBunshokaitouInner>
 ) {
-  return explainDbState(await handleNtaSearchBunshokaitouInner(...a), a[1]?.dbPath);
+  return explainDbState(
+    await handleNtaSearchBunshokaitouInner(...a),
+    a[1]?.dbPath,
+    DOC_SEARCH_META.bunshokaitou
+  );
 }
 
 async function handleNtaSearchBunshokaitouInner(
@@ -2222,7 +2369,8 @@ async function handleNtaSearchBunshokaitouInner(
     return blankArgument('nta_search_bunshokaitou', 'keyword', BLANK_KEYWORD_HINT);
   }
   const limit = args.limit ?? 10;
-  const db = openReadDb(options.dbPath).db;
+  const location = toolLocation(options.dbPath);
+  const db = openReadDb(location.path).db;
   try {
     // v0.14.0: 国税局のページは本庁と違う税目フォルダ名を使うことがある（sozoku と souzoku など）ので、
     // 同じ税目の別表記もまとめて探す
@@ -2263,16 +2411,19 @@ async function handleNtaSearchBunshokaitouInner(
         legal_status: BUNSHOKAITOU_LEGAL_STATUS,
       };
     }
-    const freshness = summarizeFreshnessFromDocument(
-      db,
-      'bunshokaitou',
-      taxonomies,
-      '`--bulk-download-bunshokaitou`'
+    const freshness = freshnessOf(
+      summarizeFreshnessFromDocument(
+        db,
+        'bunshokaitou',
+        taxonomies,
+        warningCommand('--bulk-download-bunshokaitou', location)
+      ),
+      location
     );
     return {
       keyword: args.keyword,
       results: hits.map(docSearchResult),
-      ...(freshness ? { freshness } : {}),
+      freshness,
       ...describeIndexStatusNotes(hits, searchNotes),
       // v0.9.1: 文書回答事例固有の文言に修正 (Issue #2)
       legal_status: BUNSHOKAITOU_LEGAL_STATUS,
@@ -2281,7 +2432,8 @@ async function handleNtaSearchBunshokaitouInner(
     const unreadable = unreadableFetchedAt(
       err,
       'nta_search_bunshokaitou',
-      '--bulk-download-bunshokaitou'
+      '--bulk-download-bunshokaitou',
+      location
     );
     if (unreadable) return unreadable;
     throw err;
@@ -2300,7 +2452,11 @@ async function handleNtaSearchBunshokaitouInner(
 export async function handleNtaGetBunshokaitou(
   ...a: Parameters<typeof handleNtaGetBunshokaitouInner>
 ) {
-  return explainDbState(await handleNtaGetBunshokaitouInner(...a), a[1]?.dbPath);
+  return explainDbState(
+    await handleNtaGetBunshokaitouInner(...a),
+    a[1]?.dbPath,
+    DOC_SEARCH_META.bunshokaitou
+  );
 }
 
 async function handleNtaGetBunshokaitouInner(
@@ -2355,7 +2511,11 @@ async function handleNtaGetBunshokaitouInner(
 export async function handleNtaInspectPdfMeta(
   ...a: Parameters<typeof handleNtaInspectPdfMetaInner>
 ) {
-  return explainDbState(await handleNtaInspectPdfMetaInner(...a), a[1]?.dbPath);
+  return explainDbState(
+    await handleNtaInspectPdfMetaInner(...a),
+    a[1]?.dbPath,
+    DOC_SEARCH_META[a[0].docType]
+  );
 }
 
 async function handleNtaInspectPdfMetaInner(
@@ -2377,7 +2537,9 @@ async function handleNtaInspectPdfMetaInner(
     const doc = getDocumentFromDb(db, args.docType, docId);
     if (!doc) {
       return makeError('DOC_NOT_FOUND', `${args.docType} の docId="${docId}" は DB に未登録です`, {
-        hint: `\`--bulk-download-${args.docType === 'tax-answer' ? 'tax-answer' : args.docType}\` で投入済みか確認してください。docId が正しいかも \`nta_search_*\` で検証可能`,
+        // v0.25.0（SPEC-NTA-INSPECT-PDF-META-001）: qa-jirei のフラグは --bulk-download-qa（v0.24.x は無いフラグ
+        // --bulk-download-qa-jirei を書いていた）。DB が無いときは explainDbState が DB の状態の文に置き換える
+        hint: `\`${DOC_SEARCH_META[args.docType].flag}\` で投入済みか確認してください。docId が正しいかも \`nta_search_*\` で検証可能`,
       });
     }
 
