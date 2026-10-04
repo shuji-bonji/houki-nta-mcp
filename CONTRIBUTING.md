@@ -85,6 +85,43 @@ npm test            # vitest
 npm run build       # tsc
 ```
 
+## ローカル DB を使う開発
+
+開発中のビルドで公開版の DB を壊さないための決まりです。
+
+手元のビルド（`node dist/index.js` で起動する MCP サーバーや、`node dist/index.js --bulk-download-qa` などの CLI）も、`HOUKI_NTA_DB_PATH` が無ければ、plugin（公開版）と同じ `~/.cache/houki-nta-mcp/cache.db` を開きます。次の作業では、この DB を共有しないでください。
+
+| 作業 | 共有すると起きること |
+|---|---|
+| 古いコミット（0.23.x 以前）を起動する | 0.23.x 以前は版が新しい DB を見つけると全テーブルを消すので、版 12 の `cache.db` の中身が消えます |
+| DB の版（`SCHEMA_VERSION`）を上げる変更を試す | 投入のフラグや DB を開くツールが `cache.db` を新しい版に移行するので、公開版の plugin からは「版が新しい DB」になり、読むだけのツールが使えなくなります |
+| 取り込みの処理（`src/services/*-bulk-downloader.ts`）を変えて試す | 試している途中の中身を、公開版の検索ツールが読みます |
+
+開発用の DB は別のファイルにします。CLI には `--db-path` もありますが、MCP サーバーには渡せません。MCP の設定ファイルの `env` と、CLI を実行するシェルの両方に同じ `HOUKI_NTA_DB_PATH` を設定してください（JSON では `~` が展開されないので絶対パスで書きます）。
+
+```bash
+export HOUKI_NTA_DB_PATH=~/.cache/houki-nta-mcp/cache.dev.db
+node dist/index.js --quickstart
+node dist/index.js --status   # 2 行目の「DB:」が cache.dev.db、3 行目の「DB の場所の設定:」が HOUKI_NTA_DB_PATH であることを確かめる
+```
+
+```json
+// 開発中の動作確認 (.mcp.json)
+{
+  "mcpServers": {
+    "houki-nta-local": {
+      "command": "node",
+      "args": ["/absolute/path/to/houki-nta-mcp/dist/index.js"],
+      "env": {
+        "HOUKI_NTA_DB_PATH": "/Users/you/.cache/houki-nta-mcp/cache.dev.db"
+      }
+    }
+  }
+}
+```
+
+MCP サーバーがどのファイルを開いたかは、起動時のログの `DB: <絶対パス>（DB の場所の設定: HOUKI_NTA_DB_PATH）` の行と、検索ツールの応答の `freshness.db_path` で確かめられます。既定のファイル名に DB の版を入れないのは、版 3〜11 の DB を行を保って移行するためです（houki-hub `docs/DECISIONS.md` 2026-10-04 の T6 の (f)）。
+
 ## リリース手順（メンテナ向け）
 
 stable リリースは **GitHub Actions が自動 publish** しますが、`dist-tag` の `next`

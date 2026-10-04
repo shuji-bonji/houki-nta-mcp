@@ -72,7 +72,7 @@ npx -y @shuji-bonji/houki-nta-mcp --quickstart
 - **添付 PDF kind 分類 (v0.7.0)**: タイトルから 6 種別（新旧対照表 / 別紙・別表 / Q&A / 参考資料 / 通知・連絡 / その他）に自動分類。Markdown 出力は kind 優先度ソートの表 + `pdf-reader-mcp` 呼び出し例つき
 - **`hasPdf` 検索フィルタ + `nta_inspect_pdf_meta` (v0.7.1)**: PDF 付きの重要文書だけを抽出 / PDF メタだけを軽量に返す軽量 API を提供
 - **添付 PDF の読み方を返し、読み手は固定しない (v0.19.0)**: 添付 PDF の kind（`comparison`=新旧対照表 / `attachment`=別紙・別表 など。「新旧**対応**表」の表記ゆれにも対応）ごとに `read_strategy`（表として取る / 本文として読む / 先頭を見て決める）と `layout_note`（紙面の組み方）を付ける。`save: true` で PDF をサーバー側に保存して絶対パスを返す。`next_actions` に pdf-reader-mcp の呼び出し例（保存済みなら `extract_tables` / `read_text` に `file_path`、未保存なら `read_url` に `url`）と、他の PDF 読み取りツール向けの汎用の 1 件を置く。houki-nta-mcp 自身は PDF の本文を読まない。改正通達で「別紙 N」とだけ題した PDF は新旧対照表本体のことが多いので、`comparison` として返す (v0.20.0)
-- **レスポンスに `freshness` 付き**: 利用者（LLM）が staleness を判定できる
+- **レスポンスに `freshness` 付き**: 利用者（LLM）が staleness を判定でき、`db_path` でどの DB の結果かが分かります（v0.25.0）
 - **法的位置付けを明示**: 各レスポンスに `legal_status` フィールド（通達 = 税務署員のみ拘束、QA = 参考情報、等）
 
 ### データフロー全体俯瞰
@@ -216,7 +216,7 @@ v0.14.2 以前に作った DB は、v0.15.0 で最初にサーバーを起動し
 
 | DB の状態 | 応答 |
 | --- | --- |
-| その種別の文書が DB に 1 件も無い | エラー `DOC_NOT_FOUND`。「該当なし」という検索結果ではないことを応答の形で示します。`hint` に MCP サーバーが開いている DB ファイルのパスと投入コマンドを、`next_actions` に投入コマンドを入れます |
+| その種別の文書が DB に 1 件も無い | エラー `DOC_NOT_FOUND`。「該当なし」という検索結果ではないことを応答の形で示します。`hint` に開こうとした DB ファイルのパスと投入コマンドを、`next_actions` に投入コマンドを入れます。`hint` の先頭は DB の状態で分かれます（下の表） |
 | 税目の絞り込み（`topic` / `taxonomy`）の範囲に文書が無い | `results: []`。`hint` で絞り込みを外すよう案内し、`available_taxonomies` にその種別の文書が持つ税目の一覧を入れます |
 | `hasPdf` の条件に合う文書が無い | `results: []`。`hint` で `hasPdf` を外すよう案内します（質疑応答事例は PDF を持たないため、`hasPdf: true` では常にこれになります） |
 | 文書はあるが、キーワードに合わない | `results: []`。`hint` に「該当なし」と、検索した文書の件数を書きます。`freshness` で DB の取得時点を示します |
@@ -225,7 +225,23 @@ v0.14.2 以前に作った DB は、v0.15.0 で最初にサーバーを起動し
 
 - その種別をまだ投入していない（bulk download は種別ごとに分かれています）
 - `--bulk-download-everything` の途中で、その種別だけ失敗した（失敗しても次の種別へ進みます）
-- bulk download を実行したシェルと MCP サーバー（Claude Desktop や plugin が起動するもの）とで、環境変数 `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` が違い、サーバーが別の DB ファイルを開いている。`hint` の DB のパスで確かめられます
+- bulk download を実行したシェルと MCP サーバー（Claude Desktop や plugin が起動するもの）とで、環境変数 `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` が違い、サーバーが別の DB ファイルを開いている。macOS の Claude Desktop はシェルの `.zshrc` の環境変数を受け継ぎません
+
+v0.25.0 から、`hint` の先頭で DB の状態が分かります。`<パス>` は開こうとした DB のパスで、ホームディレクトリの部分は `~` になります。
+
+| `hint` の先頭 | DB の状態 |
+| --- | --- |
+| `ローカル DB（<パス>）がありません。` | DB のファイルが無い |
+| `HOUKI_NTA_DB_PATH が指すファイル（<パス>）がありません。` | 環境変数 `HOUKI_NTA_DB_PATH` が指すファイルが無い |
+| `ローカル DB（<パス>）にはまだ何も投入されていません。` | ファイルはあるが、何も投入されていない（0 バイトのファイルなど） |
+| `ローカル DB（<パス>）の版 …` | DB の版が合わない（古くて移行できない・新しい・読めない） |
+| `ローカル DB（<パス>）に<種別>（doc_type="…"）が入っていません。` | DB は使えるが、その種別が入っていない |
+
+MCP サーバーがどの DB を開いているかは、次の 3 つで確かめられます。
+
+- 検索ツールの応答の `freshness.db_path`
+- MCP サーバーの起動時のログ（標準エラー出力）の `DB: <絶対パス>（DB の場所の設定: <名前>）` の行。Claude Desktop ではサーバーごとのログに出ます
+- 投入したシェルで `npx -y @shuji-bonji/houki-nta-mcp@latest --status` を実行すると、そのシェルの設定で開く DB の場所が出ます。両者が違えば、MCP サーバーの設定（`env`）に同じ `HOUKI_NTA_DB_PATH` を書きます
 
 基本通達を検索する `nta_search_tsutatsu` は、以前から同じ分け方をしています（DB に通達が無ければ `TSUTATSU_NOT_FOUND`）。
 
@@ -388,6 +404,9 @@ houki-nta-mcp --bulk-download-bunshokaitou # 文書回答事例
 houki-nta-mcp --bulk-download-tax-answer   # タックスアンサー
 houki-nta-mcp --bulk-download-qa           # 質疑応答事例
 
+# DB の場所とそれを決めた設定、種別ごとの件数を確かめる（DB を作らず、移行もしない。v0.25.0）
+houki-nta-mcp --status
+
 # 30 日より古い節を再取得（差分更新）
 houki-nta-mcp --refresh-stale=30 --apply
 
@@ -422,9 +441,31 @@ DB の版による扱いは次のとおりです。
 
 > **注意**: 0.24.0 に上げた後は、同じ DB を 0.23.x 以前の CLI や MCP サーバーで開かないでください。0.23.x は版が新しい DB を全テーブルを消して作り直します。
 
+v0.25.0 で足した `--status` は、DB を確かめるだけの入口です。DB を作らず、版 3〜11 の DB も移行しません（版と「次に開く入口が移行する」ことだけを出します）。
+
 ### 投入済みかどうかを素早く確認する
 
-`nta_search_*` がエラー `DOC_NOT_FOUND`（基本通達は `TSUTATSU_NOT_FOUND`）を返した場合、その種別は MCP サーバーが開いている DB に入っていません（v0.12.0 までは `results: []` と「DB 投入済みか確認してください」のヒントでした）。投入の有無は以下で確認できます。
+`nta_search_*` がエラー `DOC_NOT_FOUND`（基本通達は `TSUTATSU_NOT_FOUND`）を返した場合、その種別は MCP サーバーが開いている DB に入っていません（v0.12.0 までは `results: []` と「DB 投入済みか確認してください」のヒントでした）。投入の有無は、まず `--status` で確かめられます（v0.25.0）。
+
+```bash
+npx -y @shuji-bonji/houki-nta-mcp@latest --status
+# [status] @shuji-bonji/houki-nta-mcp v0.25.0
+#   DB: /Users/you/.cache/houki-nta-mcp/cache.db
+#   DB の場所の設定: 既定
+#   schema_version: 12
+#   tsutatsu: 4 (clause: …, fetched_at: … 〜 …)
+#   qa-jirei: …
+#   …
+```
+
+`--status` は次のものを出します。DB を作らず、移行もしません。終了コードは、DB が無いときも 0 です（版が合わない・開けないときは 1）。
+
+- 2 行目: DB の場所（`--db-path` や `HOUKI_NTA_DB_PATH` は値のまま）
+- 3 行目: DB の場所を決めた設定（`--db-path` / `HOUKI_NTA_DB_PATH` / `XDG_CACHE_HOME` / `既定`）
+- 同じフォルダーにほかの `cache*.db`（退避したファイルを含む）があれば `[WARN]` の行。ファイルは開かず、名前・大きさ・最終更新だけを出します
+- 種別ごとの件数と取得日時の範囲（国税庁の索引から消えた文書の件数を含む）
+
+`sqlite3` で直接数えることもできます。
 
 ```bash
 # 各 docType の件数を一発で確認 (DB が無ければ投入前)
@@ -539,7 +580,11 @@ cron 設定例:
 > [!TIP]
 > cron は環境変数を継承しないので、`houki-nta-mcp` / `npx` / `node` は **絶対パスで指定**してください。`which houki-nta-mcp` / `which npx` / `which node` で確認できます。
 
-レスポンスに `freshness` フィールドが付き、`staleness` (`fresh`/`stale`/`outdated`) で再 bulk DL の必要性を判断できます。設計詳細は [`docs/RESILIENCE.md`](docs/RESILIENCE.md)。
+検索ツールのレスポンスには `freshness` フィールドが付き、`staleness` (`fresh`/`stale`/`outdated`) で再 bulk DL の必要性を判断できます。`freshness.db_path` は引いた DB のパスです（v0.25.0。ホームディレクトリの部分は `~`）。範囲に文書が無いときも `freshness` は付き、取得日時の 4 つ（`oldest_fetched_at`・`newest_fetched_at`・`staleness`・`days_since_oldest`）が `null` になります。設計詳細は [`docs/RESILIENCE.md`](docs/RESILIENCE.md)。
+
+### 応答と CLI の案内のコマンド（v0.25.0）
+
+`hint`・`next_actions[].example.command`・`freshness.warning`・CLI のエラーの文が勧めるコマンドは、グローバルにインストールしていなくても動く `npx -y @shuji-bonji/houki-nta-mcp@latest <フラグ>` の形です（v0.24.x までは `houki-nta-mcp <フラグ>` で、インストールしていないと `command not found` になりました）。DB の場所を環境変数で決めて起動・実行したときは、同じ変数を前に付けます（例: `HOUKI_NTA_DB_PATH="$HOME/.cache/houki-nta-mcp/cache.dev.db" npx -y …`）。CLI に `--db-path` を付けたときは、後ろに `--db-path=…` を付けます。そのまま貼り付ければ同じ DB に投入できます。`--help` の使い方だけは `houki-nta-mcp <フラグ>` の形です。
 
 ## 通達の法的位置付け（重要）
 
@@ -661,7 +706,7 @@ handler が `LawServiceError`（上の JSON 形式）を返した場合も `isEr
 {
   "error": "改正通達 docId=\"0025004-999\" は見つかりません",
   "code": "DOC_NOT_FOUND",
-  "hint": "DB の改正通達 118 件に、この docId はありません。available_doc_ids（新しい順に 30 件）から選ぶか、nta_search_kaisei_tsutatsu で検索して docId を確かめてください。DB を投入した後に国税庁が公開した文書は、`houki-nta-mcp --bulk-download-kaisei` をもう一度実行すると取り込めます",
+  "hint": "DB の改正通達 118 件に、この docId はありません。available_doc_ids（新しい順に 30 件）から選ぶか、nta_search_kaisei_tsutatsu で検索して docId を確かめてください。DB を投入した後に国税庁が公開した文書は、`npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-kaisei` をもう一度実行すると取り込めます",
   "available_doc_ids": [
     { "docId": "0026003-067", "title": "消費税法基本通達の一部改正について（法令解釈通達）", "issuedAt": "2026-04-01" }
   ],

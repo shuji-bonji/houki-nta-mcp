@@ -8,11 +8,22 @@ houki-nta-mcp は国税庁公式サイトから取得したコンテンツをロ
 ${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db
 ```
 
-優先順:
+優先順（v0.25.0 から、どれで決まったかを「DB の場所の設定」の名前で表示する）:
 
-1. `HOUKI_NTA_DB_PATH` 環境変数（`--db-path` と同等）
-2. `XDG_CACHE_HOME/houki-nta-mcp/cache.db`
-3. `~/.cache/houki-nta-mcp/cache.db`
+1. CLI の `--db-path=<path>`（CLI だけ。MCP サーバーには渡せない）。設定の名前は `--db-path`
+2. `HOUKI_NTA_DB_PATH` 環境変数（空文字は無いもの）。設定の名前は `HOUKI_NTA_DB_PATH`
+3. `XDG_CACHE_HOME/houki-nta-mcp/cache.db`（空文字は無いもの）。設定の名前は `XDG_CACHE_HOME`
+4. `~/.cache/houki-nta-mcp/cache.db`。設定の名前は `既定`
+
+相対パスは、CLI を実行した・MCP サーバーを起動したときの作業フォルダーから決まる。
+
+どの DB を開いているかは次で確かめられる（v0.25.0）。
+
+- `houki-nta-mcp --status`: 実行したシェルの設定で開く DB の場所、その設定、同じフォルダーのほかの `cache*.db`、種別ごとの件数を出す。DB を作らず、移行もしない
+- MCP サーバーの起動時のログ（標準エラー出力）: `started` の行の次に、`msg` が `DB: <絶対パス>（DB の場所の設定: <名前>）` の JSON の行（`meta` に `db_path`・`setting`）
+- 検索ツールの応答の `freshness.db_path` と、「DB に 1 件も無い」ときの `hint` の中のパス（ホームディレクトリの部分は `~`）
+
+既定のファイル名（`cache.db`）に DB の版は入れない。開発で版を上げるときは `HOUKI_NTA_DB_PATH` か `--db-path` で別のファイルを使う（`CONTRIBUTING.md` の「ローカル DB を使う開発」）。
 
 加えて Phase 5 Resilience の baseline ファイルが同じディレクトリに作られる:
 
