@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-10-05
+
+**patch リリース** — `nta_get_tax_answer` の `sections` が、国税庁のページの小見出し h3 を落とし、その段落を上の h2 の節にまとめていたのを直した（#147）。節を h2 と h3 の見出しごとに切り、各節に見出しの段 `level` を足す。応答のフィールドは足すだけで、消す・名前を変えるものは無い。DB のスキーマの版は 12 のまま。仕様 PR は #149（差分 `20261005-tax-answer-h3-sections`）と #148（差分 `20261005-tax-answer-018-example`、仕様の文だけ）。
+
+閉じる Issue: #147 #146
+
 0.25.1 から、`nta_get_tax_answer` はタックスアンサーのページの小見出し（h3）も節として返し、`taxAnswer.sections` の各要素に見出しの段 `level`（h2 は `2`、h3 は `3`）を付けます。markdown では h3 の節を `### ` で書きます。0.25.0 までは小見出しの文字列が落ち、その段落が上の見出しの節に続けて入っていました。取り込み済みの DB の行は、次のコマンドで入れ直すまで以前の分け方のまま返ります（`level` はすべて `2`）。国税庁のページが変わっていない記事は、`--refresh` を付けないと取り直されません。
 
 ```bash
@@ -27,6 +33,23 @@ npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-tax-answer --refresh
 | 検索ツールの結果（入れ直した行） | — | h3 の見出しの語で当たる、`snippet`・`score` が変わることがある |
 | `--bulk-download-tax-answer --refresh` の 1 回目 | — | 多くの記事の本文が変わるので、`⚠ health warning:` の「構造変質の疑い」（更新された文書が 50% を超える）が 1 回出る |
 | h3 の無いページ | — | 節の分け方は変わらない。各節に `level: 2` が付く |
+
+### Added
+
+- **`taxAnswer.sections[].level`**（#147、SPEC-NTA-GET-TAX-ANSWER-008・019）: 節の見出しの段。ページの h2 の節は `2`、h3 の節は `3`。節は入れ子にせず、ページの順に 1 つの配列に並ぶ。h3 の節の親は、その前にある最も近い `level: 2` の節。0.25.0 以前に DB に入れた行は、DB から返すときに `level: 2` を補う
+
+### Fixed
+
+- **`nta_get_tax_answer` の `sections` が、ページの小見出し h3 を落としていた**（#147、SPEC-NTA-GET-TAX-ANSWER-019・007・008）: 節を切る見出しが h2 だけだったため、h3 の見出しの文字列は応答にも DB の本文にも入らず、h3 の下の段落は上の h2 の節に続けて入っていた。2026-09-15 に国税庁が No.6101 の 4 つの見出しを h2 から h3 に変えたことで `sections` が 7 つから 3 つに減って見つかったが、標本では 9 割近い記事が以前から h3 を持っていた。h2 と h3 のどちらでも節を切り、h2 の次の見出しが h3 のときはその h2 の節を `paragraphs: []` で作り、「サイトマップ」「お問い合わせ先」で始まる見出しの除外を h3 にも効かせた。markdown では h3 の節を `### ` で書く。国税庁サイトの経路・書き戻した行・`--bulk-download-tax-answer` で入れた行で同じ分け方になる。DB の本文（`full_text`）にも h3 の見出しが `【<見出し>】` として入るので、入れ直した行は h3 の見出しの語で検索に当たるようになる。h4 以下の見出しは今のまま読まない
+
+### Docs
+
+- 仕様 SPEC-NTA-GET-TAX-ANSWER-018 の例の「同じ DB でもう一度呼ぶと」に、記事が DB に無いという前提を書き足した（#146、仕様 PR #148。実装とテストは変えていない）
+- README に「タックスアンサーの小見出し」の節と入れ直しの案内、llms.txt の `nta_get_tax_answer` の行に節の分け方を書いた
+
+### Tests
+
+- 仕様の差分 `20261005-tax-answer-h3-sections` の受入テスト（`src/tools/spec-20261005-tax-answer-h3-sections.test.ts`、16 件）を足した。ADDED 1（019）・MODIFIED 2（007・008）の ID を確かめる。fixture として 2026-10-05 JST に保存した No.6101（h3 あり）と No.1222（h2 の直後に h3）を足した。既存のテストは変えていない
 
 ## [0.25.0] - 2026-10-05
 
