@@ -260,7 +260,7 @@ DB にその記事の行があっても、節の構造（見出しと段落を�
 - 記事を返す（`source: "live"`、`taxAnswer.no: "6101"`）。`isError` は無い
 - 標準エラー出力に `warn` が 2 行出る。1 行目は `msg` が `保存したタックスアンサーの索引を読めないため、…（表: tax_answer_index、DB: <DB の絶対パス>）`、`meta.error.message` が `no such column: url`。2 行目は `msg` が `タックスアンサーの索引を DB に保存できませんでした（表: tax_answer_index、DB: <DB の絶対パス>）`、`meta.error.message` が `table tax_answer_index has no column named url`
 - `tax_answer_index_page` の行は `fetched_at` が `2026-10-01T00:00:00.000Z` のまま
-- 同じ DB でもう一度呼ぶと、同じく索引を条件なしで取り、同じ 2 行の `warn` を出す
+- 同じ DB で、記事がまだ DB に無い番号でもう一度呼ぶと（または 1 回目に書き戻された記事の行を消してから呼ぶと）、同じく索引を条件なしで取り、同じ 2 行の `warn` を出す。同じ番号でもう一度呼ぶと、1 回目に書き戻した記事を DB から返し、索引は引かない（SPEC-NTA-GET-TAX-ANSWER-016）
 
 v0.24.0 では、同じ DB で記事は返ったが、読めない・保存できないことはログにも応答にも出なかった（houki-nta-mcp #137）。表がまだ無い DB は、DB を開いたときにテーブルを作る（SPEC-NTA-DB-SCHEMA-001・022）ので、この表の 2 行目には当たらない。
 
