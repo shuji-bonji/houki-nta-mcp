@@ -3,7 +3,7 @@
 - 対象: `specs/current/nta_get_tax_answer/spec.md` の SPEC-NTA-GET-TAX-ANSWER-018 の「例（壊れた表の DB）」の最後の箇条書き
 - 実装の変更: 不要
 - 承認日: 2026-10-05（PR #148）
-- 状態: 草案（`specs/current/` へはこの仕様 PR の中で反映する）
+- 状態: 取り込み済み（`specs/current/` へは仕様 PR #148 の中で反映。v0.25.1 の実装 PR の最終コミットで `specs/releases/v0.25.1/` へ移した）
 - 起こした日: 2026-10-05（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #146（018 の例の「同じ DB でもう一度呼ぶと」が前提を書き落としている）

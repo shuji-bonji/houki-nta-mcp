@@ -3,7 +3,7 @@
 - 対象: `specs/current/nta_get_tax_answer/spec.md`（SPEC-NTA-GET-TAX-ANSWER-007・008 を MODIFIED、019 を ADDED）
 - 実装の変更: 要（下の「実装の変更」）
 - 承認日: 2026-10-05（PR #149）
-- 状態: 草案（2026-10-05 JST に案 A から案 B へ組み替えた。下の「組み替えの経緯」）
+- 状態: 取り込み済み（v0.25.1。草案は 2026-10-05 JST に案 A から案 B へ組み替えた。下の「組み替えの経緯」）
 - 起こした日: 2026-10-05（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #147（`nta_get_tax_answer` の `sections` が、国税庁のページの小見出し h3 を落とし、「概要」の 1 節にまとめてしまう）
