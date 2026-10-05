@@ -33,7 +33,12 @@ function indexStatusLines(orphanedAt: string | undefined): string[] {
   ];
 }
 
-/** タックスアンサーを Markdown に整形 */
+/**
+ * タックスアンサーを Markdown に整形する。
+ *
+ * 節の見出しの行は、`level` が 3 の節（ページの h3）は `### `、それ以外（h2）は `## `。
+ * 段落の無い節（次の見出しが h3 の h2）は見出しの行だけを出す（SPEC-NTA-GET-TAX-ANSWER-007・019）。
+ */
 export function renderTaxAnswerMarkdown(
   t: TaxAnswer,
   source?: DocumentSource,
@@ -48,7 +53,7 @@ export function renderTaxAnswerMarkdown(
   lines.push(...indexStatusLines(orphanedAt));
 
   for (const sec of t.sections) {
-    lines.push(`## ${sec.heading}`);
+    lines.push(`${sec.level === 3 ? '###' : '##'} ${sec.heading}`);
     lines.push('');
     for (const p of sec.paragraphs) {
       lines.push(p);

@@ -8,7 +8,7 @@
 
 import type { PdfKind } from '../services/pdf-meta.js';
 import type { QaJirei } from './qa.js';
-import type { TaxAnswer } from './tax-answer.js';
+import type { TaxAnswer, TaxAnswerSection } from './tax-answer.js';
 
 export type DocType = 'kaisei' | 'jimu-unei' | 'bunshokaitou' | 'tax-answer' | 'qa-jirei';
 
@@ -47,8 +47,12 @@ export type StoredQaStructure = Omit<QaJirei, 'sourceUrl' | 'fetchedAt'>;
  * `document.structured_json` に入れる、タックスアンサーの構造（Issue #29）。
  *
  * `StoredQaStructure` と同じく `sourceUrl` / `fetchedAt` は持たない。
+ * 0.25.0 以前に入れた行の節は `level` を持たない（すべて h2 の節）。DB から返すときに 2 を補う
+ * （SPEC-NTA-GET-TAX-ANSWER-019 の例 4）。
  */
-export type StoredTaxAnswerStructure = Omit<TaxAnswer, 'sourceUrl' | 'fetchedAt'>;
+export type StoredTaxAnswerStructure = Omit<TaxAnswer, 'sourceUrl' | 'fetchedAt' | 'sections'> & {
+  sections: Array<Omit<TaxAnswerSection, 'level'> & { level?: TaxAnswerSection['level'] }>;
+};
 
 /** `structured_json` に入る構造。`no` を持つかどうかでタックスアンサーと質疑応答事例を見分けられる */
 export type StoredStructure = StoredQaStructure | StoredTaxAnswerStructure;

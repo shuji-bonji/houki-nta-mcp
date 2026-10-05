@@ -1867,7 +1867,19 @@ function readTaxAnswerFromDb(
     return {
       // #73: 行に記録された番号が空（見出しに No. の無いページを bulk download で入れた行）でも、
       // 応答の番号は引数の no にする
-      taxAnswer: { ...structured, no, sourceUrl: doc.sourceUrl, fetchedAt: doc.fetchedAt },
+      taxAnswer: {
+        ...structured,
+        no,
+        // 0.25.0 以前に入れた行の節は level を持たない。読んだ直後に 2 を補い、json と markdown の両方がこの値を使う
+        // （SPEC-NTA-GET-TAX-ANSWER-019 の例 4）
+        sections: structured.sections.map(({ heading, paragraphs, level }) => ({
+          heading,
+          paragraphs,
+          level: level ?? 2,
+        })),
+        sourceUrl: doc.sourceUrl,
+        fetchedAt: doc.fetchedAt,
+      },
       ...(doc.orphanedAt ? { orphanedAt: doc.orphanedAt } : {}),
     };
   } catch {
