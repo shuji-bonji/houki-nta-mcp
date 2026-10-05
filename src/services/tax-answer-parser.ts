@@ -13,9 +13,17 @@
  *     <p>消費税</p>
  *     <h2>概要</h2>
  *     <p>消費税は…</p>
- *     <h2>課税のしくみ</h2>
+ *     <h3>消費税の負担者</h3>          ← 小見出し。h2 と同じく本文の直下の兄弟（#147）
+ *     <p>...</p>
+ *     <h3>課税のしくみ</h3>
+ *     <p>...</p>
+ *     <h2>手続き</h2>                  ← 直後に段落が無く、すぐ h3 が続く h2 もある
+ *     <h3>申告等の方法</h3>
  *     <p>...</p>
  *     ...
+ *
+ * 節（`sections`）は h2 と h3 の見出しごとに切り、1 つの配列にページの順で並べる。
+ * 各節の `level` は h2 なら 2、h3 なら 3（SPEC-NTA-GET-TAX-ANSWER-019）。
  */
 
 import type { CheerioAPI } from 'cheerio';
@@ -72,15 +80,16 @@ export function parseTaxAnswer(
     if (m) effectiveDate = m[1];
   }
 
-  // h2 ごとに分割
+  // h2・h3 の見出しごとに分割（SPEC-NTA-GET-TAX-ANSWER-019）
   const allSections = extractSections($, $body);
 
   // 「対象税目」セクションは taxCategory に持っていく
   let taxCategory: string | undefined;
   const sections: TaxAnswerSection[] = [];
   for (const sec of allSections) {
-    if (sec.heading === '対象税目' && sec.paragraphs.length > 0) {
-      taxCategory = sec.paragraphs[0];
+    if (sec.heading === '対象税目') {
+      // 「対象税目」は段落が無くても（直後に h3 が続いても）節にしない（SPEC-NTA-GET-TAX-ANSWER-019）
+      if (sec.paragraphs.length > 0) taxCategory = sec.paragraphs[0];
       continue; // sections には入れない
     }
     sections.push(sec);
@@ -98,26 +107,43 @@ export function parseTaxAnswer(
   return result;
 }
 
+/** 節を切る見出しの要素名と `level` の対応（SPEC-NTA-GET-TAX-ANSWER-019） */
+const SECTION_HEADING_LEVEL: Record<string, TaxAnswerSection['level']> = { h2: 2, h3: 3 };
+
+/** 節にしない見出し（ページの下の「サイトマップ」「お問い合わせ先」）。h2 にも h3 にも効かせる */
+function isExcludedHeading(heading: string): boolean {
+  return heading.startsWith('サイトマップ') || heading.startsWith('お問い合わせ先');
+}
+
 /**
- * h2 ごとにセクションを切る。
- * h2 の次の h2 に至るまでの p をすべて当該セクションの paragraphs に集める。
+ * 本文の h2 と h3 の見出しごとに節を切る（SPEC-NTA-GET-TAX-ANSWER-019）。
+ *
+ * - 節の段落は、その見出しの次の兄弟要素から、次の h2 か h3 の前までの `p`・`div`・`li` の文字列
+ * - 節はページの順に 1 つの配列に並べ、入れ子にしない。`level` は h2 が 2、h3 が 3。
+ *   h3 の節の親は、配列の中でその前にある最も近い `level: 2` の節
+ * - 段落が 0 件の節は作らない。ただし h2 の次の見出しが h3 のときは、h2 の見出しを残すために
+ *   `paragraphs: []` で作る
+ * - 「サイトマップ」「お問い合わせ先」で始まる見出しは h2 でも h3 でも節にしない。h4 以下は区切りにも段落にもしない
  */
 function extractSections($: CheerioAPI, $body: cheerio.Cheerio<Element>): TaxAnswerSection[] {
   const sections: TaxAnswerSection[] = [];
 
-  $body.find('h2').each((_, h2) => {
-    const heading = cleanText($(h2).text());
+  $body.find('h2, h3').each((_, headingEl) => {
+    const level = SECTION_HEADING_LEVEL[headingEl.tagName];
+    const heading = cleanText($(headingEl).text());
     if (!heading) return;
-    // ノイズ的な見出し（footer の「サイトマップ」など）は除外
-    if (heading.startsWith('サイトマップ')) return;
-    if (heading.startsWith('お問い合わせ先')) return;
+    if (isExcludedHeading(heading)) return;
 
     const paragraphs: string[] = [];
-    let node = h2.nextSibling;
+    let nextHeadingTag: string | undefined;
+    let node = headingEl.nextSibling;
     while (node) {
       if (node.type === 'tag') {
         const el = node as Element;
-        if (el.tagName === 'h2') break;
+        if (Object.hasOwn(SECTION_HEADING_LEVEL, el.tagName)) {
+          nextHeadingTag = el.tagName;
+          break;
+        }
         if (el.tagName === 'p' || el.tagName === 'div' || el.tagName === 'li') {
           const text = cleanText($(el).text());
           if (text) paragraphs.push(text);
@@ -127,7 +153,10 @@ function extractSections($: CheerioAPI, $body: cheerio.Cheerio<Element>): TaxAns
     }
 
     if (paragraphs.length > 0) {
-      sections.push({ heading, paragraphs });
+      sections.push({ heading, paragraphs, level });
+    } else if (level === 2 && nextHeadingTag === 'h3') {
+      // h2 の直後にすぐ小見出しが続く節（「手続き」「計算方法・計算式」など）は、見出しを残すために空で作る
+      sections.push({ heading, paragraphs: [], level });
     }
   });
 
