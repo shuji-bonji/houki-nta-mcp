@@ -15,7 +15,7 @@
  * | CLI の投入（`--quickstart`・`--bulk-download*`） | `openIngestDb`。作る・版 1・2 を作り直す |
  * | CLI の取り直し・一覧（`--refresh-stale`） | `openExistingDb`。作らない |
  * | 読むだけのツール（10 個） | `openReadDb`。作らない。使えない DB・開けない DB は空の DB（メモリー）で代える |
- * | 書き戻すツール（`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer`） | `openWriteBackDb`。ファイルが無ければ、書き戻したときに作る |
+ * | 書き戻すツール（`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer`） | `openWriteBackDb`。ファイルが無ければ、書き戻したときに作る。開けない DB には書かない |
  */
 
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
@@ -297,7 +297,8 @@ export function openReadDb(dbPath?: string): {
  * - ファイルが無い: 空の DB（メモリー）を返し、`persist` を呼んだときに書き込みがあれば、フォルダーとファイルを作って
  *   その中身を書く（国税庁サイトから取れたときだけファイルができる）
  * - 版の記録が無い・版が合わない: 空の DB（メモリー）を返す。`persist` は何もしない（DB には書かない）
- * - 開けない: v0.23.x と同じく例外（この差分では変えない）
+ * - 開けない: 空の DB（メモリー）を返す。`persist` は何もしない（v0.26.0、SPEC-NTA-DB-SCHEMA-030、#144。
+ *   v0.25.x までは例外で INTERNAL_ERROR になり、国税庁サイトに取りに行かなかった）。ツールは `state` を見てログに warn を出す
  */
 export function openWriteBackDb(dbPath?: string): {
   db: DatabaseT.Database;
@@ -312,7 +313,6 @@ export function openWriteBackDb(dbPath?: string): {
     case 'current':
     case 'migratable':
     case 'memory':
-    case 'unopenable':
       return { db: openDb(path), state, persist: noop };
     case 'missing': {
       const db = emptyMemoryDb();

@@ -338,6 +338,19 @@ function withoutBulkDownload(next_actions: NextAction[] | undefined): NextAction
 }
 
 /**
+ * 書き戻すツールが DB を開けなかったときのログ（v0.26.0、SPEC-NTA-DB-SCHEMA-030、#144）。
+ * DB を開こうとした呼び出しごとに 1 行出す。`db_path` と `cause` はホームディレクトリを ~ にしない（ログは絶対パスのまま）
+ */
+function warnUnopenableWriteBack(tool: string, state: DbState, location: DbLocation): void {
+  if (state.kind !== 'unopenable') return;
+  logger.warn(
+    tool,
+    `ローカル DB を開けないため、DB を使わずに国税庁サイトから取ります。取った内容は DB に書きません（DB: ${location.absolutePath}）`,
+    { db_path: location.absolutePath, cause: state.message }
+  );
+}
+
+/**
  * 取得系 3 ツールの docId を確かめる。空白だけなら SPEC-NTA-COMMON-ERRORS-014、形が合わなければ 015 のエラーを返し、
  * 合えば DB を引く値を返す。DB を開く前に呼ぶ。
  *
@@ -550,6 +563,9 @@ export async function getTsutatsu(
   // 版の合わない DB は使わず、書かない
   const access = openWriteBackDb(options.dbPath);
   const db = access.db;
+  const location = toolLocation(options.dbPath);
+  // v0.26.0（SPEC-NTA-DB-SCHEMA-030）: 開けない DB は空の DB として扱い、国税庁サイトから取る。書かないことを warn に残す
+  warnUnopenableWriteBack('nta_get_tsutatsu', access.state, location);
   try {
     const dbHit = getClauseFromDb(db, resolved.formal, clauseInput);
     if (dbHit) {
@@ -572,22 +588,26 @@ export async function getTsutatsu(
 
     // 5. DB miss → 国税庁サイトから取る経路（基本通達 4 種）
     if (!rootUrl) {
-      // 案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。v0.24.x までは `houki-nta-mcp --bulk-download --tsutatsu="<正式名>"`
-      const bulkCommand = guideCommand(
-        `--bulk-download --tsutatsu="${resolved.formal}"`,
-        toolLocation(options.dbPath)
-      );
-      return makeError(
-        'TSUTATSU_NOT_FOUND',
-        `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`,
-        {
-          hint: `先に \`${bulkCommand}\` を実行して DB に投入してください。`,
-          next_actions: [NEXT_ACTIONS.bulkDownload(bulkCommand)],
+      const message = `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`;
+      // v0.26.0（SPEC-NTA-GET-TSUTATSU-007・SPEC-NTA-DB-SCHEMA-030）: DB を開けないときは 029 の開けないときの応答にする。
+      // 投入のフラグも同じ DB では止まるので bulk download を案内しない
+      if (access.state.kind === 'unopenable') {
+        return makeError('TSUTATSU_NOT_FOUND', message, {
+          ...unopenableFields(access.state, location),
           supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
           resolved,
           tool: 'nta_get_tsutatsu',
-        }
-      );
+        });
+      }
+      // 案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。v0.24.x までは `houki-nta-mcp --bulk-download --tsutatsu="<正式名>"`
+      const bulkCommand = guideCommand(`--bulk-download --tsutatsu="${resolved.formal}"`, location);
+      return makeError('TSUTATSU_NOT_FOUND', message, {
+        hint: `先に \`${bulkCommand}\` を実行して DB に投入してください。`,
+        next_actions: [NEXT_ACTIONS.bulkDownload(bulkCommand)],
+        supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
+        resolved,
+        tool: 'nta_get_tsutatsu',
+      });
     }
 
     const style = TSUTATSU_TOC_STYLES[resolved.formal] ?? 'shohi';
@@ -611,7 +631,14 @@ export async function getTsutatsu(
       },
       options
     );
-    return renderLiveResult(live, args, resolved.formal, style, toolLocation(options.dbPath));
+    return renderLiveResult(
+      live,
+      args,
+      resolved.formal,
+      style,
+      location,
+      access.state.kind === 'unopenable'
+    );
   } finally {
     access.persist();
     closeDb(db);
@@ -628,7 +655,9 @@ function renderLiveResult(
   args: GetTsutatsuArgs,
   formal: string,
   style: TsutatsuTocStyle,
-  location: DbLocation
+  location: DbLocation,
+  /** DB を開けなかったか（SPEC-NTA-DB-SCHEMA-030）。true なら bulk download を案内しない */
+  dbUnopenable = false
 ) {
   // 案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。v0.24.x までは `houki-nta-mcp --bulk-download --tsutatsu="<正式名>"`
   const bulkCommand = guideCommand(`--bulk-download --tsutatsu="${formal}"`, location);
@@ -657,9 +686,12 @@ function renderLiveResult(
         }
       );
     case 'not_found': {
+      // v0.26.0（SPEC-NTA-GET-TSUTATSU-010）: DB を開けないときは、全節を DB に入れる方法を書かず、bulk download を案内しない
       const hints = [
         `${formal}の${describeClauseForm(style)}。番号の形を確かめてください`,
-        `\`nta_search_tsutatsu\` で条項を検索するか、\`${bulkCommand}\` で全節を DB に入れると、国税庁サイトに取りに行かずに引けます`,
+        dbUnopenable
+          ? '`nta_search_tsutatsu` で条項を検索してください'
+          : `\`nta_search_tsutatsu\` で条項を検索するか、\`${bulkCommand}\` で全節を DB に入れると、国税庁サイトに取りに行かずに引けます`,
       ];
       if (live.skippedByLimit > 0) {
         hints.push(
@@ -675,10 +707,12 @@ function renderLiveResult(
         // v0.23.0（T4）: DB の経路と同じく最大 50 件にする（SPEC-NTA-GET-TSUTATSU-010）
         available_clauses: live.availableClauses.slice(0, AVAILABLE_CLAUSES_LIMIT),
         searched_urls: live.searchedUrls,
-        next_actions: [
-          NEXT_ACTIONS.searchTsutatsu(args.clause ?? ''),
-          NEXT_ACTIONS.bulkDownload(bulkCommand),
-        ],
+        next_actions: dbUnopenable
+          ? [NEXT_ACTIONS.searchTsutatsu(args.clause ?? '')]
+          : [
+              NEXT_ACTIONS.searchTsutatsu(args.clause ?? ''),
+              NEXT_ACTIONS.bulkDownload(bulkCommand),
+            ],
       });
     }
     case 'found': {
@@ -1198,6 +1232,8 @@ export async function getQa(args: GetQaArgs, options: LiveDocumentFetchOptions =
   // v0.24.0（SPEC-NTA-DB-SCHEMA-021）: 書き戻すツールの入口で DB を開く。ファイルが無ければ、書き戻したときに作る。
   // 版の合わない DB は使わず、書かない
   const access = openWriteBackDb(options.dbPath);
+  // v0.26.0（SPEC-NTA-DB-SCHEMA-030）: 開けない DB は空の DB として扱い、国税庁サイトから取る。書かないことを warn に残す
+  warnUnopenableWriteBack('nta_get_qa', access.state, toolLocation(options.dbPath));
   try {
     return await getQaWithDb(access.db, { args, options, topic, category, id, url, docId });
   } finally {
@@ -1661,6 +1697,9 @@ export async function getTaxAnswer(args: GetTaxAnswerArgs, options: LiveDocument
   // v0.24.0（SPEC-NTA-DB-SCHEMA-021）: 書き戻すツールの入口で DB を開く。ファイルが無ければ、書き戻したときに作る。
   // 版の合わない DB は使わず、書かない
   const access = openWriteBackDb(options.dbPath);
+  // v0.26.0（SPEC-NTA-DB-SCHEMA-030）: 開けない DB は空の DB として扱い、国税庁サイトから取る。保存した索引も読みに行かない
+  // （空の DB を引くので SPEC-NTA-GET-TAX-ANSWER-018 の warn は出ない）。書かないことを warn に残す
+  warnUnopenableWriteBack('nta_get_tax_answer', access.state, toolLocation(options.dbPath));
   try {
     return await getTaxAnswerWithDb(access.db, { args, options, no });
   } finally {
