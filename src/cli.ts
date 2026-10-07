@@ -887,6 +887,14 @@ async function runBulkDownloadTaxAnswer(args: CliArgs): Promise<void> {
         if (p.current && p.total) process.stderr.write(`  ${p.message}\n`);
         else process.stderr.write(`[${p.phase}] ${p.message}\n`);
       },
+      // v0.26.0（#145、SPEC-NTA-CLI-BULK-DOWNLOAD-014）: 索引を保存できなくても記事の取り込みを続け、[WARN] の行を出す。
+      // 終了コードは保存できたときと同じ（process.exitCode は設定しない）。<DB の場所> は上の DB: の行と同じ値
+      onIndexSaveError: (err) => {
+        const message = err.cause instanceof Error ? err.cause.message : String(err.cause);
+        process.stderr.write(
+          `[WARN] タックスアンサーの索引を DB に保存できませんでした（表: ${err.table}、DB: ${dbPath}）: ${message}。記事の取り込みは続けます\n`
+        );
+      },
     });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {

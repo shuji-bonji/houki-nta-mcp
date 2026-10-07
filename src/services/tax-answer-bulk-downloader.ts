@@ -74,6 +74,11 @@ export interface BulkTaxAnswerOptions {
   baselinePath?: string;
   /** Phase 6-2 (v0.9.0): true で conditional GET をスキップ */
   forceReload?: boolean;
+  /**
+   * 取った索引を DB に保存できなかったとき（`saveTaxAnswerIndex` の TaxAnswerIndexDbError）に呼ぶ。
+   * 呼んだ後も記事の取り込みを続ける（v0.26.0、SPEC-NTA-CLI-BULK-DOWNLOAD-014、#145）
+   */
+  onIndexSaveError?: (err: TaxAnswerIndexDbError) => void;
 }
 
 interface TaxAnswerIndexEntry {
@@ -150,9 +155,11 @@ export async function bulkDownloadTaxAnswer(
         indexUrl
       );
     } catch (err) {
-      // v0.25.0（#137）で saveTaxAnswerIndex は表の名前を付けた例外を投げるようになったが、
-      // bulk download の書き込みの失敗の扱いは変えない（SPEC-NTA-DB-SCHEMA-025）ので、SQLite の元の例外を投げ直す
-      throw err instanceof TaxAnswerIndexDbError ? err.cause : err;
+      // v0.26.0（#145、SPEC-NTA-CLI-BULK-DOWNLOAD-014・SPEC-NTA-DB-SCHEMA-025）: 保存した索引は nta_get_tax_answer が
+      // 索引を取り直さずに済むための写しで、記事の URL はこの実行で取った索引で決まる。保存できなくても止めずに続ける
+      // （2 つのテーブルの行は前のまま）。v0.25.x では SQLite の元の例外を投げ直し、記事を 1 件も取らずに止まっていた
+      if (!(err instanceof TaxAnswerIndexDbError)) throw err;
+      options.onIndexSaveError?.(err);
     }
   }
   if (options.taxonomies && options.taxonomies.length > 0) {
