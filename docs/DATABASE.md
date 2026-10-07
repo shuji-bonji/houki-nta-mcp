@@ -23,6 +23,12 @@ ${XDG_CACHE_HOME:-~/.cache}/houki-nta-mcp/cache.db
 - MCP サーバーの起動時のログ（標準エラー出力）: `started` の行の次に、`msg` が `DB: <絶対パス>（DB の場所の設定: <名前>）` の JSON の行（`meta` に `db_path`・`setting`）
 - 検索ツールの応答の `freshness.db_path` と、「DB に 1 件も無い」ときの `hint` の中のパス（ホームディレクトリの部分は `~`）
 
+DB を開けないとき（SQLite でないファイル、フォルダー、パスの途中が普通のファイル、DB のファイルを読む権限が無い）の扱い（v0.26.0、#144）:
+
+- 読むだけのツール（検索 6 ツール、`nta_get_kaisei_tsutatsu`・`nta_get_jimu_unei`・`nta_get_bunshokaitou`、`nta_inspect_pdf_meta`）: 「DB に 1 件も無い」ときの `DOC_NOT_FOUND`（`nta_search_tsutatsu` は `TSUTATSU_NOT_FOUND`）を返す。`hint` は `ローカル DB（<パス>）を開けません。` で始まり、`retryable: false`、開けない理由は `detail.cause`（ホームディレクトリは `~`）。投入の案内は付けない
+- 書き戻すツール（`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer`）: DB を使わずに国税庁サイトから取って返し、DB には書かない。MCP サーバーのログに `warn` の行（`meta` に `db_path` と `cause`）を出す
+- CLI（投入のフラグ・`--refresh-stale`・`--status`）: `[ERROR] DB を開けません: <文>` を出して終了コード 1（v0.25.x と同じ）
+
 既定のファイル名（`cache.db`）に DB の版は入れない。開発で版を上げるときは `HOUKI_NTA_DB_PATH` か `--db-path` で別のファイルを使う（`CONTRIBUTING.md` の「ローカル DB を使う開発」）。
 
 加えて Phase 5 Resilience の baseline ファイルが同じディレクトリに作られる:
@@ -218,6 +224,8 @@ INDEX idx_document_taxonomy (doc_type, taxonomy)
 ### `tax_answer_index` / `tax_answer_index_page` — タックスアンサーの索引（v12 で追加）
 
 `nta_get_tax_answer` は、DB に無い記事の URL を国税庁の索引（`/taxes/shiraberu/taxanswer/code/`）で決める。索引は保存して使い回し、番号が見つからないときだけ前回の `Last-Modified` / `ETag` を付けて取り直す。`--bulk-download-tax-answer` も、税目で絞る前の索引のすべての記事を保存する。
+
+`--bulk-download-tax-answer` は、索引を保存できなくても（表の列が足りないなど）記事の取り込みを続け、標準エラー出力に `[WARN] タックスアンサーの索引を DB に保存できませんでした（表: <表の名前>、DB: <DB の場所>）: <エラーの文>。記事の取り込みは続けます` を出す。2 つのテーブルの行は前のままで、終了コードは保存できたときと同じ（ほかに失敗が無ければ 0）。`--bulk-download-everything` でもタックスアンサーの段は失敗にならず、質疑応答事例へ進む（v0.26.0、#145。v0.25.x では記事を 1 件も取らずに止まっていた）。
 
 | テーブル | カラム | 説明 |
 | --- | --- | --- |

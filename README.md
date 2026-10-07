@@ -156,6 +156,8 @@ flowchart TB
 | `nta_get_jimu_unei` | 引く | `DOC_NOT_FOUND` を返す | — | 付かない |
 | `nta_get_bunshokaitou` | 引く | `DOC_NOT_FOUND` を返す | — | 付かない |
 
+ローカル DB を開けないとき（SQLite でないファイル、フォルダー、パスの途中が普通のファイル、DB のファイルを読む権限が無い）、`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer` は DB を使わずに国税庁サイトから取って返します（`source: "live"`）。取った内容は DB に書かず、MCP サーバーのログに `warn` の行を出します。目次とタックスアンサーの索引も保存しないので、呼び出しのたびに国税庁サイトから取り直します（v0.26.0。v0.25.x までは国税庁サイトに取りに行かずに `INTERNAL_ERROR` を返していました）。
+
 `nta_get_qa` と `nta_get_tax_answer` は、国税庁サイトにそのページが無い（HTTP 404・410、または `/error/404.htm` への転送）と、番号の誤りとして `DOC_NOT_FOUND`（`retryable: false`）を返し、`next_actions` で検索ツールを案内します。v0.21.x までは `SOURCE_API_ERROR`（`retryable: true`）でした。
 
 `nta_get_tax_answer` は、DB に無い記事の URL を国税庁の索引（`/taxes/shiraberu/taxanswer/code/`）で決めます（v0.24.0）。8xxx（災害）の記事も取れます。索引は DB に保存して使い回し、番号が見つからないときだけ取り直します。索引に無い番号は、記事を取りに行かずに `DOC_NOT_FOUND` を返します。v0.23.0 までは番号の先頭の桁で税目のフォルダを決めていたため、8xxx は `INVALID_ARGUMENT` になり、先頭の桁とフォルダが合わない記事（`2010`・`4402`・`7400` など）は `DOC_NOT_FOUND` になっていました。
@@ -235,6 +237,7 @@ v0.25.0 から、`hint` の先頭で DB の状態が分かります。`<パス>`
 | `HOUKI_NTA_DB_PATH が指すファイル（<パス>）がありません。` | 環境変数 `HOUKI_NTA_DB_PATH` が指すファイルが無い |
 | `ローカル DB（<パス>）にはまだ何も投入されていません。` | ファイルはあるが、何も投入されていない（0 バイトのファイルなど） |
 | `ローカル DB（<パス>）の版 …` | DB の版が合わない（古くて移行できない・新しい・読めない） |
+| `ローカル DB（<パス>）を開けません。` | DB を開けない（SQLite でないファイル、フォルダー、パスの途中が普通のファイル、DB のファイルを読む権限が無い）。パス・権限・ファイルを確かめ、`hint` が案内する `--status` で開けない理由を見ます。`retryable: false` で、開けない理由の文は `detail.cause` に入ります。`next_actions` に投入の案内は入りません（v0.26.0） |
 | `ローカル DB（<パス>）に<種別>（doc_type="…"）が入っていません。` | DB は使えるが、その種別が入っていない |
 
 MCP サーバーがどの DB を開いているかは、次の 3 つで確かめられます。
@@ -709,6 +712,8 @@ v0.10.0 以降、`tools/call` の応答は次の 3 経路でも同じ形式に�
 | ツール名が `tools/list` にない | `UNKNOWN_TOOL` | `retryable: false`。`error` は `存在しないツールです: <ツール名>`、`hint` に利用可能なツール名一覧 |
 | 引数が `tools/list` の `inputSchema` に合わない（型・必須・enum・範囲・空文字・inputSchema に無い引数。v0.14.0 から未知の引数、v0.22.0 から範囲と空文字もエラー） | `INVALID_ARGUMENT` | `detail.issues[]` に違反 1 件ごとの `path`（引数名）と `message`（日本語の 1 文）。handler は呼ばれません |
 | handler が例外を投げた | `INTERNAL_ERROR` | `retryable: false`（不具合の報告を求めます。`next_actions` は付きません）、`detail.cause` に例外メッセージ |
+
+ローカル DB を開けないことは「handler が例外を投げた」に当たりません（v0.26.0）。読むだけのツールは「DB に 1 件も無い」ときの `DOC_NOT_FOUND`（`nta_search_tsutatsu` は `TSUTATSU_NOT_FOUND`）を返し、書き戻すツール（`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer`）は DB を使わずに国税庁サイトから取って返します。v0.25.x まではどちらも `INTERNAL_ERROR` でした。
 
 handler が `LawServiceError`（上の JSON 形式）を返した場合も `isError: true` が付きます。
 
