@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-07
+
+**minor リリース** — ローカル DB を開けないとき（SQLite でないファイル、フォルダー、パスの途中が普通のファイル、DB のファイルを読む権限が無い）に、読むだけのツールが不具合の報告を求める `INTERNAL_ERROR` を返していたのを、「DB に 1 件も無い」ときの code と、DB のパスと確かめることを書いた `hint` に変えた（#144）。書き戻す 3 ツールは、DB を使わずに国税庁サイトから取って返す。あわせて、`--bulk-download-tax-answer` がタックスアンサーの索引を DB に保存できなくても記事の取り込みを続けるようにした（#145）。仕様 PR は #152（差分 `20261006-db-failure-paths`）。DB のスキーマの版は 12 のまま。
+
+閉じる Issue: #144 #145
+
+### 互換性
+
+- ローカル DB を開けないとき（SQLite でないファイル、フォルダー、パスの途中が普通のファイル、DB のファイルを読む権限が無い）、読むだけのツールの `code` が `INTERNAL_ERROR` から `DOC_NOT_FOUND`（`nta_search_tsutatsu` は `TSUTATSU_NOT_FOUND`）に変わります（#144）。`hint` は `ローカル DB（<パス>）を開けません。` で始まり、確かめることと `--status` のコマンドを書きます。開けない理由の文は今までどおり `detail.cause` に入ります（ホームディレクトリの部分は `~`）。`retryable: false` は変わりません。`code` が `INTERNAL_ERROR` かどうかで DB の不具合を見分けていたスクリプトは、`hint` の先頭（`ローカル DB（…）を開けません`）で見分けるように直してください
+- 同じとき、`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer` は `INTERNAL_ERROR` を返さず、DB を使わずに国税庁サイトから取って返します。取った内容は DB に書かず、MCP サーバーのログに `warn` の行を出します
+- `--bulk-download-tax-answer` は、タックスアンサーの索引を DB に保存できないとき、止まらずに記事の取り込みを続け、`[WARN]` の行を出して終了コード 0 で終わります（#145）。0.25.x では記事を 1 件も取らずに終了コード 1 で終わっていました
+
+| 場面 | 0.25.x | 0.26.0 |
+| --- | --- | --- |
+| DB を開けないときの読むだけのツール（検索 6 ツール、`nta_get_kaisei_tsutatsu`・`nta_get_jimu_unei`・`nta_get_bunshokaitou`、`nta_inspect_pdf_meta`）の `code` | `INTERNAL_ERROR` | `DOC_NOT_FOUND`（`nta_search_tsutatsu` は `TSUTATSU_NOT_FOUND`） |
+| 同じ場面の `error` | `内部エラーが発生しました: <例外の文>` | 各ツールの「DB に 1 件も無い」ときの文（例: `ローカル DB に質疑応答事例が 1 件も無いため、検索できません（「該当なし」という結果ではありません）`） |
+| 同じ場面の `hint` | `バグの可能性があります。再現手順を添えて GitHub issue でご報告ください` | ``ローカル DB（<パス>）を開けません。…。`npx -y @shuji-bonji/houki-nta-mcp@latest --status` を実行すると、開けない理由が出ます``（環境変数で起動したときは前に変数が付く） |
+| 同じ場面の `detail.cause` | 例外の文（ホームディレクトリを含む絶対パスが入ることがある） | `--status` の `[ERROR] DB を開けません: ` の後と同じ文。ホームディレクトリの部分は `~` |
+| 同じ場面の `retryable`・`next_actions` | `retryable: false`、`next_actions` は無い | 同じ（`retryable: false`、`cli_bulk_download` は入らない） |
+| DB を開けないときの `nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer` | 国税庁サイトに取りに行かずに `INTERNAL_ERROR` | DB を使わずに国税庁サイトから取って返す（`source: "live"`）。DB には書かない。MCP サーバーのログに `warn` の行。ライブ取得に対応していない通達は `TSUTATSU_NOT_FOUND` と上の `hint` |
+| `--bulk-download-tax-answer` で索引を保存できないとき | 記事を取らずに止まり、`fatal error` のログで終了コード 1 | 記事の取り込みを続け、標準エラー出力に `[WARN] タックスアンサーの索引を DB に保存できませんでした（…）: <文>。記事の取り込みは続けます`。終了コード 0 |
+| `--bulk-download-everything` で同じとき | `(5/6) タックスアンサー 失敗: <文>` を出してタックスアンサーを飛ばす | タックスアンサーを取り込み、同じ `[WARN]` の行を出す |
+
+### Changed
+
+- **ローカル DB を開けないときの読むだけのツールの応答を、「DB に 1 件も無い」ときの code にした**（#144、SPEC-NTA-DB-SCHEMA-029・021、SPEC-NTA-COMMON-ERRORS-006、SPEC-NTA-SEARCH-TSUTATSU-003・SEARCH-QA-001・SEARCH-TAX-ANSWER-001・SEARCH-KAISEI-TSUTATSU-001・SEARCH-JIMU-UNEI-001・SEARCH-BUNSHOKAITOU-001・GET-KAISEI-TSUTATSU-001・GET-JIMU-UNEI-001・GET-BUNSHOKAITOU-002・INSPECT-PDF-META-001）: 開く前の判定（`probeDbState`）で開けないときは、空の DB を引いた応答にし、`hint` を開けないときの文（パス・確かめる 4 つ・MCP サーバーと同じ DB の場所の設定を付けた `--status` のコマンド）、`retryable: false`、`detail.cause`（`--status` と同じ文。ホームディレクトリは `~`）にする。`next_actions` に `cli_bulk_download` は入れない。`error` は変えていない。開けた後の SQL の失敗は今までどおり `INTERNAL_ERROR`
+- **ローカル DB を開けないとき、書き戻す 3 ツールが国税庁サイトから取って返す**（#144、SPEC-NTA-DB-SCHEMA-030、SPEC-NTA-GET-TSUTATSU-007・010）: DB に何も入っていないものとして国税庁サイトから取り、DB には書かない（目次とタックスアンサーの索引も保存しない）。呼び出しごとに MCP サーバーのログに `warn`（`scope` はツール名、`meta` は `db_path` と `cause`）を 1 行出す。取りに行く先の無い通達は `TSUTATSU_NOT_FOUND` に開けないときの `hint` を付け、候補ページに条項が無いときは `--bulk-download` を案内しない。国税庁サイトとの通信の失敗・ページが無い・解析の失敗の応答は今までどおり
+
+### Fixed
+
+- **`--bulk-download-tax-answer` が、タックスアンサーの索引を DB に保存できないと記事を 1 件も取らずに止まっていた**（#145、SPEC-NTA-CLI-BULK-DOWNLOAD-014、SPEC-NTA-DB-SCHEMA-025）: 保存の失敗を受け取り、標準エラー出力に `[WARN] タックスアンサーの索引を DB に保存できませんでした（表: <表の名前>、DB: <DB の場所>）: <エラーの文>。記事の取り込みは続けます` を出して記事の取り込みを続ける。2 つのテーブルの行は前のまま。終了コードは保存できたときと同じ。`--bulk-download-everything` でもタックスアンサーの段は失敗にならない。標準出力の結果の JSON は変えていない
+
+### Docs
+
+- README の「検索が 0 件のとき」の `hint` の先頭の表、「エラー応答」の表、「取得ツールが DB をどう使うか」に、DB を開けないときの扱いを書いた。`docs/DATABASE.md` の「DB ファイルの場所」とタックスアンサーの索引の節にも書いた
+
+### Tests
+
+- 仕様の差分 `20261006-db-failure-paths` の受入テスト（`src/tools/spec-20261006-db-failure-paths.test.ts` 125 件、`src/spec-20261006-db-failure-paths.test.ts` 8 件）を足した。ADDED 2（DB-SCHEMA-030、CLI-BULK-DOWNLOAD-014）・MODIFIED 17 の ID を確かめる。開けない DB は 4 つの場面で作り、読む権限が無いファイル（`chmod 000`）の場面は root で走るときに飛ばす。既存のテストは変えていない
+
 ## [0.25.1] - 2026-10-05
 
 **patch リリース** — `nta_get_tax_answer` の `sections` が、国税庁のページの小見出し h3 を落とし、その段落を上の h2 の節にまとめていたのを直した（#147）。節を h2 と h3 の見出しごとに切り、各節に見出しの段 `level` を足す。応答のフィールドは足すだけで、消す・名前を変えるものは無い。DB のスキーマの版は 12 のまま。仕様 PR は #149（差分 `20261005-tax-answer-h3-sections`）と #148（差分 `20261005-tax-answer-018-example`、仕様の文だけ）。
