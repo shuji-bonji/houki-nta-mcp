@@ -14,7 +14,7 @@
  * |---|---|
  * | CLI の投入（`--quickstart`・`--bulk-download*`） | `openIngestDb`。作る・版 1・2 を作り直す |
  * | CLI の取り直し・一覧（`--refresh-stale`） | `openExistingDb`。作らない |
- * | 読むだけのツール（10 個） | `openReadDb`。作らない。使えない DB は空の DB（メモリー）で代える |
+ * | 読むだけのツール（10 個） | `openReadDb`。作らない。使えない DB・開けない DB は空の DB（メモリー）で代える |
  * | 書き戻すツール（`nta_get_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer`） | `openWriteBackDb`。ファイルが無ければ、書き戻したときに作る |
  */
 
@@ -268,10 +268,10 @@ function emptyMemoryDb(): DatabaseT.Database {
  * 読むだけのツールの入口。DB のファイルを作らない。
  *
  * - 版 12・版 3〜11（移行してから）: その DB を返す
- * - ファイルが無い・版の記録が無い・版が合わない: 空の DB（メモリー）を返す。ツールは「DB に 1 件も無い」ときの応答を作る
- * - 開けない: v0.23.x と同じく例外（この差分では変えない）
+ * - ファイルが無い・版の記録が無い・版が合わない・開けない: 空の DB（メモリー）を返す。ツールは「DB に 1 件も無い」ときの
+ *   応答を作る（v0.26.0 から開けない DB も。v0.25.x までは例外で INTERNAL_ERROR になっていた。SPEC-NTA-DB-SCHEMA-029、#144）
  *
- * `state` を見て、版の合わない DB のときは応答の hint を書き換える（handlers の explainDbState）
+ * `state` を見て、使えない DB のときは応答の hint を書き換える（handlers の explainDbState）
  */
 export function openReadDb(dbPath?: string): {
   db: DatabaseT.Database;
@@ -284,7 +284,6 @@ export function openReadDb(dbPath?: string): {
     case 'current':
     case 'migratable':
     case 'memory':
-    case 'unopenable':
       return { db: openDb(path), state, path };
     default:
       return { db: emptyMemoryDb(), state, path };
@@ -348,6 +347,7 @@ export {
   type DbLocationSetting,
   dbLocationForEnvPath,
   displayDbPath,
+  displayHomeInText,
   guideCommand,
   resolveDbLocation,
   shellPath,

@@ -104,6 +104,16 @@ export function displayDbPath(absPath: string, home: string = homedir()): string
   return rest === null ? absPath : `~${rest}`;
 }
 
+/**
+ * 文の中の、ホームディレクトリに `/` が続く部分のホームディレクトリを `~` にする。
+ * ホームディレクトリが空文字か `/` なら置き換えない（`displayDbPath` と同じ判定。SPEC-NTA-DB-SCHEMA-028 の 3〜5）。
+ * DB を開けない理由の文（`detail.cause`）を MCP の応答に出すときに使う（v0.26.0、SPEC-NTA-DB-SCHEMA-029、#144）
+ */
+export function displayHomeInText(text: string, home: string = homedir()): string {
+  if (home === '' || home === '/') return text;
+  return text.replaceAll(`${home}/`, '~/');
+}
+
 /** `'` で囲む。中の `'` は `'\''` にする */
 function singleQuoted(s: string): string {
   return `'${s.replaceAll("'", `'\\''`)}'`;

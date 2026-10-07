@@ -33,6 +33,7 @@ import {
   type DbState,
   dbLocationForEnvPath,
   displayDbPath,
+  displayHomeInText,
   guideCommand,
   isVersionProblem,
   openReadDb,
@@ -302,6 +303,38 @@ function dbAbsenceHint(
     return `HOUKI_NTA_DB_PATH が指すファイル（${path}）がありません。HOUKI_NTA_DB_PATH を投入した DB のファイルに直すか、\`${command}\` でこのパスに${target.label}を投入してください`;
   }
   return `ローカル DB（${path}）がありません。\`${command}\` で${target.label}を投入してください`;
+}
+
+/**
+ * DB を開けないとき（SQLite でないファイル、フォルダー、パスの途中が普通のファイル、読む権限が無いファイル）の hint
+ * （v0.26.0、SPEC-NTA-DB-SCHEMA-029 の表の開けない行、#144）。
+ *
+ * 開けない理由の文は入れない（`detail.cause` と、案内する `--status` で確かめる）。`--status` のコマンドは、MCP サーバーが
+ * 開こうとした DB の理由を見るためのものなので、MCP サーバーと同じ DB の場所の設定を付ける（SPEC-NTA-DB-SCHEMA-027）
+ */
+function unopenableHint(location: DbLocation): string {
+  return `ローカル DB（${displayDbPath(location.absolutePath)}）を開けません。パスがフォルダーを指していないか、途中に普通のファイルが無いか、読む権限があるか、SQLite の DB のファイルかを確かめてください（HOUKI_NTA_DB_PATH を設定しているときはその値を直します）。\`${guideCommand('--status', location)}\` を実行すると、開けない理由が出ます`;
+}
+
+/**
+ * DB を開けないときの応答の `hint`・`retryable`・`detail`（SPEC-NTA-DB-SCHEMA-029）。
+ * `detail.cause` は `--status` の `[ERROR] DB を開けません: ` の後と同じ文で、ホームディレクトリの部分を `~` にする
+ */
+function unopenableFields(
+  state: Extract<DbState, { kind: 'unopenable' }>,
+  location: DbLocation
+): { hint: string; retryable: false; detail: { cause: string } } {
+  return {
+    hint: unopenableHint(location),
+    retryable: false,
+    detail: { cause: displayHomeInText(state.message) },
+  };
+}
+
+/** next_actions から投入の案内（cli_bulk_download）を外す。残りが無ければ undefined */
+function withoutBulkDownload(next_actions: NextAction[] | undefined): NextAction[] | undefined {
+  const kept = next_actions?.filter((a) => a.action !== 'cli_bulk_download');
+  return kept && kept.length > 0 ? kept : undefined;
 }
 
 /**
@@ -1271,9 +1304,19 @@ function dbStateHint(
  * next_actions から投入の案内（cli_bulk_download）を外す。
  *
  * v0.25.0（#138、SPEC-NTA-DB-SCHEMA-029）から、ファイルが無い・版の記録が無いときも hint をその状態の文にする
- * （v0.24.x では応答を変えず、「その種別が入っていません」の文のままだった）。`target` は hint の `<種別>` と投入のフラグ
+ * （v0.24.x では応答を変えず、「その種別が入っていません」の文のままだった）。`target` は hint の `<種別>` と投入のフラグ。
+ * v0.26.0（#144）から、開けない DB も同じ応答にし、開けないときの hint・`retryable: false`・`detail.cause` を付ける
  */
-function explainDbState<T>(result: T, dbPath: string | undefined, target: DbTarget): T {
+function explainDbState<T>(
+  result: T,
+  dbPath: string | undefined,
+  target: DbTarget,
+  /**
+   * 開けない DB の応答に `tool` が無いときに付けるツール名（`nta_inspect_pdf_meta` だけ。v0.25.x の INTERNAL_ERROR には
+   * `tool` が付いていたので、開けない DB の応答でも落とさない。T4）
+   */
+  unopenableTool?: string
+): T {
   if (!isLawServiceError(result)) return result;
   if (result.code !== 'DOC_NOT_FOUND' && result.code !== 'TSUTATSU_NOT_FOUND') return result;
   const location = toolLocation(dbPath);
@@ -1282,12 +1325,22 @@ function explainDbState<T>(result: T, dbPath: string | undefined, target: DbTarg
   if (state.kind === 'missing' || state.kind === 'unversioned') {
     return { ...result, hint: dbAbsenceHint(state.kind, location, target) } as T;
   }
+  // v0.26.0（#144、SPEC-NTA-DB-SCHEMA-029）: 開けない DB も「DB に 1 件も無い」ときの code のまま、hint を開けないときの文にし、
+  // retryable: false と detail.cause を付ける。投入のフラグも同じ DB では止まるので cli_bulk_download を外す
+  // （v0.25.x までは openReadDb の例外で INTERNAL_ERROR だった）
+  if (state.kind === 'unopenable') {
+    const { next_actions, ...rest } = result;
+    const kept = withoutBulkDownload(next_actions);
+    return {
+      ...rest,
+      ...unopenableFields(state, location),
+      ...(kept ? { next_actions: kept } : {}),
+      ...(rest.tool === undefined && unopenableTool ? { tool: unopenableTool } : {}),
+    } as T;
+  }
   if (!isVersionProblem(state)) return result;
   const { next_actions, ...rest } = result;
-  const kept =
-    state.kind === 'too-old'
-      ? next_actions
-      : next_actions?.filter((a) => a.action !== 'cli_bulk_download');
+  const kept = state.kind === 'too-old' ? next_actions : withoutBulkDownload(next_actions);
   return {
     ...rest,
     hint: dbStateHint(state, location),
@@ -2565,7 +2618,8 @@ export async function handleNtaInspectPdfMeta(
   return explainDbState(
     await handleNtaInspectPdfMetaInner(...a),
     a[1]?.dbPath,
-    DOC_SEARCH_META[a[0].docType]
+    DOC_SEARCH_META[a[0].docType],
+    'nta_inspect_pdf_meta'
   );
 }
 
