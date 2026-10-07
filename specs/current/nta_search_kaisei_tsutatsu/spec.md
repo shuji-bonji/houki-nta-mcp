@@ -2,9 +2,9 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261004-db-location` は 2026-10-05（PR #142）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261004-db-location` は 2026-10-05（PR #142）。差分 `20261006-db-failure-paths` は 2026-10-06（PR #152）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaSearchKaiseiTsutatsu`・`explainDocZeroHits`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/errors.ts`、`src/tools/doc-search-zero-hit.test.ts`
-- 関連する Issue: houki-nta-mcp #18（短い語の補完）、#21（通称の展開）、#23（0 件の理由を分ける）、#30（索引から消えた文書の印）、#138（DB の場所の見え方。0.25.0）
+- 関連する Issue: houki-nta-mcp #18（短い語の補完）、#21（通称の展開）、#23（0 件の理由を分ける）、#30（索引から消えた文書の印）、#138（DB の場所の見え方。0.25.0）、#144（DB を開けないときの応答。0.26.0）
 
 この文書は「このツールは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。
 
@@ -47,12 +47,13 @@ flowchart TD
 
 ### SPEC-NTA-SEARCH-KAISEI-TSUTATSU-001 DB に改正通達が 1 件も無いときは検索せずにエラーを返す
 
-キーワードに合う文書が無く、かつ DB に改正通達が 1 件も入っていないとき（DB のファイルが無い・版の記録が無い・版が合わないときを含む）は、エラー `DOC_NOT_FOUND` を返す。「該当なし」という検索結果とは違うことを応答の形で示す（`results` は付けない）。
+キーワードに合う文書が無く、かつ DB に改正通達が 1 件も入っていないとき（DB のファイルが無い・版の記録が無い・版が合わない・開けないときを含む）は、エラー `DOC_NOT_FOUND` を返す。「該当なし」という検索結果とは違うことを応答の形で示す（`results` は付けない）。
 
 - `error`: 「ローカル DB に改正通達が 1 件も無いため、検索できません（「該当なし」という結果ではありません）」
 - `hint`: DB の状態ごとの文（SPEC-NTA-DB-SCHEMA-029。`<種別>` は `改正通達`、フラグは `--bulk-download-kaisei`）。どの文も開こうとした DB のパスを含む
-- `next_actions`: 1 件。`action: "cli_bulk_download"`、`example.command` は `--bulk-download-kaisei` を付けた案内のコマンド（SPEC-NTA-DB-SCHEMA-027。環境変数を付けずに起動したときは `npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-kaisei`）。版が新しい・読めない DB では入れない（SPEC-NTA-DB-SCHEMA-021）
+- `next_actions`: 1 件。`action: "cli_bulk_download"`、`example.command` は `--bulk-download-kaisei` を付けた案内のコマンド（SPEC-NTA-DB-SCHEMA-027。環境変数を付けずに起動したときは `npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-kaisei`）。版が新しい・読めない DB と、開けない DB では入れない（SPEC-NTA-DB-SCHEMA-021・029）
 - `tool`: `nta_search_kaisei_tsutatsu`
+- `retryable`・`detail`: 開けない DB だけ `retryable: false` と `detail.cause`（SPEC-NTA-DB-SCHEMA-029。v0.25.x では SPEC-NTA-COMMON-ERRORS-006 の `INTERNAL_ERROR` だった）
 
 改正通達が 1 件も無いのは、その種別をまだ投入していないとき、`--bulk-download-everything` の途中でその種別だけ失敗したとき、bulk download と MCP サーバーとで別の DB ファイルを開いているときである。他の種別（質疑応答事例など）だけが入っている DB でもこのエラーになる。
 

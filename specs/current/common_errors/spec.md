@@ -3,9 +3,9 @@
 - 機能 ID: NTA
 - 種類: 共通
 - 版: current
-- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261004-db-location` は 2026-10-05（PR #142）
+- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261004-db-location` は 2026-10-05（PR #142）。差分 `20261006-db-failure-paths` は 2026-10-06（PR #152）
 - 起こした元: v0.21.0 の `src/server.ts`、`src/tools/tool-args.ts`、`src/errors.ts`、`src/tools/definitions.ts`、`src/tools/handlers.ts`（ツールの登録の表）、`src/server.test.ts`、`src/tools/handlers.test.ts`
-- 関連する Issue: houki-nta-mcp #120（通信の失敗の code）、#138（案内のコマンドの形。0.25.0）
+- 関連する Issue: houki-nta-mcp #120（通信の失敗の code）、#138（案内のコマンドの形。0.25.0）、#144（開けない DB は INTERNAL_ERROR にしない。0.26.0）
 
 この文書は、複数のツールに共通する、tools/call のエラー応答の形と引数の検査を書きます。どう実装しているか（関数名・テーブル名）は書きません。
 
@@ -60,14 +60,14 @@
 | `UNKNOWN_TOOL`                           | 存在しないツール名を呼んだ（呼び出し側の誤り）                                                                           |
 | `OUT_OF_SCOPE`                           | このサーバーの管轄でない資料を求めた（別の MCP サーバーで取る）                                                          |
 | `ABBREVIATION_NOT_FOUND`                 | 略称辞書に無い名前を指定した                                                                                             |
-| `TSUTATSU_NOT_FOUND`                     | 求めた基本通達、または検索の対象になる基本通達が、ローカル DB に無く国税庁サイトから取る先も無い（`nta_get_tsutatsu` / `nta_search_tsutatsu`） |
+| `TSUTATSU_NOT_FOUND`                     | 求めた基本通達、または検索の対象になる基本通達が、ローカル DB に無く国税庁サイトから取る先も無い（`nta_get_tsutatsu` / `nta_search_tsutatsu`）。ローカル DB を開けないときも同じ（SPEC-NTA-DB-SCHEMA-029） |
 | `ARTICLE_NOT_FOUND`                      | 通達はあるが、求めた条項が無い                                                                                           |
-| `DOC_NOT_FOUND`                          | 求めた文書（または検索の対象になる文書）がローカル DB に無い（質疑応答事例・タックスアンサー・改正通達・事務運営指針・文書回答事例）。国税庁サイトから取るときに、そのページが無い（404・410・404 ページへの転送）ときも同じ。`nta_get_tax_answer` で国税庁の索引にその番号が無いときも同じ |
+| `DOC_NOT_FOUND`                          | 求めた文書（または検索の対象になる文書）がローカル DB に無い（質疑応答事例・タックスアンサー・改正通達・事務運営指針・文書回答事例）。ローカル DB を開けないときも同じ（SPEC-NTA-DB-SCHEMA-029）。国税庁サイトから取るときに、そのページが無い（404・410・404 ページへの転送）ときも同じ。`nta_get_tax_answer` で国税庁の索引にその番号が無いときも同じ |
 | `SOURCE_API_ERROR`                       | 国税庁サイトとの通信が失敗した（HTTP 5xx、404・410・429 以外の 4xx、`SOURCE_UNAVAILABLE` に当たらないネットワークの失敗）。ページが無い（404）ことは含まない（SPEC-NTA-COMMON-ERRORS-018） |
 | `SOURCE_TIMEOUT`                         | 国税庁サイトが 30 秒以内に応答しなかった（018）                                                                          |
 | `SOURCE_RATE_LIMITED`                    | 国税庁サイトが HTTP 429 を返した（018）                                                                                  |
 | `SOURCE_UNAVAILABLE`                     | 国税庁サイトに接続できなかった（DNS の失敗・接続の拒否など。019）                                                        |
-| `INTERNAL_ERROR`                         | サーバー内部の失敗（ページの解析の失敗や、処理中の想定外の例外）。再試行しても結果は変わらない（`retryable: false`） |
+| `INTERNAL_ERROR`                         | サーバー内部の失敗（ページの解析の失敗や、処理中の想定外の例外）。再試行しても結果は変わらない（`retryable: false`）。ローカル DB を開けないことは含まない（SPEC-NTA-COMMON-ERRORS-006） |
 
 ## 処理の流れ
 
@@ -137,7 +137,9 @@ tools/list が返す 14 ツールの inputSchema には、どれも `additionalP
 
 houki-egov-mcp の SPEC-EGOV-COMMON-ERRORS-007・018 と同じ扱いである。
 
-例: ツールの処理が `new Error("boom")` を投げると、`code: "INTERNAL_ERROR"`、`retryable: false`、`detail.cause: "boom"` で、`next_actions` は無い（v0.22.0 では `retryable: true`、`next_actions: [{ action: "retry_later", … }]` だった）。
+ローカル DB を開けない（SQLite でないファイル、フォルダー、パスの途中が普通のファイル、DB のファイルを読む権限が無い）ことは、処理中の想定外の例外に当たらない。読むだけのツールは「DB に 1 件も無い」ときの code（SPEC-NTA-DB-SCHEMA-029）、書き戻すツールは DB を使わずに国税庁サイトから取った結果（SPEC-NTA-DB-SCHEMA-030）を返し、この ID の `INTERNAL_ERROR` にしない（v0.25.x では、14 ツールのうち DB を開く 13 ツールがこの ID の `INTERNAL_ERROR` を返していた）。
+
+例: ツールの処理が `new Error("boom")` を投げると、`code: "INTERNAL_ERROR"`、`retryable: false`、`detail.cause: "boom"` で、`next_actions` は無い（v0.22.0 では `retryable: true`、`next_actions: [{ action: "retry_later", … }]` だった）。SQLite でない中身のファイルを `HOUKI_NTA_DB_PATH` で指して起動した MCP サーバーで `nta_search_qa { keyword: "社内会議" }` を呼ぶと、`code` は `DOC_NOT_FOUND` で、この ID の `INTERNAL_ERROR` ではない（v0.25.x では `INTERNAL_ERROR`、`error` は `内部エラーが発生しました: file is not a database`）。
 
 ### SPEC-NTA-COMMON-ERRORS-007 inputSchema の検査で返す `INVALID_ARGUMENT` には、inputSchema を確かめる案内を付ける
 

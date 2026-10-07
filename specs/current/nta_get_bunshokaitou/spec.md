@@ -2,9 +2,9 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261002-t1-docid-forms` は 2026-10-02（PR #121）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261004-db-location` は 2026-10-05（PR #142）
+- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261002-t1-docid-forms` は 2026-10-02（PR #121）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261004-db-location` は 2026-10-05（PR #142）。差分 `20261006-db-failure-paths` は 2026-10-06（PR #152）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`handleNtaGetBunshokaitou`、`explainDocIdNotFound`、`renderDocumentMarkdown`）、`src/tools/definitions.ts`、`src/tools/tool-args.ts`、`src/services/db-search.ts`、`src/services/index-status.ts`、`src/services/pdf-meta.ts`、`src/constants.ts`、`src/errors.ts`、`src/tools/get-doc-not-found.test.ts`
-- 関連する Issue: houki-nta-mcp #2（文書回答事例の `legal_status` の文言）、#23（文書系の bulk download の案内）、#30（索引から消えた文書の印）、#138（DB の場所の見え方。0.25.0）
+- 関連する Issue: houki-nta-mcp #2（文書回答事例の `legal_status` の文言）、#23（文書系の bulk download の案内）、#30（索引から消えた文書の印）、#138（DB の場所の見え方。0.25.0）、#144（DB を開けないときの応答。0.26.0）
 
 この文書は「このツールは何をするか」を書きます。どう実装しているか（関数名・テーブル名）は書きません。
 
@@ -50,14 +50,15 @@ flowchart TD
 
 ### SPEC-NTA-GET-BUNSHOKAITOU-002 DB に文書回答事例が 1 件も無いときは投入を案内する
 
-ローカル DB に文書回答事例が 1 件も無い（DB が空、質疑応答事例など他の種別の文書しか入っていない、DB のファイルが無い・版の記録が無い・版が合わない）ときは、エラー `DOC_NOT_FOUND` を返す。この応答は次を持つ。
+ローカル DB に文書回答事例が 1 件も無い（DB が空、質疑応答事例など他の種別の文書しか入っていない、DB のファイルが無い・版の記録が無い・版が合わない・開けない）ときは、エラー `DOC_NOT_FOUND` を返す。この応答は次を持つ。
 
 | フィールド | 内容 |
 | --- | --- |
 | `error` | `ローカル DB に文書回答事例が 1 件も無いため、docId="<渡した docId>" を取得できません` |
 | `hint` | DB の状態ごとの文（SPEC-NTA-DB-SCHEMA-029。`<種別>` は `文書回答事例`、フラグは `--bulk-download-bunshokaitou`）。どの文も開こうとした DB のパスを含む |
-| `next_actions` | 1 件。`action: "cli_bulk_download"`、`example.command` は `--bulk-download-bunshokaitou` を付けた案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。版が新しい・読めない DB では入れない（SPEC-NTA-DB-SCHEMA-021） |
+| `next_actions` | 1 件。`action: "cli_bulk_download"`、`example.command` は `--bulk-download-bunshokaitou` を付けた案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。版が新しい・読めない DB と、開けない DB では入れない（SPEC-NTA-DB-SCHEMA-021・029） |
 | `tool` | `nta_get_bunshokaitou` |
+| `retryable`・`detail` | 開けない DB だけ `retryable: false` と `detail.cause`（SPEC-NTA-DB-SCHEMA-029。v0.25.x では SPEC-NTA-COMMON-ERRORS-006 の `INTERNAL_ERROR` だった） |
 
 `available_doc_ids` は付けない（選ばせる文書が無い）。
 

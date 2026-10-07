@@ -3,7 +3,7 @@
 - 対象: `db_schema` / `common_errors` / `cli_bulk_download` / `nta_get_tsutatsu` / `nta_search_tsutatsu` / `nta_search_qa` / `nta_search_tax_answer` / `nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` / `nta_search_bunshokaitou` / `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` / `nta_inspect_pdf_meta` の `specs/current/<dir>/spec.md`
 - 実装の変更: 要（下の「実装の変更」）
 - 承認日: 2026-10-06（PR #152）
-- 状態: 草案
+- 状態: 取り込み済み（v0.26.0）
 - 起こした日: 2026-10-06（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #144（開けないローカル DB で、読むだけのツールが `INTERNAL_ERROR` を返し、`hint` に DB のパスも直し方も入らない）、#145（`--bulk-download-tax-answer` がタックスアンサーの索引を DB に保存できなかったときの終わり方が決まっていない）

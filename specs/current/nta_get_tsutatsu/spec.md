@@ -2,8 +2,9 @@
 
 - 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-22（初版。PR #49 のマージ）。差分 `20260924-tsutatsu-clause-forms` は 2026-09-24（PR #53 のマージ）。差分 `20260925-tsutatsu-live-toc` は 2026-09-25（PR #59）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）
+- 承認日: 2026-09-22（初版。PR #49 のマージ）。差分 `20260924-tsutatsu-clause-forms` は 2026-09-24（PR #53 のマージ）。差分 `20260925-tsutatsu-live-toc` は 2026-09-25（PR #59）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261006-db-failure-paths` は 2026-10-06（PR #152）
 - 起こした元: v0.20.2 の `src/tools/handlers.ts`（`getTsutatsu`）、`src/tools/definitions.ts`、`src/tools/handlers.test.ts`
+- 関連する Issue: houki-nta-mcp #144（DB を開けないとき。0.26.0）
 - 関連する判断: houki-hub `docs/DECISIONS.md`（2026-09-21 の行）
 - 取り込んだ差分: `specs/releases/v0.20.3/20260924-tsutatsu-clause-forms/`（入力の `clause`。2026-09-24 JST）
 - 取り込んだ差分: `specs/releases/v0.21.0/20260925-tsutatsu-live-toc/`（005・006・008〜010 の置き換え、014・015 の追加、入力・できないこと・未決の置き換え。2026-09-26 JST）
@@ -117,6 +118,10 @@ flowchart TD
 
 その通達の条項が DB に 1 件も無く、上の 4 通達でもないとき（例: `電帳法取通`）は、エラー `TSUTATSU_NOT_FOUND` を返す。`hint` に `--bulk-download` の実行を案内し、`supported_for_live` にライブ取得できる通達名の一覧、`next_actions` に bulk download の案内を入れる。
 
+ローカル DB を開けないとき（SPEC-NTA-DB-SCHEMA-021 の開けない行）は、`code` は同じ `TSUTATSU_NOT_FOUND` で、`hint` を SPEC-NTA-DB-SCHEMA-029 の開けないときの文にし、`retryable: false` と `detail.cause` を付け、`next_actions` に bulk download の案内を入れない（SPEC-NTA-DB-SCHEMA-030）。`supported_for_live` と `resolved` は同じ。
+
+例: DB を開けるとき、`{ name: "電帳法取通", clause: "4-1" }` は `code: "TSUTATSU_NOT_FOUND"` で、`next_actions[0].action` は `cli_bulk_download`。`HOUKI_NTA_DB_PATH` で SQLite でない中身のファイルを指して起動したときは、`hint` が ``ローカル DB（<パス>）を開けません。`` で始まり、`retryable: false`、`detail.cause` は `file is not a database`、`next_actions` は無い（v0.25.x では DB を開くところで `INTERNAL_ERROR`）。
+
 ### SPEC-NTA-GET-TSUTATSU-008 国税庁サイトから取るときは、clause をその通達の番号の形で読む
 
 国税庁サイトから取る経路に進んだとき、`clause` を入力の表にあるその通達の番号の形で読む。次の 2 つのときは、エラー `INVALID_ARGUMENT` を返す。
@@ -136,9 +141,11 @@ flowchart TD
 
 ### SPEC-NTA-GET-TSUTATSU-010 候補ページのどれにも条項が無いときは、見たページの番号（最大 50 件）と URL を返す
 
-候補ページを取得したがどれにも条項が無いとき（SPEC-NTA-GET-TSUTATSU-014 の目次の取り直しの後も同じとき）は、エラー `ARTICLE_NOT_FOUND` を返す。`available_clauses` に取得したページにある条項番号を、取得したページの順・ページの中の順に最大 50 件入れ、`searched_urls` に取得したページの URL を入れる。件数の上限は、DB の経路（SPEC-NTA-GET-TSUTATSU-005）の 50 件と同じにする。`hint` に、番号の形の確認と `nta_search_tsutatsu` での検索、`--bulk-download` で全節を DB に入れる方法を書く。
+候補ページを取得したがどれにも条項が無いとき（SPEC-NTA-GET-TSUTATSU-014 の目次の取り直しの後も同じとき）は、エラー `ARTICLE_NOT_FOUND` を返す。`available_clauses` に取得したページにある条項番号を、取得したページの順・ページの中の順に最大 50 件入れ、`searched_urls` に取得したページの URL を入れる。件数の上限は、DB の経路（SPEC-NTA-GET-TSUTATSU-005）の 50 件と同じにする。`hint` に、番号の形の確認と `nta_search_tsutatsu` での検索、`--bulk-download` で全節を DB に入れる方法を書く。`next_actions` は `nta_search_tsutatsu` と bulk download の案内（`cli_bulk_download`）の 2 件。
 
-例: 取得した 3 ページに条項が合わせて 80 件あり、どれも求めた条項でないとき、`available_clauses` は 1 ページ目の先頭から数えて 50 件（v0.22.0 では 80 件すべて）、`searched_urls` は 3 件。
+ローカル DB を開けないとき（SPEC-NTA-DB-SCHEMA-030）は、`hint` の `--bulk-download` で全節を DB に入れる方法の文を書かず、`next_actions` に `cli_bulk_download` を入れない（`nta_search_tsutatsu` の 1 件）。`code`・`available_clauses`・`searched_urls` は同じ。
+
+例: 取得した 3 ページに条項が合わせて 80 件あり、どれも求めた条項でないとき、`available_clauses` は 1 ページ目の先頭から数えて 50 件（v0.22.0 では 80 件すべて）、`searched_urls` は 3 件。同じ場面で DB を開けないときは、`hint` に `--bulk-download` を含まず、`next_actions` は `nta_search_tsutatsu` の 1 件（v0.25.x では DB を開くところで `INTERNAL_ERROR` になり、国税庁サイトには取りに行かなかった）。
 
 ### SPEC-NTA-GET-TSUTATSU-011 markdown（既定）の応答
 
