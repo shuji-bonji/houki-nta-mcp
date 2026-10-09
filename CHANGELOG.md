@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-09
+
+**minor リリース** — ローカル DB の置き場所のフォルダー（またはパスの途中のフォルダー）に入る権限が無いとき、DB を「ファイルが無い」ではなく「開けない」と判定するようにした（#154）。0.26.0 でそろえた開けない DB の扱いが、この場面でもすべての入口で働く。あわせて、`nta_get_tsutatsu` がライブ取得に対応していない通達（`電帳法取通` など）に、実行すると引数の誤りで止まる投入のコマンドを案内していたのをやめ、今は取り込めないことを返すようにした（#155）。仕様 PR は #160（差分 `20261009-db-folder-access-and-tsutatsu-guide`）と #157（差分 `20261009-inspect-pdf-meta-qa-jirei`、仕様の文だけ）。DB のスキーマの版は 12 のまま。
+
+閉じる Issue: #154 #155 #156
+
+### 互換性
+
+- ローカル DB の置き場所のフォルダー（またはパスの途中のフォルダー）に入る権限が無いとき、DB を「開けない」と判定するようになりました（#154）。0.26.x では「ファイルが無い」と判定していました。`--status` と `--refresh-stale=<日数>` は `[ERROR] DB を開けません: EACCES: パスの途中のフォルダーに入る権限がありません (<フォルダー>)` を出して終了コード 1 で終わります（0.26.x では「DB がまだありません」で終了コード 0）。読むだけのツールは `hint` が `ローカル DB（<パス>）を開けません。` で始まり、`retryable: false` と `detail.cause` が付き、投入の案内（`cli_bulk_download`）は付きません。書き戻す 3 ツールは国税庁サイトから取って返し、MCP サーバーのログに `warn` の行を出します
+- `nta_get_tsutatsu` で、ライブ取得に対応していない通達（`電帳法取通` など、基本通達 4 種以外）を求めたとき、`hint` は「今は取り込めない」ことを書き、`next_actions` の `cli_bulk_download` を外しました（#155）。0.26.x の案内のコマンド（`--bulk-download --tsutatsu="<正式名>"`）は、`--tsutatsu` が基本通達 4 種しか受け付けないため、実行すると終了コード 2 で止まっていました。ローカル DB を開けないときも同じ応答です
+
+| 場面 | 0.26.x | 0.27.0 |
+| --- | --- | --- |
+| 置き場所のフォルダーに入る権限が無いときの `--status` | `  (DB がまだありません — …)`、終了コード 0 | `[ERROR] DB を開けません: EACCES: パスの途中のフォルダーに入る権限がありません (<フォルダー>)`、終了コード 1 |
+| 同じ場面の `--refresh-stale=<日数>`（一覧） | `[refresh-stale] DB がまだありません (…)` と `[]`、終了コード 0 | 同じ `[ERROR]` の文、終了コード 1 |
+| 同じ場面の `--refresh-stale=<日数> --apply` | `[ERROR] DB がまだありません (…)`、終了コード 1 | 同じ `[ERROR]` の文、終了コード 1 |
+| 同じ場面の投入のフラグ | `[ERROR] DB を開けません: unable to open database file`（パスの途中のフォルダーに入れないときは `EACCES: permission denied, mkdir '…'`）、終了コード 1 | 同じ `[ERROR]` の文、終了コード 1。国税庁サイトに取りに行く前に止まるのは同じ |
+| 同じ場面の読むだけのツール | `hint` はファイルが無いときの文、`next_actions` は `cli_bulk_download` | `hint` は `ローカル DB（<パス>）を開けません。…`、`retryable: false`、`detail.cause` は `EACCES: …`、`next_actions` は付かない（ほかの action があれば残る）。`code`・`error` は同じ |
+| 同じ場面の書き戻す 3 ツール | 国税庁サイトから取って返し、DB に書こうとして書けない（ログは出ない） | 国税庁サイトから取って返し、DB に書かない。ログに `warn` の行 |
+| `nta_get_tsutatsu` でライブ取得に対応していない通達（`電帳法取通` など） | `hint` は ``先に `<コマンド>` を実行して DB に投入してください。``、`next_actions` は `cli_bulk_download`（実行すると終了コード 2） | `hint` は `この通達（<正式名>）は、今は取り込めません。…`、`next_actions` は付かない |
+| 同じ通達で DB を開けないとき | 029 の開けないときの応答（`retryable: false`、`detail.cause`） | 上と同じ応答（`retryable`・`detail` は付かない）。ログに `warn` の行 |
+
+### Changed
+
+- **置き場所のフォルダーに入る権限が無い DB を「開けない」と判定する**（#154、SPEC-NTA-DB-SCHEMA-021・029・030、SPEC-NTA-CLI-STATUS-004・007、SPEC-NTA-COMMON-ERRORS-006）: 開く前の判定（`probeDbState`）で、DB のファイルが見つからないときに DB のパスの情報を読み、`EACCES` なら「開けない」にする。開けない理由の文は `EACCES: パスの途中のフォルダーに入る権限がありません (<フォルダー>)`。`<フォルダー>` は DB のパスを上にたどって、あることを確かめられた最も深いフォルダー。MCP の応答の `detail.cause` ではホームディレクトリの部分を `~` にする。入口ごとの扱いは 0.26.0 の開けない DB と同じ。フォルダーに入れて書く権限だけが無いときと、`EACCES` 以外の例外のときは今までどおり
+- **ライブ取得に対応していない通達に、実行できない投入のコマンドを案内しない**（#155、SPEC-NTA-GET-TSUTATSU-007、SPEC-NTA-DB-SCHEMA-027・030）: `hint` を `この通達（<正式名>）は、今は取り込めません。国税庁サイトから取れるのも、投入のフラグ（--bulk-download の --tsutatsu）で DB に入れられるのも、基本通達 4 種（消費税法基本通達・所得税基本通達・法人税基本通達・相続税法基本通達）だけです` にし、`next_actions` を付けない。DB の状態によらず同じ応答にする（DB を開けないことは `warn` の行で残る）。`code`・`error`・`supported_for_live`・`resolved` は変えていない。基本通達 4 種で候補ページに条項が無いとき（SPEC-NTA-GET-TSUTATSU-010）の案内は変えていない
+
+### Docs
+
+- README の「取得ツールが DB をどう使うか」「検索が 0 件のとき」の `hint` の先頭の表、`--status` の説明、「対応通達（4 種）」と、`docs/DATABASE.md` の「DB を開けないとき」に、入る権限の無いフォルダーの扱いと、4 種以外の通達を取り込めないことを書いた
+- 仕様の `search_rules` の SPEC-NTA-SEARCH-RULES-015 の `docId` の説明に、`nta_inspect_pdf_meta` に渡せるのは 4 種別の文書だけと書いた（#156。振る舞いは変わらない）。`nta_inspect_pdf_meta` と `db_schema` の仕様からは、`inputSchema` が受け付けない `docType: "qa-jirei"` の行と例を外した（仕様 PR #157）
+
+### Tests
+
+- 仕様の差分 `20261009-db-folder-access-and-tsutatsu-guide` の受入テスト（`src/spec-20261009-db-folder-access.test.ts` 29 件、`src/tools/spec-20261009-db-folder-access-and-tsutatsu-guide.test.ts` 67 件）を足した。入る権限の無いフォルダーは 4 つの場面（`chmod 000` のフォルダーの中に DB がある・無い、パスの途中のフォルダーに入れない、`chmod 444` のフォルダー）で作り、root で走るときは飛ばす。後片付けでフォルダーの権限を戻す
+- SPEC-NTA-GET-TSUTATSU-007 と SPEC-NTA-DB-SCHEMA-030 の 007 の扱いの変更に合わせ、`src/tools/handlers.test.ts` の 1 件と `src/tools/spec-20261006-db-failure-paths.test.ts` の 6 件の期待値を 0.27.0 の文に直した
+- `nta_inspect_pdf_meta` のハンドラーを `docType: "qa-jirei"` で直接呼んでいた受入テスト 4 か所を、仕様の例にそろえて `tax-answer` の `6101` に置き換えた（#156。`inspectTypes` の `qa-jirei` の行は `tax-answer` の行と同じになるので外した）
+
 ## [0.26.0] - 2026-10-07
 
 **minor リリース** — ローカル DB を開けないとき（SQLite でないファイル、フォルダー、パスの途中が普通のファイル、DB のファイルを読む権限が無い）に、読むだけのツールが不具合の報告を求める `INTERNAL_ERROR` を返していたのを、「DB に 1 件も無い」ときの code と、DB のパスと確かめることを書いた `hint` に変えた（#144）。書き戻す 3 ツールは、DB を使わずに国税庁サイトから取って返す。あわせて、`--bulk-download-tax-answer` がタックスアンサーの索引を DB に保存できなくても記事の取り込みを続けるようにした（#145）。仕様 PR は #152（差分 `20261006-db-failure-paths`）。DB のスキーマの版は 12 のまま。
