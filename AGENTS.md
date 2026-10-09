@@ -6,7 +6,7 @@
 
 - 意図の正本は `specs/current/` です。Wiki・Discussions・README は正本にしません。
 - 変更は `specs/changes/<yyyymmdd>-<slug>/` に出し、人が承認するまで Coder を起動しません。
-- 承認された差分は Spec Publisher が `specs/current/` に取り込み、差分のフォルダーを `specs/releases/<実装を出したタグ>/<yyyymmdd>-<slug>/` へ移します（`git mv`）。移すときに proposal.md の「状態」を取り込み済みにします。
+- 承認された差分は Spec Publisher が `specs/current/` に取り込み、差分のフォルダーを `specs/releases/<実装を出したタグ>/<yyyymmdd>-<slug>/` へ移します（`git mv`）。移すときに proposal.md の「状態」を取り込み済みにします。取り込みでは current の spec.md に承認を書き足しません（下の「承認の記録」）。
 - Coder は `specs/current/` の本文を書き換えません。実装から仕様へ戻したい発見は、新しい `specs/changes/` に書きます。
 - 受入テストの `describe` には仕様 ID（例: `SPEC-NTA-GET-TSUTATSU-001`）を含めます。`npx spec-ids check`（[@shuji-bonji/spec-ids](https://github.com/shuji-bonji/spec-ids)）が仕様とテストの ID を突き合わせ、CI（spec-gate）で走ります。
 
@@ -24,23 +24,38 @@
 
 | ブランチ | 種類 | 変えてよいもの | 変えないもの |
 |---|---|---|---|
-| `spec/<yyyymmdd>-<slug>` | 仕様 PR | `specs/changes/<id>/`（proposal.md と差分の spec.md） | `src/`、テスト、`specs/current/`（proposal.md が「- 実装の変更: 不要」のときだけ `specs/current/` も書いてよい） |
+| `spec/<yyyymmdd>-<slug>` | 仕様 PR | `specs/changes/<id>/`（proposal.md と差分の spec.md） | `src/`、テスト、`specs/current/`（proposal.md の front matter が `implementation: none` のときだけ `specs/current/` も書いてよい） |
 | `spec-init/<tool>` | 初版起こし | `specs/current/<dir>/spec.md`、テスト名に仕様 ID を足すこと | テストの期待値と本文、実装 |
 | それ以外（`fix/` `feat/` `docs/` など） | 実装 PR など | テスト、`src/`、版と CHANGELOG、`specs/current/` への取り込み（最終コミット）、`specs/changes/` から `specs/releases/<tag>/` への移動 | `specs/changes/` の書き換え（未承認の意図の追加、承認済み差分の変更） |
 
-- 承認日は、人がマージの前にそのブランチで書きます。仕様 PR は proposal.md に「- 承認日: YYYY-MM-DD（PR #N）」、初版起こしと取り込みは `specs/current/<dir>/spec.md` に「- 承認日: YYYY-MM-DD」。日付は JST です。マージの後に書くと、承認日を書くためだけの PR が要るため、マージの前に書きます。空欄なら `pr-scope` が止めます。
+- 承認日と PR 番号は、人がマージの前にそのブランチで、ファイルの先頭の front matter に書きます（下の「承認の記録」）。マージの後に書くと、承認日を書くためだけの PR が要るため、マージの前に書きます。空欄なら `pr-scope` が止めます。
 - 仕様 PR をマージした後、新しい ID が `specs/changes/` にだけある間は `spec-ids check` を通します（0.2.0 以降。テストを求めるのは `specs/current/` の ID だけ）。
 - `REMOVED` の差分では、テストを消すのは `specs/current/` から見出しを外す取り込みと同じコミットにします。
+
+## 承認の記録
+
+承認日と PR 番号は 1 か所（front matter）にだけ書きます。書き方の全体は [spec-ids の README](https://github.com/shuji-bonji/spec-ids#readme) の「承認の記録の書き方（front matter）」にあります。
+
+| ファイル | 書くもの | いつ・誰が |
+|---|---|---|
+| 差分の `specs/changes/<id>/proposal.md` | `approved`（承認日 `YYYY-MM-DD`、JST）・`pr`（仕様 PR の番号、`#` は付けない）・`implementation`（`required` か `none`）・`targets`（書き換える `specs/current/<dir>` の `<dir>` の配列） | Steward は `implementation` と `targets` を書き、`approved` と `pr` は空のキーで置く。人がマージの前に `approved` と `pr` を書く |
+| 初版起こしの `specs/current/<dir>/spec.md` | `spec_id: NTA`・`kind`（任意。`tool` / `common` / `db` / `cli`）・`approved`・`pr`（初版の承認） | 人がマージの前に `approved` と `pr` を書く |
+| 差分で新しく作る機能の `specs/current/<dir>/spec.md` | `spec_id: NTA`・`kind`・`introduced_by`（作った差分の ID） | Publisher が取り込みで書く |
+
+- 取り込みで、current の spec.md の front matter や本文に差分の承認を書き足しません。差分の承認は、proposal.md が `specs/releases/` に移ることで履歴に入ります。
+- `targets` には、差分の `specs/<dir>/spec.md` を置いた機能のほか、「取り込みのとき」の指示で `## 未決` など ID の無い節だけを直す機能も入れます。
+- 機能ごとの承認の履歴は `npx spec-ids history <dir>`（全機能は `--all`）で見ます。
+- 本文に「- 承認日:」の行を書くと `spec-ids check` が止めます（0.2.0 までの形）。
 
 ## 役割
 
 | 役割 | 書いてよいもの | 書いてはいけないもの |
 |---|---|---|
-| Spec Steward | `specs/changes/<id>/` の草案、初版起こしの `specs/current/` 草案 | 実装、テストの期待値、承認前の `specs/current/` の直接編集 |
+| Spec Steward | `specs/changes/<id>/` の草案（proposal.md の front matter の `implementation`・`targets`。`approved`・`pr` は空）、初版起こしの `specs/current/` 草案 | 実装、テストの期待値、承認前の `specs/current/` の直接編集 |
 | Test Designer | 仕様 ID 付きの受入テスト | 実装を見て期待値を足すこと、仕様本文 |
 | Coder | 実装 | `specs/current/`、テストを消して GREEN にすること |
 | Spec Auditor | 食い違いの報告（ID 単位で GREEN / 意図が古い / 実装が古い / テストが古い / 判断できない） | 仕様・実装・テストのどれも |
-| Spec Publisher | 承認済み差分の `specs/current/` への取り込み草案、`specs/releases/<tag>/` | 未承認の意図の追加 |
+| Spec Publisher | 承認済み差分の `specs/current/` への取り込み草案、`specs/releases/<tag>/` | 未承認の意図の追加、current の spec.md への承認の書き足し |
 
 Steward と Coder と Auditor は同じ会話で起動しません。次の係には成果物のパスだけを渡し、要約して渡しません。
 
