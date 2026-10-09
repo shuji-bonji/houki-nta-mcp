@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: CLI
 - 版: current
-- 承認日: 2026-09-29（PR #103）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261003-db-cli` は 2026-10-04（PR #135）。差分 `20261006-db-failure-paths` は 2026-10-06（PR #152）
+- 承認日: 2026-09-29（PR #103）。差分 `20260930-cli-db-undecided-to-issues` は 2026-09-30（PR #114）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261003-db-cli` は 2026-10-04（PR #135）。差分 `20261006-db-failure-paths` は 2026-10-06（PR #152）
 - 起こした元: v0.21.2 の `src/cli.ts`、`src/constants.ts`（`TSUTATSU_URL_ROOTS`・`QA_TOPICS`・`TAX_ANSWER_FOLDER_MAP`・`BUNSHO_MAIN_TAXONOMIES`・`BUNSHO_TAXONOMY_GROUPS`）、`src/services/bulk-downloader.ts`、`src/services/kaisei-bulk-downloader.ts`、`src/services/jimu-unei-bulk-downloader.ts`、`src/services/bunshokaitou-bulk-downloader.ts`、`src/services/tax-answer-bulk-downloader.ts`、`src/services/qa-bulk-downloader.ts`、`src/services/index-status.ts`、`src/cli.test.ts`
 - 関連する Issue: houki-nta-mcp #23（投入していない種別の検索は `DOC_NOT_FOUND`）、#25（税目フラグの値の検査）、#30（索引から消えた文書の印）、#35（`--quickstart`）、#54（`bulk_completed_at`）、#106（--tsutatsu の値と終了コード）、#110（税目を絞った投入での索引から消えた文書の印）、#128（タックスアンサーの索引の保存）、#145（タックスアンサーの索引を保存できないとき。0.26.0）
 

@@ -3,7 +3,7 @@
 - 機能 ID: NTA
 - 種類: DB
 - 版: current
-- 承認日: 2026-09-29（PR #103）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-db-cli` は 2026-10-04（PR #135）。差分 `20261004-db-location` は 2026-10-05（PR #142）。差分 `20261006-db-failure-paths` は 2026-10-06（PR #152）
+- 承認日: 2026-09-29（PR #103）。差分 `20260930-cli-db-undecided-to-issues` は 2026-09-30（PR #114）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-db-cli` は 2026-10-04（PR #135）。差分 `20261004-db-location` は 2026-10-05（PR #142）。差分 `20261006-db-failure-paths` は 2026-10-06（PR #152）
 - 起こした元: v0.21.2 の `src/db/index.ts`、`src/db/schema.ts`、`src/services/bulk-downloader.ts`（`bulk_completed_at` と書き戻し）、`src/db/schema.test.ts`、`src/services/db-writeback.test.ts`、`src/services/bulk-downloader.test.ts`
 - 関連する Issue: houki-nta-mcp #27（全角英字の揃え方。版 4 → 5）、#29（`structured_json`。版 5 → 6）、#30（`orphaned_at`。版 6 → 7）、#45（案内文の行を除く。版 7 → 8・8 → 9）、#54（`bulk_completed_at` と `tsutatsu_toc`。版 9 → 10）、#107・#112・#128（版 11 → 12。DB の状態と入口ごとの扱い、doc_type の CHECK、タックスアンサーの索引）、#138（DB の場所の見え方。0.25.0）、#137（保存したタックスアンサーの索引を読めないとき。0.25.0）、#144（開けない DB の読むだけのツールの応答と書き戻すツールの扱い。0.26.0）、#145（--bulk-download-tax-answer が索引を保存できないとき。0.26.0）
 
