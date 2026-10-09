@@ -2676,8 +2676,9 @@ async function handleNtaInspectPdfMetaInner(
     const doc = getDocumentFromDb(db, args.docType, docId);
     if (!doc) {
       return makeError('DOC_NOT_FOUND', `${args.docType} の docId="${docId}" は DB に未登録です`, {
-        // v0.25.0（SPEC-NTA-INSPECT-PDF-META-001）: qa-jirei のフラグは --bulk-download-qa（v0.24.x は無いフラグ
-        // --bulk-download-qa-jirei を書いていた）。DB が無いときは explainDbState が DB の状態の文に置き換える
+        // SPEC-NTA-INSPECT-PDF-META-001: <フラグ> は docType の投入のフラグ（kaisei・jimu-unei・bunshokaitou・tax-answer の
+        // 4 つ。qa-jirei は inputSchema の enum に無く、ここには来ない。#156）。DB が無いときは explainDbState が
+        // DB の状態の文に置き換える
         hint: `\`${DOC_SEARCH_META[args.docType].flag}\` で投入済みか確認してください。docId が正しいかも \`nta_search_*\` で検証可能`,
       });
     }

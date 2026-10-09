@@ -204,15 +204,17 @@ export const BUNSHOKAITOU_LEGAL_STATUS = {
 /**
  * docType ごとの `legal_status` 一元 map (v0.9.1 で導入)。
  *
- * `nta_inspect_pdf_meta` / `nta_search_*` / `nta_get_*` ハンドラの戻り値に
- * 載せる `legal_status` を、docType に応じて適切に出し分けるための map。
+ * `nta_inspect_pdf_meta` の応答に載せる `legal_status` を、docType に応じて出し分けるための map。
+ * （v0.27.0 時点で使っているのは `nta_inspect_pdf_meta` だけ。検索・取得ツールは各ツールの定数を使う）
  *
  * 設計:
  *  - `kaisei`: 改正通達。`TSUTATSU_LEGAL_STATUS` (binds_tax_office: true) を再利用
  *  - `jimu-unei`: 事務運営指針。拘束力は通達と同じで、`note` は事務運営指針を名指しする
  *    `JIMU_UNEI_LEGAL_STATUS`（v0.24.0、SPEC-NTA-INSPECT-PDF-META-016、houki-nta-mcp #131）
  *  - `bunshokaitou`: 個別事案回答 → `BUNSHOKAITOU_LEGAL_STATUS`
- *  - `tax-answer` / `qa-jirei`: 解説資料 → `NTA_GENERAL_INFO_LEGAL_STATUS`
+ *  - `tax-answer` / `qa-jirei`: 解説資料 → `NTA_GENERAL_INFO_LEGAL_STATUS`。`qa-jirei` は
+ *    `nta_inspect_pdf_meta` の inputSchema の enum に無いので MCP 経由では届かない（#156）。DB から読んだ文書の
+ *    `docType` の型（`DocType`）が 5 つの値を持ち、項を消すと引く側で型を絞る必要があるので、項は残す
  *
  * `tsutatsu` (section テーブル系) は document テーブルではないので本 map には
  * 含めない (`TSUTATSU_LEGAL_STATUS` を直接参照)。
