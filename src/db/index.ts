@@ -92,7 +92,10 @@ export type DbState =
   | { kind: 'too-new'; version: number }
   /** 版を読めない（10 進の整数の文字列でない値） */
   | { kind: 'unreadable'; raw: string }
-  /** 開けない（SQLite でないファイル、フォルダー、パスの途中が普通のファイル、権限が無い） */
+  /**
+   * 開けない（SQLite でないファイル、フォルダー、パスの途中が普通のファイル、DB のファイルを読む権限が無い、
+   * 置き場所のフォルダー（またはパスの途中のフォルダー）に入る権限が無い。v0.27.0、#154）
+   */
   | { kind: 'unopenable'; message: string };
 
 /** 版の合わない DB（読むだけのツールは使わず、書き戻すツールは書かない） */
@@ -116,12 +119,43 @@ function blockedByFile(path: string): string | undefined {
 }
 
 /**
+ * DB のパスの情報を読んで（stat）`EACCES` になるとき、入る権限の無いフォルダーを返す（SPEC-NTA-DB-SCHEMA-021、#154）。
+ * そのフォルダーは、DB のパスを上にたどって、あることを確かめられた最も深いフォルダー。`existsSync` は入れない
+ * フォルダーの下では false を返すので、最初に true を返すのが入る権限の無いフォルダーになる。
+ * `EACCES` でないとき（パスの情報を読めた・ファイルが無い・`ELOOP` など）は undefined
+ */
+function deniedFolder(path: string): string | undefined {
+  try {
+    statSync(path);
+    return undefined;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EACCES') return undefined;
+  }
+  let cur = dirname(resolve(path));
+  for (;;) {
+    if (existsSync(cur)) return cur;
+    const parent = dirname(cur);
+    if (parent === cur) return cur;
+    cur = parent;
+  }
+}
+
+/**
  * DB の状態を調べる。ファイル・フォルダー・テーブル・schema_meta を作らず、行も書かない
  * （読み取り専用で開く。SQLite が -wal / -shm のファイルを置くことはある）
  */
 export function probeDbState(path: string): DbState {
   if (path === ':memory:') return { kind: 'memory' };
   if (!existsSync(path)) {
+    // v0.27.0（SPEC-NTA-DB-SCHEMA-021、#154）: 置き場所のフォルダーに入る権限が無いときは、ファイルがあるかを
+    // 確かめられないので「開けない」にする。v0.26.x では「ファイルが無い」としていた
+    const denied = deniedFolder(path);
+    if (denied) {
+      return {
+        kind: 'unopenable',
+        message: `EACCES: パスの途中のフォルダーに入る権限がありません (${denied})`,
+      };
+    }
     const blocker = blockedByFile(path);
     if (blocker) {
       return {
