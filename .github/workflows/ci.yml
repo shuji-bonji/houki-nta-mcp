@@ -31,7 +31,7 @@ jobs:
       - run: npx spec-ids check
 
   pr-scope:
-    # PR の種類（ブランチ名の接頭辞）ごとに、変えてよいパスと承認日を検査する（AGENTS.md「PR の種類」）
+    # PR の種類（ブランチ名の接頭辞）ごとに、変えてよいパスと承認日（front matter）を検査する（AGENTS.md「PR の種類」）
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -41,6 +41,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
+      # check-pr-scope.mjs は @shuji-bonji/spec-ids の readFrontMatter を import する
+      - run: npm ci
       - run: node --test .github/scripts/check-pr-scope.test.mjs
       - run: node .github/scripts/check-pr-scope.mjs
         env:
