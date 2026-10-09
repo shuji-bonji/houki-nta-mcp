@@ -1,6 +1,8 @@
 # 変更: nta_get_tsutatsu の clause の形を通達ごとに書き分ける
 
 - 対象: `specs/current/nta_get_tsutatsu/spec.md`（入力の表の `clause` の行）
+- 実装の変更: 要
+- 承認日: 2026-09-24（PR #53）
 - 状態: 取り込み済み。実装は v0.20.3（2026-09-24 JST）、`specs/current/` への取り込みも同日
 - 起こした日: 2026-09-24（JST）
 - 起こした役: Spec Steward
