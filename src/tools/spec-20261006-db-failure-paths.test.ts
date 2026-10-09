@@ -11,6 +11,9 @@
  * - 書き戻す 3 ツール: SPEC-NTA-DB-SCHEMA-030（ADDED）、SPEC-NTA-GET-TSUTATSU-007・010（MODIFIED）、
  *   SPEC-NTA-DB-SCHEMA-021 の書き戻すツールの列の開けない行
  *
+ * SPEC-NTA-GET-TSUTATSU-007 と SPEC-NTA-DB-SCHEMA-030 の 007 の扱いは、差分 20261009-db-folder-access-and-tsutatsu-guide
+ * （PR #160、#155）で変わった（DB の状態によらず、今は取り込めないことを返す）。その 2 つの期待値は v0.27.0 の文に直した。
+ *
  * 期待値は差分の spec.md の本文・表・「例:」から決めている。例のホームディレクトリ `/Users/bonji` は、一時ディレクトリの
  * 下のフォルダー（HOME）に置き換える。ツールには DB のパスを渡さず、MCP サーバーと同じく環境変数
  * （HOUKI_NTA_DB_PATH・XDG_CACHE_HOME・HOME）で DB の場所を決める。
@@ -63,6 +66,10 @@ import {
 
 /** 案内のコマンドの本体（SPEC-NTA-DB-SCHEMA-027） */
 const NPX = 'npx -y @shuji-bonji/houki-nta-mcp@latest';
+
+/** SPEC-NTA-GET-TSUTATSU-007 の hint（電帳法取通） */
+const TSUTATSU_007_HINT =
+  'この通達（電子計算機を使用して作成する国税関係帳簿書類の保存方法等の特例に関する法律の取扱通達）は、今は取り込めません。国税庁サイトから取れるのも、投入のフラグ（--bulk-download の --tsutatsu）で DB に入れられるのも、基本通達 4 種（消費税法基本通達・所得税基本通達・法人税基本通達・相続税法基本通達）だけです';
 
 /** root では chmod 000 のファイルも開けてしまう（proposal.md の「実装の変更」の受入テスト） */
 const IS_ROOT = process.getuid?.() === 0;
@@ -794,7 +801,7 @@ describe('SPEC-NTA-DB-SCHEMA-030 書き戻すツールは、DB を開けない�
     }
   });
 
-  it('SPEC-NTA-DB-SCHEMA-030 例: 同じサーバーで nta_get_tsutatsu { name: "電帳法取通", clause: "4-1" } は TSUTATSU_NOT_FOUND・retryable: false・開けないときの hint で、next_actions は無い', async () => {
+  it('SPEC-NTA-DB-SCHEMA-030 例: 同じサーバーで nta_get_tsutatsu { name: "電帳法取通", clause: "4-1" } は TSUTATSU_NOT_FOUND で、hint は GET-TSUTATSU-007 の今は取り込めないことの文、retryable と detail は付かず、next_actions は無い', async () => {
     mkdirSync(dirname(defaultDb), { recursive: true });
     writeFileSync(defaultDb, 'これは SQLite のファイルではありません。');
     setEnv({ HOUKI_NTA_DB_PATH: defaultDb });
@@ -802,10 +809,9 @@ describe('SPEC-NTA-DB-SCHEMA-030 書き戻すツールは、DB を開けない�
       getTsutatsu({ name: '電帳法取通', clause: '4-1' })
     );
     expect(body.code).toBe('TSUTATSU_NOT_FOUND');
-    expect(body.retryable).toBe(false);
-    expect(
-      body.hint?.startsWith('ローカル DB（~/.cache/houki-nta-mcp/cache.db）を開けません。')
-    ).toBe(true);
+    expect(body.retryable).toBeUndefined();
+    expect(body.detail).toBeUndefined();
+    expect(body.hint).toBe(TSUTATSU_007_HINT);
     expect(body.next_actions).toBeUndefined();
     // DB を開こうとした呼び出しなので warn を出す
     expect(log.filter((l) => l.level === 'warn' && l.scope === 'nta_get_tsutatsu')).toHaveLength(1);
@@ -922,17 +928,18 @@ describe('SPEC-NTA-DB-SCHEMA-021 DB の状態と入口ごとの扱い（開け�
   });
 });
 
-describe('SPEC-NTA-GET-TSUTATSU-007 DB に無く、ライブ取得にも対応していない通達は投入を案内する', () => {
-  it('SPEC-NTA-GET-TSUTATSU-007 例: DB を開けるとき、{ name: "電帳法取通", clause: "4-1" } は TSUTATSU_NOT_FOUND で next_actions[0].action は cli_bulk_download', async () => {
+describe('SPEC-NTA-GET-TSUTATSU-007 DB に無く、ライブ取得にも対応していない通達は、今は取り込めないことを返す', () => {
+  it('SPEC-NTA-GET-TSUTATSU-007 例: DB を開けるとき、{ name: "電帳法取通", clause: "4-1" } は TSUTATSU_NOT_FOUND で、hint は今は取り込めないことの文、next_actions は無い', async () => {
     const body = (await getTsutatsu({ name: '電帳法取通', clause: '4-1' })) as LiveBody;
     expect(body.code).toBe('TSUTATSU_NOT_FOUND');
-    expect(body.next_actions?.[0]?.action).toBe('cli_bulk_download');
+    expect(body.hint).toBe(TSUTATSU_007_HINT);
+    expect(body.next_actions).toBeUndefined();
     expect(body.retryable).toBeUndefined();
   });
 
   for (const c of UNOPENABLE) {
     it.skipIf(c.skip)(
-      `SPEC-NTA-GET-TSUTATSU-007 ${c.name}のとき、code は同じ TSUTATSU_NOT_FOUND で、hint は 029 の開けないときの文、retryable: false と detail.cause を付け、next_actions は無く、supported_for_live と resolved は同じ`,
+      `SPEC-NTA-GET-TSUTATSU-007 ${c.name}のときも、DB を開けるときと同じ応答（code・error・hint・supported_for_live・resolved）で、retryable と detail は付かず、next_actions は無い`,
       async () => {
         // DB を開けるとき（別の場所の DB）の応答
         setEnv({ HOUKI_NTA_DB_PATH: join(dir, 'opened', 'cache.db') });
@@ -941,16 +948,12 @@ describe('SPEC-NTA-GET-TSUTATSU-007 DB に無く、ライブ取得にも対応�
         setEnv({ HOUKI_NTA_DB_PATH: path });
         const unchanged = c.snapshot();
         const { body } = await callLogged(() => getTsutatsu({ name: '電帳法取通', clause: '4-1' }));
+        expect(body).toEqual(opened);
         expect(body.code).toBe('TSUTATSU_NOT_FOUND');
-        expect(body.error).toBe(opened.error);
-        expect(body.hint).toBe(
-          unopenableHint(c.shown, `HOUKI_NTA_DB_PATH=${c.shellPath} ${NPX} --status`)
-        );
-        expect(body.retryable).toBe(false);
-        expect(body.detail?.cause).toBe(c.cause ? c.cause() : await statusCause());
+        expect(body.hint).toBe(TSUTATSU_007_HINT);
+        expect(body.retryable).toBeUndefined();
+        expect(body.detail).toBeUndefined();
         expect(body.next_actions).toBeUndefined();
-        expect(body.supported_for_live).toEqual(opened.supported_for_live);
-        expect(body.resolved).toEqual(opened.resolved);
         expect(body.tool).toBe('nta_get_tsutatsu');
         unchanged();
       }

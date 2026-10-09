@@ -4,6 +4,8 @@
  *
  * - db_schema: SPEC-NTA-DB-SCHEMA-021・029・030（MODIFIED。置き場所のフォルダーに入る権限が無いときは「開けない」）
  * - common_errors: SPEC-NTA-COMMON-ERRORS-006（MODIFIED。入る権限の無いフォルダーも INTERNAL_ERROR にしない）
+ * - nta_get_tsutatsu: SPEC-NTA-GET-TSUTATSU-007（MODIFIED。ライブ取得に対応していない通達は、DB の状態によらず
+ *   今は取り込めないことを返し、投入を案内しない）と SPEC-NTA-DB-SCHEMA-030 の 007 の扱い（#155）
  *
  * 期待値は差分の spec.md の本文・表・「例:」と、proposal.md の「実装の変更」の受入テストの場面から決めている。
  * 例のホームディレクトリ `/Users/bonji` は、一時ディレクトリの下のフォルダー（HOME）に置き換え、入る権限の無い
@@ -568,3 +570,121 @@ describe.skipIf(IS_ROOT)(
     }
   }
 );
+
+/* -------------------------------------------------------------------------- */
+/* SPEC-NTA-GET-TSUTATSU-007・SPEC-NTA-DB-SCHEMA-030（#155）                    */
+/* -------------------------------------------------------------------------- */
+
+/** 電帳法取通の正式名（略称辞書） */
+const DENCHO_FORMAL =
+  '電子計算機を使用して作成する国税関係帳簿書類の保存方法等の特例に関する法律の取扱通達';
+
+/** SPEC-NTA-GET-TSUTATSU-007 の hint */
+function tsutatsu007Hint(formal: string): string {
+  return `この通達（${formal}）は、今は取り込めません。国税庁サイトから取れるのも、投入のフラグ（--bulk-download の --tsutatsu）で DB に入れられるのも、基本通達 4 種（消費税法基本通達・所得税基本通達・法人税基本通達・相続税法基本通達）だけです`;
+}
+
+/** 007 の応答を確かめる（DB の状態によらず同じ） */
+function expect007(body: Body): void {
+  expect(body.code).toBe('TSUTATSU_NOT_FOUND');
+  expect(body.error).toBe(`"${DENCHO_FORMAL}" は DB にも未投入で、ライブ取得用 URL も未登録です`);
+  expect(body.hint).toBe(tsutatsu007Hint(DENCHO_FORMAL));
+  expect(body.hint?.startsWith(`この通達（${DENCHO_FORMAL}）は、今は取り込めません。`)).toBe(true);
+  expect(body.next_actions).toBeUndefined();
+  expect(body.retryable).toBeUndefined();
+  expect(body.detail).toBeUndefined();
+  expect(body.supported_for_live).toEqual([
+    '消費税法基本通達',
+    '所得税基本通達',
+    '法人税基本通達',
+    '相続税法基本通達',
+  ]);
+  expect(body.resolved?.abbr).toBe('電帳法取通');
+  expect(body.resolved?.formal).toBe(DENCHO_FORMAL);
+}
+
+describe('SPEC-NTA-GET-TSUTATSU-007 DB に無く、ライブ取得にも対応していない通達は、今は取り込めないことを返す', () => {
+  it('SPEC-NTA-GET-TSUTATSU-007 例: { name: "電帳法取通", clause: "4-1" } は TSUTATSU_NOT_FOUND、hint は今は取り込めないことの文、next_actions は無い（DB のファイルが無いとき。ファイルは作らない）', async () => {
+    const path = join(dir, 'none.db');
+    setEnv({ HOUKI_NTA_DB_PATH: path });
+    const { body, log } = await callLogged(() =>
+      getTsutatsu({ name: '電帳法取通', clause: '4-1' })
+    );
+    expect007(body);
+    expect(existsSync(path)).toBe(false);
+    // DB を開けるときは SPEC-NTA-DB-SCHEMA-030 の warn を出さない
+    expect(log.filter((l) => l.level === 'warn')).toEqual([]);
+  });
+
+  it('SPEC-NTA-GET-TSUTATSU-007 hint に投入のコマンド（npx … --bulk-download --tsutatsu="…"）を書かない。DB の場所の設定によらず同じ文', async () => {
+    const hints: string[] = [];
+    for (const env of [
+      { HOUKI_NTA_DB_PATH: undefined, XDG_CACHE_HOME: undefined },
+      { HOUKI_NTA_DB_PATH: join(home, 'dev', 'cache.db'), XDG_CACHE_HOME: undefined },
+      { HOUKI_NTA_DB_PATH: undefined, XDG_CACHE_HOME: join(home, 'Library', 'Caches') },
+    ]) {
+      setEnv(env);
+      const body = (await getTsutatsu({ name: '電帳法取通', clause: '4-1' })) as Body;
+      expect(body.hint).not.toContain('npx');
+      expect(body.hint).not.toContain('--tsutatsu="');
+      hints.push(body.hint ?? '');
+    }
+    expect(new Set(hints).size).toBe(1);
+  });
+
+  it('SPEC-NTA-GET-TSUTATSU-007 例: HOUKI_NTA_DB_PATH で SQLite でない中身のファイルを指したときも同じ応答で、retryable と detail は付かない', async () => {
+    const path = join(home, '.cache', 'houki-nta-mcp', 'cache.db');
+    mkdirSync(join(home, '.cache', 'houki-nta-mcp'), { recursive: true });
+    writeFileSync(path, 'これは SQLite のファイルではありません。');
+    setEnv({ HOUKI_NTA_DB_PATH: path });
+    const { body } = await callLogged(() => getTsutatsu({ name: '電帳法取通', clause: '4-1' }));
+    expect007(body);
+  });
+
+  it.skipIf(IS_ROOT)(
+    'SPEC-NTA-GET-TSUTATSU-007 置き場所のフォルダーに入る権限が無いとき（A の場面）も同じ応答で、retryable と detail は付かない',
+    async () => {
+      setEnv({ HOUKI_NTA_DB_PATH: LOCKED[0].make() });
+      const { body } = await callLogged(() => getTsutatsu({ name: '電帳法取通', clause: '4-1' }));
+      expect007(body);
+      unlockAll();
+      LOCKED[0].unchanged();
+    }
+  );
+});
+
+describe('SPEC-NTA-DB-SCHEMA-030 書き戻すツールは、DB を開けないときも DB を使わずに国税庁サイトから取って返す（国税庁サイトに取りに行く先の無い通達）', () => {
+  it('SPEC-NTA-DB-SCHEMA-030 例: SQLite でない中身のファイルを指したサーバーで nta_get_tsutatsu { name: "電帳法取通", clause: "4-1" } は、DB を開けるときと同じ 007 の応答で、標準エラー出力に scope が nta_get_tsutatsu の warn の行を出す', async () => {
+    setEnv({ HOUKI_NTA_DB_PATH: join(dir, 'opened', 'cache.db') });
+    const opened = (await getTsutatsu({ name: '電帳法取通', clause: '4-1' })) as Body;
+    const path = join(home, 'notdb.db');
+    writeFileSync(path, 'これは SQLite のファイルではありません。');
+    setEnv({ HOUKI_NTA_DB_PATH: path });
+    const { body, log } = await callLogged(() =>
+      getTsutatsu({ name: '電帳法取通', clause: '4-1' })
+    );
+    expect(body).toEqual(opened);
+    expect007(body);
+    const warns = log.filter((l) => l.level === 'warn');
+    expect(warns).toHaveLength(1);
+    expect(warns[0].scope).toBe('nta_get_tsutatsu');
+    expect(warns[0].msg).toBe(writeBackWarnMsg(path));
+    expect(warns[0].meta?.cause).toBe('file is not a database');
+  });
+
+  it.skipIf(IS_ROOT)(
+    'SPEC-NTA-DB-SCHEMA-030 置き場所のフォルダーに入る権限が無いとき（A の場面）の nta_get_tsutatsu { name: "電帳法取通" } も 007 の応答で、warn の meta.cause は EACCES: … の絶対パス',
+    async () => {
+      const path = LOCKED[0].make();
+      setEnv({ HOUKI_NTA_DB_PATH: path });
+      const { body, log } = await callLogged(() =>
+        getTsutatsu({ name: '電帳法取通', clause: '4-1' })
+      );
+      expect007(body);
+      const warns = log.filter((l) => l.level === 'warn');
+      expect(warns).toHaveLength(1);
+      expect(warns[0].scope).toBe('nta_get_tsutatsu');
+      expect(warns[0].meta?.cause).toBe(folderCause(join(home, 'locked')));
+    }
+  );
+});

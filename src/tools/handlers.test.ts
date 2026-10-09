@@ -316,17 +316,21 @@ describe('getTsutatsu — 引数バリデーション', () => {
     expect(r.error).toContain('不正');
   });
 
-  it('SPEC-NTA-GET-TSUTATSU-007 houki-nta 管轄だが DB 未投入 + ライブ未対応の通達（電帳法取通）はエラー + hint', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-007 houki-nta 管轄だが DB 未投入 + ライブ未対応の通達（電帳法取通）はエラーで、hint は今は取り込めないこと、next_actions は無い', async () => {
     const r = (await getTsutatsu(
       { name: '電帳法取通', clause: '1-1-1' },
       { dbPath: ':memory:' }
     )) as {
       error?: string;
       hint?: string;
+      next_actions?: unknown[];
       supported_for_live?: string[];
     };
     expect(r.error).toContain('DB にも未投入');
-    expect(r.hint).toContain('--bulk-download');
+    expect(r.hint).toBe(
+      'この通達（電子計算機を使用して作成する国税関係帳簿書類の保存方法等の特例に関する法律の取扱通達）は、今は取り込めません。国税庁サイトから取れるのも、投入のフラグ（--bulk-download の --tsutatsu）で DB に入れられるのも、基本通達 4 種（消費税法基本通達・所得税基本通達・法人税基本通達・相続税法基本通達）だけです'
+    );
+    expect(r.next_actions).toBeUndefined();
     expect(r.supported_for_live).toContain('消費税法基本通達');
   });
 });
