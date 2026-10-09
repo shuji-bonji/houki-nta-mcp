@@ -321,7 +321,7 @@ const READ_TOOLS: Array<{
     id: 'SPEC-NTA-INSPECT-PDF-META-001',
     tool: 'nta_inspect_pdf_meta',
     code: 'DOC_NOT_FOUND',
-    call: () => handleNtaInspectPdfMeta({ docType: 'qa-jirei', docId: 'shohi/02/19' }),
+    call: () => handleNtaInspectPdfMeta({ docType: 'tax-answer', docId: '6101' }),
   },
 ];
 

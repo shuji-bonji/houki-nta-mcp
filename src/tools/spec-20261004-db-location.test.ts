@@ -488,22 +488,22 @@ describe('SPEC-NTA-DB-SCHEMA-029 読むだけのツールの「DB に 1 件も�
     expect(command(body)).toBe(`${NPX} --bulk-download-qa`);
   });
 
-  it('SPEC-NTA-DB-SCHEMA-029 nta_inspect_pdf_meta: 質疑応答事例が 1 件も無い版 12 の DB では INSPECT-PDF-META-001 の文、ファイルが無いときは --bulk-download-qa と質疑応答事例', async () => {
+  it('SPEC-NTA-DB-SCHEMA-029 nta_inspect_pdf_meta: タックスアンサーが 1 件も無い版 12 の DB では INSPECT-PDF-META-001 の文、ファイルが無いときは --bulk-download-tax-answer とタックスアンサー', async () => {
     makeDb(defaultDb, [['kaisei', '0026003-067', 'shohi']]);
     const inDb = (await handleNtaInspectPdfMeta({
-      docType: 'qa-jirei',
-      docId: 'shohi/02/19',
+      docType: 'tax-answer',
+      docId: '6101',
     })) as Body;
     expect(inDb.hint).toBe(
-      '`--bulk-download-qa` で投入済みか確認してください。docId が正しいかも `nta_search_*` で検証可能'
+      '`--bulk-download-tax-answer` で投入済みか確認してください。docId が正しいかも `nta_search_*` で検証可能'
     );
     rmSync(defaultDb);
     const missing = (await handleNtaInspectPdfMeta({
-      docType: 'qa-jirei',
-      docId: 'shohi/02/19',
+      docType: 'tax-answer',
+      docId: '6101',
     })) as Body;
     expect(missing.hint).toBe(
-      `ローカル DB（~/.cache/houki-nta-mcp/cache.db）がありません。\`${NPX} --bulk-download-qa\` で質疑応答事例を投入してください`
+      `ローカル DB（~/.cache/houki-nta-mcp/cache.db）がありません。\`${NPX} --bulk-download-tax-answer\` でタックスアンサーを投入してください`
     );
   });
 
@@ -512,7 +512,6 @@ describe('SPEC-NTA-DB-SCHEMA-029 読むだけのツールの「DB に 1 件も�
     ['jimu-unei', 'shotoku/000101', '事務運営指針', '--bulk-download-jimu-unei'],
     ['bunshokaitou', 'shotoku/250416', '文書回答事例', '--bulk-download-bunshokaitou'],
     ['tax-answer', '6101', 'タックスアンサー', '--bulk-download-tax-answer'],
-    ['qa-jirei', 'shohi/02/19', '質疑応答事例', '--bulk-download-qa'],
   ];
   for (const [docType, docId, label, flag] of inspectTypes) {
     it(`SPEC-NTA-DB-SCHEMA-029 nta_inspect_pdf_meta の docType="${docType}": <種別> は ${label}、フラグは ${flag}`, async () => {
@@ -813,15 +812,15 @@ describe('SPEC-NTA-INSPECT-PDF-META-001 ローカル DB に無い文書は取り
     );
   });
 
-  it('SPEC-NTA-INSPECT-PDF-META-001 版 12 の DB に質疑応答事例 shohi/02/19 が無いときは --bulk-download-qa（v0.24.x の --bulk-download-qa-jirei は無いフラグ）', async () => {
-    makeDb(defaultDb, [['qa-jirei', 'shohi/02/20', 'shohi']]);
+  it('SPEC-NTA-INSPECT-PDF-META-001 版 12 の DB にタックスアンサー 6101 が無いときに { docType: "tax-answer", docId: "6101" } を渡すと --bulk-download-tax-answer の文', async () => {
+    makeDb(defaultDb, [['tax-answer', '6102', 'shohi']]);
     const body = (await handleNtaInspectPdfMeta({
-      docType: 'qa-jirei',
-      docId: 'shohi/02/19',
+      docType: 'tax-answer',
+      docId: '6101',
     })) as Body;
     expect(body.code).toBe('DOC_NOT_FOUND');
     expect(body.hint).toBe(
-      '`--bulk-download-qa` で投入済みか確認してください。docId が正しいかも `nta_search_*` で検証可能'
+      '`--bulk-download-tax-answer` で投入済みか確認してください。docId が正しいかも `nta_search_*` で検証可能'
     );
   });
 });
