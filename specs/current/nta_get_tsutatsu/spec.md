@@ -7,7 +7,7 @@ pr: 49
 
 - 版: current
 - 起こした元: v0.20.2 の `src/tools/handlers.ts`（`getTsutatsu`）、`src/tools/definitions.ts`、`src/tools/handlers.test.ts`
-- 関連する Issue: houki-nta-mcp #144（DB を開けないとき。0.26.0）
+- 関連する Issue: houki-nta-mcp #144（DB を開けないとき。0.26.0）、#155（ライブ取得に対応していない通達に、実行できない投入のコマンドを案内しない。0.27.0）
 - 関連する判断: houki-hub `docs/DECISIONS.md`（2026-09-21 の行）
 - 取り込んだ差分: `specs/releases/v0.20.3/20260924-tsutatsu-clause-forms/`（入力の `clause`。2026-09-24 JST）
 - 取り込んだ差分: `specs/releases/v0.21.0/20260925-tsutatsu-live-toc/`（005・006・008〜010 の置き換え、014・015 の追加、入力・できないこと・未決の置き換え。2026-09-26 JST）
@@ -117,13 +117,19 @@ flowchart TD
 
 候補ページが複数あるときは順に取得し、条項が見つかったところで止める。取得して解析できたページは、条項が見つかったかどうかにかかわらず DB に書き戻す。次からは SPEC-NTA-GET-TSUTATSU-004 で返る。
 
-### SPEC-NTA-GET-TSUTATSU-007 DB に無く、ライブ取得にも対応していない通達は投入を案内する
+### SPEC-NTA-GET-TSUTATSU-007 DB に無く、ライブ取得にも対応していない通達は、今は取り込めないことを返す
 
-その通達の条項が DB に 1 件も無く、上の 4 通達でもないとき（例: `電帳法取通`）は、エラー `TSUTATSU_NOT_FOUND` を返す。`hint` に `--bulk-download` の実行を案内し、`supported_for_live` にライブ取得できる通達名の一覧、`next_actions` に bulk download の案内を入れる。
+その通達の条項が DB に 1 件も無く、上の 4 通達でもないとき（例: `電帳法取通`）は、エラー `TSUTATSU_NOT_FOUND` を返す。
 
-ローカル DB を開けないとき（SPEC-NTA-DB-SCHEMA-021 の開けない行）は、`code` は同じ `TSUTATSU_NOT_FOUND` で、`hint` を SPEC-NTA-DB-SCHEMA-029 の開けないときの文にし、`retryable: false` と `detail.cause` を付け、`next_actions` に bulk download の案内を入れない（SPEC-NTA-DB-SCHEMA-030）。`supported_for_live` と `resolved` は同じ。
+- `error` は今までどおり `"<正式名>" は DB にも未投入で、ライブ取得用 URL も未登録です`
+- `hint` は `この通達（<正式名>）は、今は取り込めません。国税庁サイトから取れるのも、投入のフラグ（--bulk-download の --tsutatsu）で DB に入れられるのも、基本通達 4 種（消費税法基本通達・所得税基本通達・法人税基本通達・相続税法基本通達）だけです`。投入のコマンドを書かない（投入のフラグ `--tsutatsu` は基本通達 4 種の正式名しか受け付けず、ほかの値は SPEC-NTA-CLI-BULK-DOWNLOAD-011 のエラーで終了コード 2 になる）
+- `next_actions` を付けない（v0.26.x の `cli_bulk_download` の 1 件を外すと、残りが無い）
+- `supported_for_live` にライブ取得できる通達名の一覧、`resolved` に略称辞書で解決したエントリを入れる（今までどおり）
+- ローカル DB の状態によらず同じ応答にする。DB を開けないとき（SPEC-NTA-DB-SCHEMA-021 の開けない行）も、SPEC-NTA-DB-SCHEMA-029 の開けないときの `hint`・`retryable`・`detail.cause` にしない。DB を開けないことは、SPEC-NTA-DB-SCHEMA-030 の `warn` の行で残る
 
-例: DB を開けるとき、`{ name: "電帳法取通", clause: "4-1" }` は `code: "TSUTATSU_NOT_FOUND"` で、`next_actions[0].action` は `cli_bulk_download`。`HOUKI_NTA_DB_PATH` で SQLite でない中身のファイルを指して起動したときは、`hint` が ``ローカル DB（<パス>）を開けません。`` で始まり、`retryable: false`、`detail.cause` は `file is not a database`、`next_actions` は無い（v0.25.x では DB を開くところで `INTERNAL_ERROR`）。
+基本通達 4 種で、候補ページに条項が無いときの `--bulk-download --tsutatsu="<正式名>"` の案内（SPEC-NTA-GET-TSUTATSU-010）は変えない。
+
+例: `{ name: "電帳法取通", clause: "4-1" }` は `code: "TSUTATSU_NOT_FOUND"`、`hint` は `この通達（電子計算機を使用して作成する国税関係帳簿書類の保存方法等の特例に関する法律の取扱通達）は、今は取り込めません。…基本通達 4 種（消費税法基本通達・所得税基本通達・法人税基本通達・相続税法基本通達）だけです`、`next_actions` は無い（v0.26.x では、`hint` が ``先に `npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download --tsutatsu="電子計算機を使用して作成する国税関係帳簿書類の保存方法等の特例に関する法律の取扱通達"` を実行して DB に投入してください。``、`next_actions[0].action` が `cli_bulk_download` で、このコマンドを実行すると SPEC-NTA-CLI-BULK-DOWNLOAD-011 のエラーで終了コード 2 になった。#155）。`HOUKI_NTA_DB_PATH` で SQLite でない中身のファイルを指して起動したときも同じ応答で、`retryable` と `detail` は付かない（v0.26.x では、`hint` が ``ローカル DB（<パス>）を開けません。`` で始まり、`retryable: false`、`detail.cause` は `file is not a database`）。
 
 ### SPEC-NTA-GET-TSUTATSU-008 国税庁サイトから取るときは、clause をその通達の番号の形で読む
 
@@ -218,7 +224,7 @@ DB に保存してあった目次を使った呼び出しで次のどれかが�
 
 - 通達の条項と法律の条番号の対応を示すこと（`base_laws` は法令名まで。条は付けない）
 - 条項本文の中の画像（算式の GIF）の内容を返すこと（alt テキストを `[画像: …]` として残す）
-- 基本通達 4 種以外の通達（電帳法取通など）を国税庁サイトから取ること
+- 基本通達 4 種以外の通達（電帳法取通など）を国税庁サイトから取ること・ローカル DB に投入すること（投入のフラグ `--tsutatsu` は基本通達 4 種の正式名しか受け付けない。SPEC-NTA-CLI-BULK-DOWNLOAD-011）
 - 1 回の呼び出しで 10 を超えるページを国税庁サイトから取ること（全節が要るときは `--bulk-download`）
 - 通達が今も有効かどうかを判定すること（改正の追跡は `nta_search_kaisei_tsutatsu` / `nta_get_kaisei_tsutatsu`）
 

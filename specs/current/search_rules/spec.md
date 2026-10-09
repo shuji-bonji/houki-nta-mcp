@@ -8,7 +8,7 @@ pr: 78
 
 - 版: current
 - 起こした元: v0.21.0 の `src/services/db-search.ts`、`src/services/text-normalize.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/services/relevance-scoring.ts`、`src/tools/handlers.ts`（検索系 6 ツールのハンドラー）、各種別の取り込み処理（`src/services/*-bulk-downloader.ts`・`src/services/*-parser.ts`・`src/services/document-writeback.ts`）、`src/services/db-search.test.ts`、`src/services/text-normalize.test.ts`、`src/services/relevance-scoring.test.ts`、`src/services/index-status.test.ts`、`src/services/db-writeback.test.ts`、`src/services/kaisei-parser.test.ts`、`src/tools/handlers.test.ts`、`src/tools/index-status-response.test.ts`
-- 関連する Issue: houki-nta-mcp #14（通称の展開）、#18（短い語の扱い）、#21（通称の展開を 0 件のときだけにする）、#27（全角英字の揃え方）、#30（索引から消えた文書の印）、#68（limit の丸め）、#69（空のキーワード）、#71（応答の形の不揃い）、#80（3 文字未満の略称）、#81（英字の大文字と小文字）、#139（freshness の範囲と索引から消えた文書）、#138（freshness.db_path。0.25.0）
+- 関連する Issue: houki-nta-mcp #14（通称の展開）、#18（短い語の扱い）、#21（通称の展開を 0 件のときだけにする）、#27（全角英字の揃え方）、#30（索引から消えた文書の印）、#68（limit の丸め）、#69（空のキーワード）、#71（応答の形の不揃い）、#80（3 文字未満の略称）、#81（英字の大文字と小文字）、#139（freshness の範囲と索引から消えた文書）、#138（freshness.db_path。0.25.0）、#156（nta_inspect_pdf_meta に渡せる docId の種別。0.27.0）
 
 この文書は、複数の検索ツールに共通するキーワードの扱いと、検索結果に付ける情報を書きます。どう実装しているか（関数名・テーブル名）は書きません。各ツール固有の引数・0 件のときの応答（`DOC_NOT_FOUND`・`available_taxonomies` など）は各ツールの spec.md に書きます。
 
@@ -204,7 +204,7 @@ v0.21.3（houki-abbreviations 0.6.x）までは `－` だけを `-` にしてい
 | フィールド | 内容 |
 |---|---|
 | `docType` | 種別。`qa-jirei` / `tax-answer` / `kaisei` / `jimu-unei` / `bunshokaitou` |
-| `docId` | 文書 ID。取得ツール（`nta_get_*`）や `nta_inspect_pdf_meta` にそのまま渡せる値。例: 質疑応答事例は `shohi/02/19`、タックスアンサーは `6101` |
+| `docId` | 文書 ID。例: 質疑応答事例は `shohi/02/19`、タックスアンサーは `6101`。取得ツール（`nta_get_*`）にそのまま渡せる値。`nta_inspect_pdf_meta` の `docId` に渡せるのは、`docType` が `kaisei`・`jimu-unei`・`bunshokaitou`・`tax-answer` の 4 種別の文書だけ（質疑応答事例は PDF を持たず、`nta_inspect_pdf_meta` の `docType` に `qa-jirei` が無い） |
 | `taxonomy` | DB に入っている税目の値 |
 | `title` | 題名 |
 | `issuedAt` | 発出日（`YYYY-MM-DD`）。改正通達・事務運営指針・文書回答事例は DB の発出日で、DB に無ければ `null`。質疑応答事例は日付を持たないので常に `null`。タックスアンサーは発出日を持たないので常に `null`（記事の日付は `basisDate`） |

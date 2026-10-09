@@ -7,7 +7,7 @@ targets: [db_schema, nta_inspect_pdf_meta]
 # 変更: nta_inspect_pdf_meta の仕様から、inputSchema が受け付けない docType "qa-jirei" の行と例を外す（#156）
 
 - 対象: `specs/current/nta_inspect_pdf_meta/spec.md` の SPEC-NTA-INSPECT-PDF-META-001（箇条書き 2 つと例）、`specs/current/db_schema/spec.md` の SPEC-NTA-DB-SCHEMA-029（ツールごとの表の `nta_inspect_pdf_meta` の行と、例の最後の箇条書き）
-- 状態: 草案（`specs/current/` へはこの仕様 PR の中で反映する）
+- 状態: 取り込み済み（`specs/current/` へは仕様 PR #157 の中で反映。v0.27.0 の実装 PR の最終コミットで `specs/releases/v0.27.0/` へ移した）
 - 起こした日: 2026-10-09（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #156（nta_inspect_pdf_meta の inputSchema は docType: "qa-jirei" を受け付けないのに、仕様の表と例が qa-jirei を使っている）

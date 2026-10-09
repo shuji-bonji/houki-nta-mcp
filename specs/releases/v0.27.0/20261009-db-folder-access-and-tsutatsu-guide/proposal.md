@@ -9,7 +9,7 @@ targets: [cli_status, common_errors, db_schema, nta_get_tsutatsu, search_rules]
 
 - 対象: `db_schema` / `cli_status` / `common_errors` / `nta_get_tsutatsu` / `search_rules` の `specs/current/<dir>/spec.md`
 - 実装の変更の補足: 下の「実装の変更」
-- 状態: 草案
+- 状態: 取り込み済み（v0.27.0）
 - 起こした日: 2026-10-09（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #154（置き場所のフォルダーに入る権限が無いと、DB の状態を「ファイルが無い」と判定し、入口ごとに扱いが食い違う）、#155（`nta_get_tsutatsu` の SPEC-NTA-GET-TSUTATSU-007 が案内する `--bulk-download --tsutatsu="<正式名>"` は、実行すると引数の誤りで止まる）
