@@ -588,26 +588,21 @@ export async function getTsutatsu(
 
     // 5. DB miss → 国税庁サイトから取る経路（基本通達 4 種）
     if (!rootUrl) {
-      const message = `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`;
-      // v0.26.0（SPEC-NTA-GET-TSUTATSU-007・SPEC-NTA-DB-SCHEMA-030）: DB を開けないときは 029 の開けないときの応答にする。
-      // 投入のフラグも同じ DB では止まるので bulk download を案内しない
-      if (access.state.kind === 'unopenable') {
-        return makeError('TSUTATSU_NOT_FOUND', message, {
-          ...unopenableFields(access.state, location),
-          supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
+      // v0.27.0（SPEC-NTA-GET-TSUTATSU-007・SPEC-NTA-DB-SCHEMA-030、#155）: 投入のフラグ `--tsutatsu` は基本通達 4 種しか
+      // 受け付けないので、投入を案内せず、今は取り込めないことを返す。DB の状態によらず同じ応答にする
+      // （DB を開けないことは warnUnopenableWriteBack の warn の行で残る）。v0.26.x は
+      // `--bulk-download --tsutatsu="<正式名>"` を案内し、DB を開けないときは 029 の開けないときの応答だった
+      const supported = Object.keys(TSUTATSU_URL_ROOTS);
+      return makeError(
+        'TSUTATSU_NOT_FOUND',
+        `"${resolved.formal}" は DB にも未投入で、ライブ取得用 URL も未登録です`,
+        {
+          hint: `この通達（${resolved.formal}）は、今は取り込めません。国税庁サイトから取れるのも、投入のフラグ（--bulk-download の --tsutatsu）で DB に入れられるのも、基本通達 4 種（${supported.join('・')}）だけです`,
+          supported_for_live: supported,
           resolved,
           tool: 'nta_get_tsutatsu',
-        });
-      }
-      // 案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。v0.24.x までは `houki-nta-mcp --bulk-download --tsutatsu="<正式名>"`
-      const bulkCommand = guideCommand(`--bulk-download --tsutatsu="${resolved.formal}"`, location);
-      return makeError('TSUTATSU_NOT_FOUND', message, {
-        hint: `先に \`${bulkCommand}\` を実行して DB に投入してください。`,
-        next_actions: [NEXT_ACTIONS.bulkDownload(bulkCommand)],
-        supported_for_live: Object.keys(TSUTATSU_URL_ROOTS),
-        resolved,
-        tool: 'nta_get_tsutatsu',
-      });
+        }
+      );
     }
 
     const style = TSUTATSU_TOC_STYLES[resolved.formal] ?? 'shohi';
