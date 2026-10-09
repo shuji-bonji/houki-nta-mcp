@@ -1,9 +1,12 @@
+---
+spec_id: NTA
+kind: common
+approved: 2026-09-27
+pr: 78
+---
 # 機能: search_rules（検索系ツールに共通するキーワードの扱いと結果の付記）
 
-- 機能 ID: NTA
-- 種類: 共通
 - 版: current
-- 承認日: 2026-09-27 （PR #78）。差分 `20260927-search-hit-responses` は 2026-09-27（PR #85）。差分 `20260927-search-keyword-rules` は 2026-09-27（PR #86）。差分 `20260927-search-zero-hits` は 2026-09-27（PR #90）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-search-rules` は 2026-10-03（PR #133）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261004-freshness-orphaned` は 2026-10-04（PR #140）。差分 `20261004-db-location` は 2026-10-05（PR #142）
 - 起こした元: v0.21.0 の `src/services/db-search.ts`、`src/services/text-normalize.ts`、`src/services/freshness.ts`、`src/services/index-status.ts`、`src/services/relevance-scoring.ts`、`src/tools/handlers.ts`（検索系 6 ツールのハンドラー）、各種別の取り込み処理（`src/services/*-bulk-downloader.ts`・`src/services/*-parser.ts`・`src/services/document-writeback.ts`）、`src/services/db-search.test.ts`、`src/services/text-normalize.test.ts`、`src/services/relevance-scoring.test.ts`、`src/services/index-status.test.ts`、`src/services/db-writeback.test.ts`、`src/services/kaisei-parser.test.ts`、`src/tools/handlers.test.ts`、`src/tools/index-status-response.test.ts`
 - 関連する Issue: houki-nta-mcp #14（通称の展開）、#18（短い語の扱い）、#21（通称の展開を 0 件のときだけにする）、#27（全角英字の揃え方）、#30（索引から消えた文書の印）、#68（limit の丸め）、#69（空のキーワード）、#71（応答の形の不揃い）、#80（3 文字未満の略称）、#81（英字の大文字と小文字）、#139（freshness の範囲と索引から消えた文書）、#138（freshness.db_path。0.25.0）
 

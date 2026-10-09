@@ -1,8 +1,13 @@
+---
+approved: 2026-09-27
+pr: 91
+implementation: required
+targets: [nta_get_bunshokaitou, nta_get_kaisei_tsutatsu, nta_get_qa, nta_get_tax_answer, nta_search_bunshokaitou, nta_search_kaisei_tsutatsu, nta_search_qa, nta_search_tax_answer]
+---
 # 変更: 索引から消えた文書の印に、取得系 4 ツールの仕様 ID を振り、検索系 4 ツールのテストを足す
 
 - 対象: `specs/current/` の `nta_get_bunshokaitou`・`nta_get_kaisei_tsutatsu`・`nta_get_qa`・`nta_get_tax_answer` の `spec.md`（「できること」への追加）。検索系 4 ツールは ID を足さない
-- 実装の変更: 要（受入テストを足す。`src/` は変えない）
-- 承認日: 2026-09-27 （PR #91）
+- 実装の変更の補足: 受入テストを足す。`src/` は変えない
 - 状態: 取り込み済み。受入テストは v0.21.1、`specs/current/` への取り込みは 2026-09-28（JST、実装 PR の最終コミット）
 - 起こした日: 2026-09-27（JST）
 - 起こした役: Spec Steward

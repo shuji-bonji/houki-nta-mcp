@@ -1,8 +1,13 @@
+---
+approved: 2026-09-27
+pr: 88
+implementation: required
+targets: [nta_get_qa, nta_get_tax_answer, nta_get_tsutatsu]
+---
 # 変更: DB から返すか国税庁サイトから取るかの分かれ目に、仕様 ID とテストを足す
 
 - 対象: `specs/current/nta_get_qa/spec.md` と `specs/current/nta_get_tax_answer/spec.md`（「できること」への追加）。`nta_get_tsutatsu` は ID を足さずテストだけ足す
-- 実装の変更: 要（受入テストを足す。`src/` は変えない）
-- 承認日: 2026-09-27（PR #88）
+- 実装の変更の補足: 受入テストを足す。`src/` は変えない
 - 状態: 取り込み済み。受入テストは v0.21.1、`specs/current/` への取り込みは 2026-09-28（JST、実装 PR の最終コミット）
 - 起こした日: 2026-09-27（JST）
 - 起こした役: Spec Steward

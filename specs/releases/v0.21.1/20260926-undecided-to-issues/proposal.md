@@ -1,8 +1,12 @@
+---
+approved: 2026-09-26
+pr: 74
+implementation: none
+targets: [nta_get_bunshokaitou, nta_get_jimu_unei, nta_get_kaisei_tsutatsu, nta_get_qa, nta_get_tax_answer, nta_get_tsutatsu, nta_inspect_pdf_meta, nta_search_bunshokaitou, nta_search_jimu_unei, nta_search_kaisei_tsutatsu, nta_search_qa, nta_search_tax_answer, nta_search_tsutatsu, resolve_abbreviation]
+---
 # 変更: 「未決」のうち判断が要る 45 件を Issue に移す
 
 - 対象: `specs/current/` の下の 14 ツールの `spec.md`（`## 未決` の節）
-- 実装の変更: 不要
-- 承認日: 2026-09-26（PR #74）
 - 状態: 取り込み済み。`specs/current/` への反映は 2026-09-26（JST、仕様 PR #74 の中）。`specs/releases/v0.21.1/` へは 2026-09-28（JST、v0.21.1 の実装 PR の最終コミット）に移した
 - 起こした日: 2026-09-26（JST）
 - 起こした役: Spec Steward

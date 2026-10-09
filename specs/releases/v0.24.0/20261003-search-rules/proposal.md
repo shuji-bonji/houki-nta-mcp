@@ -1,8 +1,13 @@
+---
+approved: 2026-10-03
+pr: 133
+implementation: required
+targets: [nta_search_qa, search_rules]
+---
 # 変更: 検索の英字の大文字と小文字・3 文字未満の略称・nta_search_qa の domain（段階 5 検索規則）
 
 - 対象: `specs/current/search_rules/spec.md`、`specs/current/nta_search_qa/spec.md`
-- 実装の変更: 要（下の「実装の変更」）
-- 承認日: 2026-10-03（PR #133）
+- 実装の変更の補足: 下の「実装の変更」
 - 状態: 取り込み済み（v0.24.0）
 - 起こした日: 2026-10-03（JST）
 - 起こした役: Spec Steward

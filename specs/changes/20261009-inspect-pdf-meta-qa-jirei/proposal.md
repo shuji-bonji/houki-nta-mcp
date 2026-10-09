@@ -1,8 +1,12 @@
+---
+approved: 2026-10-09
+pr: 157
+implementation: none
+targets: [db_schema, nta_inspect_pdf_meta]
+---
 # 変更: nta_inspect_pdf_meta の仕様から、inputSchema が受け付けない docType "qa-jirei" の行と例を外す（#156）
 
 - 対象: `specs/current/nta_inspect_pdf_meta/spec.md` の SPEC-NTA-INSPECT-PDF-META-001（箇条書き 2 つと例）、`specs/current/db_schema/spec.md` の SPEC-NTA-DB-SCHEMA-029（ツールごとの表の `nta_inspect_pdf_meta` の行と、例の最後の箇条書き）
-- 実装の変更: 不要
-- 承認日: 2026-10-09（PR #157）
 - 状態: 草案（`specs/current/` へはこの仕様 PR の中で反映する）
 - 起こした日: 2026-10-09（JST）
 - 起こした役: Spec Steward

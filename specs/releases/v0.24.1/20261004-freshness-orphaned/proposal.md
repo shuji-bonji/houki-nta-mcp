@@ -1,8 +1,13 @@
+---
+approved: 2026-10-04
+pr: 140
+implementation: required
+targets: [search_rules]
+---
 # 変更: 検索の `freshness` の範囲から、国税庁の索引から消えた文書を外す（nta #139）
 
 - 対象: `specs/current/search_rules/spec.md`（SPEC-NTA-SEARCH-RULES-017）
-- 実装の変更: 要（下の「実装の変更」）
-- 承認日: 2026-10-04（PR #140）
+- 実装の変更の補足: 下の「実装の変更」
 - 状態: 取り込み済み（v0.24.1）
 - 起こした日: 2026-10-04（JST）
 - 起こした役: Spec Steward

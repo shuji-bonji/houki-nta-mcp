@@ -1,8 +1,13 @@
+---
+approved: 2026-10-05
+pr: 149
+implementation: required
+targets: [nta_get_tax_answer]
+---
 # 変更: `nta_get_tax_answer` の `sections` で、ページの小見出し h3 も節にし、節ごとに見出しの段（`level`）を返す（nta #147）
 
 - 対象: `specs/current/nta_get_tax_answer/spec.md`（SPEC-NTA-GET-TAX-ANSWER-007・008 を MODIFIED、019 を ADDED）
-- 実装の変更: 要（下の「実装の変更」）
-- 承認日: 2026-10-05（PR #149）
+- 実装の変更の補足: 下の「実装の変更」
 - 状態: 取り込み済み（v0.25.1。草案は 2026-10-05 JST に案 A から案 B へ組み替えた。下の「組み替えの経緯」）
 - 起こした日: 2026-10-05（JST）
 - 起こした役: Spec Steward

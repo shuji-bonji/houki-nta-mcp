@@ -1,8 +1,13 @@
+---
+approved: 2026-09-27
+pr: 90
+implementation: required
+targets: [nta_search_bunshokaitou, nta_search_jimu_unei, nta_search_qa, nta_search_tax_answer, nta_search_tsutatsu, search_rules]
+---
 # 変更: 絞り込んで 0 件になったときの応答と、`freshness` の段階に仕様 ID を振る
 
 - 対象: `specs/current/` の `search_rules`・`nta_search_bunshokaitou`・`nta_search_jimu_unei`・`nta_search_tax_answer` の `spec.md`（「できること」への追加）
-- 実装の変更: 要（受入テストを足す。テスト名を 1 件直す。`src/` は変えない）
-- 承認日: 2026-09-27（PR #90）
+- 実装の変更の補足: 受入テストを足す。テスト名を 1 件直す。`src/` は変えない
 - 状態: 取り込み済み。受入テストは v0.21.1、`specs/current/` への取り込みは 2026-09-28（JST、実装 PR の最終コミット）
 - 起こした日: 2026-09-27（JST）
 - 起こした役: Spec Steward

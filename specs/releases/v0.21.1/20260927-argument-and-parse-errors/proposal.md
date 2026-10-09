@@ -1,8 +1,13 @@
+---
+approved: 2026-09-27
+pr: 84
+implementation: required
+targets: [common_errors, nta_get_jimu_unei, nta_get_kaisei_tsutatsu, nta_get_qa, nta_get_tax_answer, nta_get_tsutatsu, nta_inspect_pdf_meta, nta_search_jimu_unei, nta_search_kaisei_tsutatsu]
+---
 # 変更: 引数の検査と、国税庁のページの解析の失敗のエラーに仕様 ID を振る
 
 - 対象: `specs/current/common_errors/spec.md`（「できること」への追加）。ツールの spec.md には ID を足さない
-- 実装の変更: 要（受入テストを足す。`src/` は変えない）
-- 承認日: 2026-09-27 （PR #84）
+- 実装の変更の補足: 受入テストを足す。`src/` は変えない
 - 状態: 取り込み済み。受入テストは v0.21.1、`specs/current/` への取り込みは 2026-09-28（JST、実装 PR の最終コミット）
 - 起こした日: 2026-09-27（JST）
 - 起こした役: Spec Steward

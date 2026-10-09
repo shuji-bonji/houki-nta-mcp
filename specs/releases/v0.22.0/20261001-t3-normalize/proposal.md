@@ -1,8 +1,13 @@
+---
+approved: 2026-10-01
+pr: 119
+implementation: required
+targets: [db_schema, nta_get_bunshokaitou, nta_get_jimu_unei, nta_get_kaisei_tsutatsu, nta_get_qa, nta_get_tax_answer, nta_get_tsutatsu, nta_inspect_pdf_meta, resolve_abbreviation, search_rules]
+---
 # 変更: 全角・半角・ダッシュ類の揃え方を houki-abbreviations 0.7.0 に一本化する（T3）
 
 - 対象: `resolve_abbreviation` / `search_rules` / `db_schema` / `nta_get_tsutatsu` / `nta_get_qa` / `nta_get_tax_answer` / `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` / `nta_inspect_pdf_meta` の `specs/current/<dir>/spec.md`
-- 実装の変更: 要（`package.json` の `@shuji-bonji/houki-abbreviations` を `^0.7.0` に上げる変更と、スキーマの版 11 への移行を含む）
-- 承認日: 2026-10-01（PR #119）
+- 実装の変更の補足: `package.json` の `@shuji-bonji/houki-abbreviations` を `^0.7.0` に上げる変更と、スキーマの版 11 への移行を含む
 - 状態: 取り込み済み（v0.22.0）
 - 起こした日: 2026-10-01（JST）
 - 起こした役: Spec Steward

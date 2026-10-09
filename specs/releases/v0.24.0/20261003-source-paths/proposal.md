@@ -1,8 +1,13 @@
+---
+approved: 2026-10-03
+pr: 134
+implementation: required
+targets: [cli_bulk_download, common_errors, nta_get_jimu_unei, nta_get_qa, nta_get_tax_answer, nta_get_tsutatsu, nta_inspect_pdf_meta, nta_search_jimu_unei, search_rules]
+---
 # 変更: 国税庁サイトから取る経路（通信の失敗の code・タックスアンサーの URL と 8xxx 帯）と、事務運営指針の legal_status.note（段階 5）
 
 - 対象: `specs/current/common_errors/spec.md`、`nta_get_qa`・`nta_get_tax_answer`・`nta_get_tsutatsu`・`cli_bulk_download`（#120・#128）、`nta_search_jimu_unei`・`nta_get_jimu_unei`・`nta_inspect_pdf_meta`・`search_rules`（#131）の `specs/current/<dir>/spec.md`
-- 実装の変更: 要（下の「実装の変更」）
-- 承認日: 2026-10-03（PR #134）
+- 実装の変更の補足: 下の「実装の変更」
 - 状態: 取り込み済み（v0.24.0）
 - 起こした日: 2026-10-03（JST）
 - 起こした役: Spec Steward

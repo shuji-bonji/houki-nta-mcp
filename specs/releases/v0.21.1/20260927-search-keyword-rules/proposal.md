@@ -1,8 +1,13 @@
+---
+approved: 2026-09-27
+pr: 86
+implementation: required
+targets: [nta_search_bunshokaitou, nta_search_jimu_unei, nta_search_kaisei_tsutatsu, nta_search_qa, nta_search_tax_answer, nta_search_tsutatsu, search_rules]
+---
 # 変更: キーワードの扱い（短い語・略称と通称の展開・全角の揃え方）を、検索系 6 ツールの応答として確かめる
 
 - 対象: `specs/current/search_rules/spec.md`（「できること」への追加 1 件）。ツールの spec.md には ID を足さない
-- 実装の変更: 要（受入テストを足す。`src/` は変えない）
-- 承認日: 2026-09-27（PR #86）
+- 実装の変更の補足: 受入テストを足す。`src/` は変えない
 - 状態: 取り込み済み。受入テストは v0.21.1、`specs/current/` への取り込みは 2026-09-28（JST、実装 PR の最終コミット）
 - 起こした日: 2026-09-27（JST）
 - 起こした役: Spec Steward

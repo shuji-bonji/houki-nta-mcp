@@ -1,9 +1,11 @@
+---
+spec_id: NTA
+kind: cli
+introduced_by: 20261004-db-location
+---
 # 機能: cli_status（`--status` で DB の場所と中身を確かめる）
 
-- 機能 ID: NTA
-- 種類: CLI
 - 版: current
-- 承認日: 2026-10-05（PR #142。差分 `20261004-db-location`）
 - 起こした元: 差分 `20261004-db-location`（v0.25.0 で新しく足す CLI のフラグ。houki-egov-mcp の cli_status の SPEC-EGOV-CLI-STATUS-005・010・011・013・014 と同じ形）
 - 関連する Issue: houki-nta-mcp #138（開いている DB のパスが応答に出ず、残っている別の DB にも気付けない）
 

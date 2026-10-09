@@ -1,8 +1,12 @@
+---
+approved: 2026-10-05
+pr: 148
+implementation: none
+targets: [nta_get_tax_answer]
+---
 # 変更: SPEC-NTA-GET-TAX-ANSWER-018 の例の「同じ DB でもう一度呼ぶと」に、記事が DB に無いという前提を書き足す（#146）
 
 - 対象: `specs/current/nta_get_tax_answer/spec.md` の SPEC-NTA-GET-TAX-ANSWER-018 の「例（壊れた表の DB）」の最後の箇条書き
-- 実装の変更: 不要
-- 承認日: 2026-10-05（PR #148）
 - 状態: 取り込み済み（`specs/current/` へは仕様 PR #148 の中で反映。v0.25.1 の実装 PR の最終コミットで `specs/releases/v0.25.1/` へ移した）
 - 起こした日: 2026-10-05（JST）
 - 起こした役: Spec Steward

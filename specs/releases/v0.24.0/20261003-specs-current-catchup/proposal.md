@@ -1,8 +1,12 @@
+---
+approved: 2026-10-03
+pr: 132
+implementation: none
+targets: [common_errors, nta_get_bunshokaitou, nta_get_jimu_unei, nta_get_kaisei_tsutatsu, nta_get_tsutatsu, nta_inspect_pdf_meta, nta_search_bunshokaitou, nta_search_jimu_unei, nta_search_kaisei_tsutatsu, nta_search_qa, nta_search_tax_answer, nta_search_tsutatsu, resolve_abbreviation]
+---
 # 変更: 0.22.0 の取り込みで直し漏れた specs/current の文を、取り込んだ本文に合わせる（#123）
 
 - 対象: `specs/current/common_errors/spec.md`（「未決」4）、12 ツールの `specs/current/<tool>/spec.md` の「処理の流れ」の図（`nta_search_tsutatsu`・`nta_get_tsutatsu`・`nta_search_qa`・`nta_search_tax_answer`・`nta_search_kaisei_tsutatsu`・`nta_get_kaisei_tsutatsu`・`nta_search_jimu_unei`・`nta_get_jimu_unei`・`nta_search_bunshokaitou`・`nta_get_bunshokaitou`・`nta_inspect_pdf_meta`・`resolve_abbreviation`）、`nta_get_bunshokaitou` の「入力」の表、`nta_inspect_pdf_meta` の SPEC-NTA-INSPECT-PDF-META-020 の本文（Issue の外。下の「人が判断すること」2）
-- 実装の変更: 不要
-- 承認日: 2026-10-03（PR #132）
 - 状態: 取り込み済み（`specs/current/` へは仕様 PR #132 の中で反映。v0.24.0 の実装 PR の最終コミットで `specs/releases/v0.24.0/` へ移した）
 - 起こした日: 2026-10-03（JST）
 - 起こした役: Spec Steward

@@ -1,8 +1,13 @@
+---
+approved: 2026-10-01
+pr: 117
+implementation: required
+targets: [common_errors, nta_get_bunshokaitou, nta_get_jimu_unei, nta_get_kaisei_tsutatsu, nta_get_qa, nta_get_tax_answer, nta_get_tsutatsu, nta_inspect_pdf_meta, nta_search_bunshokaitou, nta_search_jimu_unei, nta_search_kaisei_tsutatsu, nta_search_qa, nta_search_tax_answer, nta_search_tsutatsu, resolve_abbreviation, search_rules]
+---
 # 変更: 引数の検査を inputSchema に書き、丸めずに `INVALID_ARGUMENT` にする（T1）
 
 - 対象: `specs/current/common_errors/spec.md`、`specs/current/search_rules/spec.md` と、tools/call で呼べる 14 ツールすべての `specs/current/<tool>/spec.md`
-- 実装の変更: 要（`taxonomy` の部分だけは「今の動きを意図とする」で、実装の変更は説明文のみ）
-- 承認日: 2026-10-01（PR #117）
+- 実装の変更の補足: `taxonomy` の部分だけは「今の動きを意図とする」で、実装の変更は説明文のみ
 - 訂正: 2026-10-02 に差分 `20261002-t1-docid-forms` で、SPEC-NTA-GET-KAISEI-TSUTATSU-010・SPEC-NTA-GET-JIMU-UNEI-010・SPEC-NTA-GET-BUNSHOKAITOU-010 の docId の形を、DB にある実際の値に合わせて緩めた（数字の桁数を見ず、使える文字と `/` の区切りだけを見る）。3 つの ID の本文はこの差分の spec.md で書き換えてある。訂正の理由と承認日は `specs/changes/20261002-t1-docid-forms/proposal.md`
 - 状態: 取り込み済み（v0.22.0）
 - 起こした日: 2026-10-01（JST）

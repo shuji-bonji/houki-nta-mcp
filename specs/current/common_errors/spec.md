@@ -1,9 +1,12 @@
+---
+spec_id: NTA
+kind: common
+approved: 2026-09-27
+pr: 77
+---
 # 機能: common_errors（全ツールに共通するエラー応答の形と引数の検査）
 
-- 機能 ID: NTA
-- 種類: 共通
 - 版: current
-- 承認日: 2026-09-27 （PR #77）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261004-db-location` は 2026-10-05（PR #142）。差分 `20261006-db-failure-paths` は 2026-10-06（PR #152）
 - 起こした元: v0.21.0 の `src/server.ts`、`src/tools/tool-args.ts`、`src/errors.ts`、`src/tools/definitions.ts`、`src/tools/handlers.ts`（ツールの登録の表）、`src/server.test.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #120（通信の失敗の code）、#138（案内のコマンドの形。0.25.0）、#144（開けない DB は INTERNAL_ERROR にしない。0.26.0）
 

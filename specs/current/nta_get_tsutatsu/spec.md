@@ -1,8 +1,11 @@
+---
+spec_id: NTA
+approved: 2026-09-22
+pr: 49
+---
 # 機能: nta_get_tsutatsu（基本通達の条項を 1 つ取得する）
 
-- 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-22（初版。PR #49 のマージ）。差分 `20260924-tsutatsu-clause-forms` は 2026-09-24（PR #53 のマージ）。差分 `20260925-tsutatsu-live-toc` は 2026-09-25（PR #59）。差分 `20260926-processing-flow` は 2026-09-26（PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-get-responses` は 2026-09-27（PR #89）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-specs-current-catchup` は 2026-10-03（PR #132）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261006-db-failure-paths` は 2026-10-06（PR #152）
 - 起こした元: v0.20.2 の `src/tools/handlers.ts`（`getTsutatsu`）、`src/tools/definitions.ts`、`src/tools/handlers.test.ts`
 - 関連する Issue: houki-nta-mcp #144（DB を開けないとき。0.26.0）
 - 関連する判断: houki-hub `docs/DECISIONS.md`（2026-09-21 の行）

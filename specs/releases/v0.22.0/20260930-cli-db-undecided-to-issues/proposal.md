@@ -1,8 +1,12 @@
+---
+approved: 2026-09-30
+pr: 114
+implementation: none
+targets: [cli_bulk_download, cli_entry, cli_health_check, cli_refresh, db_schema]
+---
 # 変更: CLI・DB の初版の「未決」のうち判断が要る 12 件を Issue に移す（#75 の続き）
 
 - 対象: `specs/current/db_schema/spec.md`、`specs/current/cli_entry/spec.md`、`specs/current/cli_bulk_download/spec.md`、`specs/current/cli_refresh/spec.md`、`specs/current/cli_health_check/spec.md`（`## 未決` の節）
-- 実装の変更: 不要
-- 承認日: 2026-09-30（PR #114）
 - 状態: 取り込み済み（`specs/current/` へは仕様 PR #114 の中で反映。v0.22.0 の実装 PR の最終コミットで `specs/releases/v0.22.0/` へ移した）
 - 起こした日: 2026-09-30（JST）
 - 起こした役: Spec Steward

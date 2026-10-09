@@ -1,8 +1,13 @@
+---
+approved: 2026-10-01
+pr: 118
+implementation: required
+targets: [common_errors, nta_get_bunshokaitou, nta_get_jimu_unei, nta_get_kaisei_tsutatsu, nta_get_qa, nta_get_tax_answer, resolve_abbreviation]
+---
 # 変更: 「見つからない」と「取得元の失敗」の code を分ける（T2）
 
 - 対象: `specs/current/common_errors/spec.md` と、`nta_get_qa` / `nta_get_tax_answer` / `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` の `specs/current/<tool>/spec.md`（`nta_get_bunshokaitou` と `resolve_abbreviation` は「未決」を消すだけで、差分のファイルは無い）
-- 実装の変更: 要（`nta_get_bunshokaitou` と `resolve_abbreviation` は「未決」を閉じるだけで、動きは変えない）
-- 承認日: 2026-10-01（PR #118）
+- 実装の変更の補足: `nta_get_bunshokaitou` と `resolve_abbreviation` は「未決」を閉じるだけで、動きは変えない
 - 状態: 取り込み済み（v0.22.0）
 - 起こした日: 2026-10-01（JST）
 - 起こした役: Spec Steward

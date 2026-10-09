@@ -1,8 +1,13 @@
+---
+approved: 2026-10-05
+pr: 142
+implementation: required
+targets: [cli_entry, cli_status, common_errors, db_schema, nta_get_bunshokaitou, nta_get_jimu_unei, nta_get_kaisei_tsutatsu, nta_get_tax_answer, nta_inspect_pdf_meta, nta_search_bunshokaitou, nta_search_jimu_unei, nta_search_kaisei_tsutatsu, nta_search_qa, nta_search_tax_answer, nta_search_tsutatsu, search_rules]
+---
 # 変更: ローカル DB の場所を、応答・起動時のログ・`--status` で確かめられるようにし、保存したタックスアンサーの索引を読めないことをログに残す（nta #138・#137、T6）
 
 - 対象: `db_schema` / `search_rules` / `cli_status`（新規）/ `cli_entry` / `common_errors` / `nta_search_tsutatsu` / `nta_search_qa` / `nta_search_tax_answer` / `nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` / `nta_search_bunshokaitou` / `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` / `nta_get_tax_answer` / `nta_inspect_pdf_meta` の `specs/current/<dir>/spec.md`
-- 実装の変更: 要（下の「実装の変更」）
-- 承認日: 2026-10-05（PR #142）
+- 実装の変更の補足: 下の「実装の変更」
 - 状態: 取り込み済み（v0.25.0）
 - 起こした日: 2026-10-04（JST）
 - 起こした役: Spec Steward

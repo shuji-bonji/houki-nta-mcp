@@ -1,8 +1,12 @@
+---
+approved: 2026-09-30
+pr: 104
+implementation: required
+targets: [nta_get_bunshokaitou, nta_get_jimu_unei, nta_get_kaisei_tsutatsu, nta_get_tax_answer, nta_inspect_pdf_meta]
+---
 # 変更: DB に入れる値と保存するファイル名の扱いを直す（#73）
 
 - 対象: `specs/current/nta_get_tax_answer/spec.md`、`specs/current/nta_get_kaisei_tsutatsu/spec.md`、`specs/current/nta_inspect_pdf_meta/spec.md`、`specs/current/nta_get_jimu_unei/spec.md`、`specs/current/nta_get_bunshokaitou/spec.md`
-- 実装の変更: 要
-- 承認日: 2026-09-30（PR #104）
 - 状態: 取り込み済み。実装は v0.21.3、`specs/current/` への取り込みは 2026-09-30（JST、v0.21.3 の後の取り込みコミット）
 - 起こした日: 2026-09-30（JST）
 - 起こした役: Spec Steward

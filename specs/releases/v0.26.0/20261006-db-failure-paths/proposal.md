@@ -1,8 +1,13 @@
+---
+approved: 2026-10-06
+pr: 152
+implementation: required
+targets: [cli_bulk_download, common_errors, db_schema, nta_get_bunshokaitou, nta_get_jimu_unei, nta_get_kaisei_tsutatsu, nta_get_tsutatsu, nta_inspect_pdf_meta, nta_search_bunshokaitou, nta_search_jimu_unei, nta_search_kaisei_tsutatsu, nta_search_qa, nta_search_tax_answer, nta_search_tsutatsu]
+---
 # 変更: ローカル DB を開けないときの読むだけのツールと書き戻すツールの応答、`--bulk-download-tax-answer` が索引を保存できないときの終わり方（nta #144・#145）
 
 - 対象: `db_schema` / `common_errors` / `cli_bulk_download` / `nta_get_tsutatsu` / `nta_search_tsutatsu` / `nta_search_qa` / `nta_search_tax_answer` / `nta_search_kaisei_tsutatsu` / `nta_search_jimu_unei` / `nta_search_bunshokaitou` / `nta_get_kaisei_tsutatsu` / `nta_get_jimu_unei` / `nta_get_bunshokaitou` / `nta_inspect_pdf_meta` の `specs/current/<dir>/spec.md`
-- 実装の変更: 要（下の「実装の変更」）
-- 承認日: 2026-10-06（PR #152）
+- 実装の変更の補足: 下の「実装の変更」
 - 状態: 取り込み済み（v0.26.0）
 - 起こした日: 2026-10-06（JST）
 - 起こした役: Spec Steward

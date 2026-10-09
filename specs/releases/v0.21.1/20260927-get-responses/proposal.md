@@ -1,8 +1,13 @@
+---
+approved: 2026-09-27
+pr: 89
+implementation: required
+targets: [nta_get_bunshokaitou, nta_get_jimu_unei, nta_get_kaisei_tsutatsu, nta_get_qa, nta_get_tsutatsu, nta_inspect_pdf_meta, resolve_abbreviation]
+---
 # 変更: 取得系ツールと nta_inspect_pdf_meta の応答の形に仕様 ID を振る
 
 - 対象: `specs/current/` の `nta_get_bunshokaitou`・`nta_get_jimu_unei`・`nta_get_kaisei_tsutatsu`・`nta_get_tsutatsu`・`nta_get_qa`・`resolve_abbreviation`・`nta_inspect_pdf_meta` の `spec.md`（「できること」への追加）
-- 実装の変更: 要（受入テストを足す。`src/` は変えない）
-- 承認日: 2026-09-27（PR #89）
+- 実装の変更の補足: 受入テストを足す。`src/` は変えない
 - 状態: 取り込み済み。受入テストは v0.21.1、`specs/current/` への取り込みは 2026-09-28（JST、実装 PR の最終コミット）
 - 起こした日: 2026-09-27（JST）
 - 起こした役: Spec Steward

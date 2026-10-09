@@ -1,8 +1,11 @@
+---
+spec_id: NTA
+approved: 2026-09-26
+pr: 63
+---
 # 機能: nta_get_tax_answer（タックスアンサーを番号で 1 件取得する）
 
-- 機能 ID: NTA
 - 版: current
-- 承認日: 2026-09-26（初版と差分 `20260926-processing-flow`。PR #63）。差分 `20260926-undecided-to-issues` は 2026-09-26（PR #74）。差分 `20260927-argument-and-parse-errors` は 2026-09-27（PR #84）。差分 `20260927-fetch-paths` は 2026-09-27（PR #88）。差分 `20260927-index-status-marks` は 2026-09-27（PR #91）。差分 `20260930-nta-73-db-values` は 2026-09-30（PR #104）。差分 `20261001-t1-argument-guards` は 2026-10-01（PR #117）。差分 `20261001-t2-error-codes` は 2026-10-01（PR #118）。差分 `20261001-t3-normalize` は 2026-10-01（PR #119）。差分 `20261003-t4-response-shape` は 2026-10-03（PR #125）。差分 `20261003-source-paths` は 2026-10-03（PR #134）。差分 `20261004-db-location` は 2026-10-05（PR #142）。差分 `20261005-tax-answer-018-example` は 2026-10-05（PR #148）。差分 `20261005-tax-answer-h3-sections` は 2026-10-05（PR #149）
 - 起こした元: v0.21.0 の `src/tools/handlers.ts`（`getTaxAnswer`）、`src/tools/definitions.ts`、`src/services/tax-answer-render.ts`、`src/services/tax-answer-parser.ts`、`src/services/index-status.ts`、`src/tools/handlers.test.ts`、`src/tools/get-db-first.test.ts`
 - 関連する Issue: houki-nta-mcp #29（DB を先に引く）、#30（索引から消えた文書の印）、#128（8xxx 帯と税目フォルダ）、#120（通信の失敗の code）、#137（保存した索引を読めないとき。0.25.0）、#147（小見出し h3 の節と sections[].level。0.25.1）
 

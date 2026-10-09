@@ -1,9 +1,12 @@
+---
+spec_id: NTA
+kind: cli
+approved: 2026-09-29
+pr: 103
+---
 # 機能: cli_health_check（国税庁サイトの代表ページの確認と、基準（baseline）との比較）
 
-- 機能 ID: NTA
-- 種類: CLI
 - 版: current
-- 承認日: 2026-09-29（PR #103）。差分 `20260930-cli-db-undecided-to-issues` は 2026-09-30（PR #114）。差分 `20261003-db-cli` は 2026-10-04（PR #135）
 - 起こした元: v0.21.2 の `src/cli.ts`（`--health-check`・`--check-baseline-drift`・`--strict`）、`src/services/health-check.ts`（`CANARY_TARGETS`）、`src/services/baseline-drift.ts`、`src/services/menu-parser.ts`、`src/services/health-store.ts`（baseline ファイル）、`src/services/health-thresholds.ts`、`src/services/bulk-aggregation.ts`、`src/services/baseline-drift.test.ts`、`src/services/health-store.test.ts`
 - 関連する Issue: houki-nta-mcp #111（--check-baseline-drift の判定の対象外の 4 件。0.24.0）
 

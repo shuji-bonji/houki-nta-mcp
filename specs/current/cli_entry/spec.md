@@ -1,9 +1,12 @@
+---
+spec_id: NTA
+kind: cli
+approved: 2026-09-29
+pr: 103
+---
 # 機能: cli_entry（`houki-nta-mcp` コマンドの起動と引数の振り分け）
 
-- 機能 ID: NTA
-- 種類: CLI
 - 版: current
-- 承認日: 2026-09-29（PR #103）。差分 `20260930-cli-db-undecided-to-issues` は 2026-09-30（PR #114）。差分 `20261003-t5-docs-mismatch` は 2026-10-03（PR #126）。差分 `20261003-db-cli` は 2026-10-04（PR #135）。差分 `20261004-db-location` は 2026-10-05（PR #142）
 - 起こした元: v0.21.2 の `src/index.ts`、`src/cli.ts`（引数の読み方・`--help`・`--version`・処理の振り分け）、`src/config.ts`、`src/db/index.ts`（`--db-path` の既定）、`src/cli.test.ts`
 - 関連する Issue: houki-nta-mcp #25（税目フラグの値の検査。cli_bulk_download に書く）、#35（`--quickstart` と使い方の並び）、#106（引数の検査と --version の文。0.24.0）、#138（--status と起動時のログの DB の場所。0.25.0）
 
