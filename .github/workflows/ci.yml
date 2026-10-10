@@ -42,10 +42,9 @@ jobs:
         with:
           node-version: 22
           cache: 'npm'
-      # check-pr-scope.mjs は @shuji-bonji/spec-ids の readFrontMatter を import する
+      # npx spec-ids pr-scope で使う @shuji-bonji/spec-ids（devDependencies）を入れるため
       - run: npm ci
-      - run: node --test .github/scripts/check-pr-scope.test.mjs
-      - run: node .github/scripts/check-pr-scope.mjs
+      - run: npx spec-ids pr-scope
         env:
           BASE_REF: origin/${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- CI の `pr-scope` を、`.github/scripts/check-pr-scope.mjs` のコピーから、`@shuji-bonji/spec-ids` 0.4.0 のサブコマンド `npx spec-ids pr-scope` に替えました（[shuji-bonji/spec-ids#9](https://github.com/shuji-bonji/spec-ids/issues/9)）。コピーとそのテスト（`check-pr-scope.test.mjs`）は消しました。判定はコピーと次の 3 点で変わります
+  - `specs/{current,changes,releases}/.gitkeep` は、どの種類の PR で足しても消しても止めません
+  - 実装 PR で、取り込み済み（`specs/releases/<tag>/` に同じ `<id>` がある）差分の `specs/changes/<id>/` の残りを消すことを通します
+  - 仕様 PR で `specs/changes/` の proposal.md を `spec-ids migrate` の形に書き換えることを通す例外は、無くなりました（`specs/changes/` は空なので、今当たる proposal.md はありません）
+- 開発用の依存 `@shuji-bonji/spec-ids` を `^0.4.0` にしました。npm で配布する中身（`dist/`）は変わりません
+
 ## [0.27.0] - 2026-10-09
 
 **minor リリース** — ローカル DB の置き場所のフォルダー（またはパスの途中のフォルダー）に入る権限が無いとき、DB を「ファイルが無い」ではなく「開けない」と判定するようにした（#154）。0.26.0 でそろえた開けない DB の扱いが、この場面でもすべての入口で働く。あわせて、`nta_get_tsutatsu` がライブ取得に対応していない通達（`電帳法取通` など）に、実行すると引数の誤りで止まる投入のコマンドを案内していたのをやめ、今は取り込めないことを返すようにした（#155）。仕様 PR は #160（差分 `20261009-db-folder-access-and-tsutatsu-guide`）と #157（差分 `20261009-inspect-pdf-meta-qa-jirei`、仕様の文だけ）。DB のスキーマの版は 12 のまま。
