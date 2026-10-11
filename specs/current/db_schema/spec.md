@@ -8,7 +8,7 @@ pr: 103
 
 - 版: current
 - 起こした元: v0.21.2 の `src/db/index.ts`、`src/db/schema.ts`、`src/services/bulk-downloader.ts`（`bulk_completed_at` と書き戻し）、`src/db/schema.test.ts`、`src/services/db-writeback.test.ts`、`src/services/bulk-downloader.test.ts`
-- 関連する Issue: houki-nta-mcp #27（全角英字の揃え方。版 4 → 5）、#29（`structured_json`。版 5 → 6）、#30（`orphaned_at`。版 6 → 7）、#45（案内文の行を除く。版 7 → 8・8 → 9）、#54（`bulk_completed_at` と `tsutatsu_toc`。版 9 → 10）、#107・#112・#128（版 11 → 12。DB の状態と入口ごとの扱い、doc_type の CHECK、タックスアンサーの索引）、#138（DB の場所の見え方。0.25.0）、#137（保存したタックスアンサーの索引を読めないとき。0.25.0）、#144（開けない DB の読むだけのツールの応答と書き戻すツールの扱い。0.26.0）、#145（--bulk-download-tax-answer が索引を保存できないとき。0.26.0）、#154（置き場所のフォルダーに入る権限が無いときの判定。0.27.0）、#155（ライブ取得に対応していない通達に、実行できない投入のコマンドを案内しない。0.27.0）
+- 関連する Issue: houki-nta-mcp #27（全角英字の揃え方。版 4 → 5）、#29（`structured_json`。版 5 → 6）、#30（`orphaned_at`。版 6 → 7）、#45（案内文の行を除く。版 7 → 8・8 → 9）、#54（`bulk_completed_at` と `tsutatsu_toc`。版 9 → 10）、#107・#112・#128（版 11 → 12。DB の状態と入口ごとの扱い、doc_type の CHECK、タックスアンサーの索引）、#138（DB の場所の見え方。0.25.0）、#137（保存したタックスアンサーの索引を読めないとき。0.25.0）、#144（開けない DB の読むだけのツールの応答と書き戻すツールの扱い。0.26.0）、#145（--bulk-download-tax-answer が索引を保存できないとき。0.26.0）、#154（置き場所のフォルダーに入る権限が無いときの判定。0.27.0）、#155（ライブ取得に対応していない通達に、実行できない投入のコマンドを案内しない。0.27.0）、#164（nta_get_tsutatsu の DB の経路の ARTICLE_NOT_FOUND の案内のコマンドを 027 の形にする。0.27.1）
 
 この文書は「利用者の手元にできる DB が何を持ち、版を上げたときにどうなるか」を書きます。どう実装しているか（関数名）は書きません。テーブル名・列名は、利用者が sqlite3 で開いて見られ、検索・取得ツールの応答の元になる外から見える約束なので書きます。
 
@@ -336,19 +336,19 @@ MCP の応答と CLI の出力で利用者に実行を勧めるコマンドは�
 
 | 出る場所 | 箇所 | 仕様 ID |
 | --- | --- | --- |
-| MCP の応答 | `next_actions[]` のうち `action: "cli_bulk_download"` の `example.command` | SPEC-NTA-DB-SCHEMA-029、SPEC-NTA-COMMON-ERRORS-017、SPEC-NTA-GET-TSUTATSU-010 |
+| MCP の応答 | `next_actions[]` のうち `action: "cli_bulk_download"` の `example.command` | SPEC-NTA-DB-SCHEMA-029、SPEC-NTA-COMMON-ERRORS-017、SPEC-NTA-GET-TSUTATSU-005、SPEC-NTA-GET-TSUTATSU-010 |
 | MCP の応答 | 「DB に 1 件も無い」ときの `hint` と、版の合わない DB の `hint` の中のコマンド | SPEC-NTA-DB-SCHEMA-029、021 の注 2 |
 | MCP の応答 | DB を開けないときの `hint` の中の `--status` のコマンド | SPEC-NTA-DB-SCHEMA-029 |
 | MCP の応答 | 税目を絞って追加する案内のコマンド | SPEC-NTA-SEARCH-QA-005、SPEC-NTA-SEARCH-BUNSHOKAITOU-002 |
 | MCP の応答 | 「DB を投入した後に公開された文書は、`<コマンド>` をもう一度実行すると取り込めます」 | SPEC-NTA-GET-KAISEI-TSUTATSU-002、SPEC-NTA-GET-JIMU-UNEI-002、SPEC-NTA-GET-BUNSHOKAITOU-003 |
 | MCP の応答 | 取得時点を読めないときの `hint` | SPEC-NTA-COMMON-ERRORS-017 |
-| MCP の応答 | `nta_get_tsutatsu` の `hint` の `--bulk-download --tsutatsu="<正式名>"` を付けたコマンド（基本通達 4 種で、候補ページに条項が無いとき。ライブ取得に対応していない通達（SPEC-NTA-GET-TSUTATSU-007）にはコマンドを案内しない） | SPEC-NTA-GET-TSUTATSU-010 |
+| MCP の応答 | `nta_get_tsutatsu` の `hint` の `--bulk-download --tsutatsu="<正式名>"` を付けたコマンド（基本通達 4 種で、候補ページに条項が無いとき（SPEC-NTA-GET-TSUTATSU-010）と、bulk download 済みの通達に条項が無いとき（SPEC-NTA-GET-TSUTATSU-005）。ライブ取得に対応していない通達（SPEC-NTA-GET-TSUTATSU-007）と、基本通達 4 種以外の通達の条項が DB に残っているとき（005 の (b)）にはコマンドを案内しない） | SPEC-NTA-GET-TSUTATSU-005、SPEC-NTA-GET-TSUTATSU-010 |
 | MCP の応答 | `freshness.warning` の中のコマンド | SPEC-NTA-SEARCH-RULES-017 |
 | CLI の出力 | SPEC-NTA-DB-SCHEMA-021 の CLI のエラーの文の中のコマンド、`--status` の `(DB がまだありません — …)` の行 | SPEC-NTA-DB-SCHEMA-021、SPEC-NTA-CLI-STATUS-004 |
 
 CLI の出力でも同じ形にする（CLI を `HOUKI_NTA_DB_PATH=… npx …` のように 1 回だけ変数を付けて実行した人や、`--db-path` を付けて実行した人が、案内のコマンドをそのまま実行して同じ DB を開けるようにするため）。
 
-次の箇所はこの形にしない: `--help` の使い方（SPEC-NTA-CLI-ENTRY-002）、SPEC-NTA-DB-SCHEMA-029 の「その種別が 1 件も無い」ときの文の「投入したシェルで `npx -y @shuji-bonji/houki-nta-mcp@latest --status` を実行し」（MCP サーバーの設定ではなく、投入したシェルの設定で開く DB を確かめるためのコマンドなので、変数も `--db-path` も付けない。029 の DB を開けないときの文の `--status` は、MCP サーバーが開こうとした DB を確かめるためのものなので、この形にする）、`--quickstart` が終わった後の「次に試すこと」の行（SPEC-NTA-CLI-BULK-DOWNLOAD-007）、tools/list のツールの説明（フラグだけを書いている）、フラグだけを書いた文（`nta_get_tsutatsu` の `ARTICLE_NOT_FOUND` の `` `--bulk-download` で再取得してください``、SPEC-NTA-INSPECT-PDF-META-001 の DB はあるがその文書が無いときの `hint`、SPEC-NTA-DB-SCHEMA-021 の CLI のエラーの文の `か --bulk-download-all で作ってください` の `--bulk-download-all`）。
+次の箇所はこの形にしない: `--help` の使い方（SPEC-NTA-CLI-ENTRY-002）、SPEC-NTA-DB-SCHEMA-029 の「その種別が 1 件も無い」ときの文の「投入したシェルで `npx -y @shuji-bonji/houki-nta-mcp@latest --status` を実行し」（MCP サーバーの設定ではなく、投入したシェルの設定で開く DB を確かめるためのコマンドなので、変数も `--db-path` も付けない。029 の DB を開けないときの文の `--status` は、MCP サーバーが開こうとした DB を確かめるためのものなので、この形にする）、`--quickstart` が終わった後の「次に試すこと」の行（SPEC-NTA-CLI-BULK-DOWNLOAD-007）、tools/list のツールの説明（フラグだけを書いている）、フラグだけを書いた文（SPEC-NTA-INSPECT-PDF-META-001 の DB はあるがその文書が無いときの `hint`、SPEC-NTA-DB-SCHEMA-021 の CLI のエラーの文の `か --bulk-download-all で作ってください` の `--bulk-download-all`）。
 
 例（ホームディレクトリが `/Users/bonji`）:
 
@@ -359,6 +359,8 @@ CLI の出力でも同じ形にする（CLI を `HOUKI_NTA_DB_PATH=… npx …` 
 | `HOUKI_NTA_DB_PATH=/tmp/x/cache.db` | `HOUKI_NTA_DB_PATH='/tmp/x/cache.db' npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-qa` |
 | `XDG_CACHE_HOME=/Users/bonji/Library/Caches` | `XDG_CACHE_HOME="$HOME/Library/Caches" npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-qa` |
 | CLI に `--db-path=/Users/bonji/dev$1/cache.db`（`'…'` で囲んで渡す） | `npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download-qa --db-path="$HOME"'/dev$1/cache.db'` |
+
+v0.27.0 までは、`nta_get_tsutatsu` の DB の経路の `ARTICLE_NOT_FOUND`（SPEC-NTA-GET-TSUTATSU-005）の `hint`（`` `--bulk-download` で再取得してください``）も「フラグだけを書いた文」としてこの形の外に置いていた。#164 で 005 の `hint` と `next_actions` を SPEC-NTA-GET-TSUTATSU-010 とそろえ、上の表に入れた（0.27.1）。
 
 v0.24.x のコマンドは、どの場合も `houki-nta-mcp --bulk-download-qa`（グローバルにインストールしていないと `command not found`、`npx houki-nta-mcp` は npm に無い名前で 404。houki-egov-mcp #108 の 2 と同じ）。
 

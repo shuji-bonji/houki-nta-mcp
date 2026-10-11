@@ -9,7 +9,7 @@ targets: [db_schema, nta_get_tsutatsu]
 
 - 対象: `nta_get_tsutatsu` / `db_schema` の `specs/current/<dir>/spec.md`
 - 実装の変更の補足: 下の「実装の変更」
-- 状態: 草案
+- 状態: 取り込み済み（v0.27.1）
 - 起こした日: 2026-10-12（JST）
 - 起こした役: Spec Steward
 - 対象 Issue: houki-nta-mcp #164（`nta_get_tsutatsu` の `ARTICLE_NOT_FOUND`（DB の経路）の `hint` が案内コマンドの形（027）に合わず、`next_actions` と `available_clauses` の打ち切りの印が無い）
