@@ -6,6 +6,7 @@
  * - SPEC-NTA-SEARCH-RULES-011・015・020（search_rules）
  * - SPEC-NTA-SEARCH-TSUTATSU-005・010（0 件の count・freshness・legal_status）
  * - SPEC-NTA-GET-TSUTATSU-010（国税庁サイトの経路の available_clauses は最大 50 件）
+ * - SPEC-NTA-GET-TSUTATSU-019（available_clauses_total と、上限で切れたときの hint の文。差分 20261012-tsutatsu-db-not-found-guide、#164）
  * - SPEC-NTA-GET-JIMU-UNEI-004・005・006、SPEC-NTA-GET-KAISEI-TSUTATSU-004・005・006、
  *   SPEC-NTA-GET-BUNSHOKAITOU-004・005・006（json の null と markdown の「取得元」の行）
  * - SPEC-NTA-GET-QA-008・010、SPEC-NTA-GET-TAX-ANSWER-008・009
@@ -416,7 +417,7 @@ ${blocks.join('\n')}
 }
 
 describe('SPEC-NTA-GET-TSUTATSU-010 候補ページのどれにも条項が無いときは、見たページの番号（最大 50 件）と URL を返す', () => {
-  it('SPEC-NTA-GET-TSUTATSU-010 取得したページに条項が 80 件あり、どれも求めた条項でないとき、available_clauses は先頭から 50 件', async () => {
+  it('SPEC-NTA-GET-TSUTATSU-010 SPEC-NTA-GET-TSUTATSU-019 取得したページに条項が 80 件あり、どれも求めた条項でないとき、available_clauses は先頭から 50 件で、available_clauses_total に総数、hint の末尾に打ち切りの文', async () => {
     const toc = readFileSync(
       resolve(fixturesDir, 'www.nta.go.jp_law_tsutatsu_kihon_shohi_01.htm'),
       'utf8'
@@ -434,13 +435,24 @@ describe('SPEC-NTA-GET-TSUTATSU-010 候補ページのどれにも条項が無�
     const r = (await getTsutatsu(
       { name: '消基通', clause: '1-4-99', format: 'json' },
       { fetchImpl, dbPath: ':memory:', pageIntervalMs: 0 }
-    )) as { code?: string; available_clauses?: string[]; searched_urls?: string[] };
+    )) as {
+      code?: string;
+      hint?: string;
+      available_clauses?: string[];
+      available_clauses_total?: number;
+      searched_urls?: string[];
+    };
 
     expect(r.code).toBe('ARTICLE_NOT_FOUND');
     expect(r.available_clauses).toHaveLength(50);
     expect(r.available_clauses?.[0]).toBe('1-4-1');
     expect(r.available_clauses?.[49]).toBe('1-4-50');
     expect(r.searched_urls?.length).toBeGreaterThan(0);
+    // SPEC-NTA-GET-TSUTATSU-019: 取得した候補ページにある条項の総数（1 ページ目だけでも 80 件）と、上限で切れた印
+    expect(r.available_clauses_total).toBeGreaterThanOrEqual(80);
+    expect(
+      r.hint?.endsWith(`。available_clauses は先頭 50 件です（全 ${r.available_clauses_total} 件）`)
+    ).toBe(true);
   }, 30_000);
 });
 
