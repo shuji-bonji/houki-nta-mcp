@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-10-12
+
+**patch リリース** — `nta_get_tsutatsu` で、bulk download 済みの通達に求めた条項が無いとき（`ARTICLE_NOT_FOUND`、DB の経路）の `hint` と `next_actions` を、国税庁サイトの経路（候補ページのどれにも条項が無いとき）と同じ組み立てにした。あわせて、`ARTICLE_NOT_FOUND` で `available_clauses`（最大 50 件）を返すときに、一覧の元になった条項の総数を `available_clauses_total` に付け、50 件で切れたことを `hint` に書くようにした（#164）。仕様 PR は #PR-SPEC（差分 `20261012-tsutatsu-db-not-found-guide`。SPEC-NTA-GET-TSUTATSU-005・010・SPEC-NTA-DB-SCHEMA-027 を変え、SPEC-NTA-GET-TSUTATSU-019 を足した）。`code`・`error` と既存のフィールドは変えていない。DB のスキーマの版は 12 のまま。
+
+閉じる Issue: #164
+
+### Fixed
+
+- `nta_get_tsutatsu` で、bulk download 済みの通達に求めた条項が無いとき（`ARTICLE_NOT_FOUND`、DB の経路）の `hint` と `next_actions` を、国税庁サイトの経路（候補ページのどれにも条項が無いとき）と同じ組み立てにしました（#164、SPEC-NTA-GET-TSUTATSU-005）。`hint` にはその通達の番号の形と `nta_search_tsutatsu` での検索、`npx -y @shuji-bonji/houki-nta-mcp@latest --bulk-download --tsutatsu="<正式名>"`（DB の場所を環境変数で決めているときはその変数を前に付けた形。SPEC-NTA-DB-SCHEMA-027）を書き、`next_actions` に `nta_search_tsutatsu` と `cli_bulk_download` の 2 件を入れます。0.27.0 までは `hint` がフラグだけ（`` `--bulk-download` で再取得してください ``）で、`next_actions` がありませんでした。基本通達 4 種以外の通達の条項が DB に残っているとき（0.23.x 以前に投入した DB）は、投入のフラグ `--tsutatsu` が 4 種しか受け付けないので、`hint` にその旨を書き、`next_actions` は `nta_search_tsutatsu` の 1 件です
+- `nta_get_tsutatsu` の `ARTICLE_NOT_FOUND` で `available_clauses`（最大 50 件）を返すとき、一覧の元になった条項の総数を `available_clauses_total` に付け、50 件を超えたときは `hint` の末尾に `available_clauses は先頭 50 件です（全 N 件）` と書くようにしました（#164、SPEC-NTA-GET-TSUTATSU-019）。DB の経路（SPEC-NTA-GET-TSUTATSU-005）では DB にあるその通達の条項の数、国税庁サイトの経路（SPEC-NTA-GET-TSUTATSU-010）では取得した候補ページにある条項の数です。0.27.0 までは、一覧が全件か途中までかを応答から読み取れませんでした
+
 ### Changed
 
 - CI の `pr-scope` を、`.github/scripts/check-pr-scope.mjs` のコピーから、`@shuji-bonji/spec-ids` 0.4.0 のサブコマンド `npx spec-ids pr-scope` に替えました（[shuji-bonji/spec-ids#9](https://github.com/shuji-bonji/spec-ids/issues/9)）。コピーとそのテスト（`check-pr-scope.test.mjs`）は消しました。判定はコピーと次の 3 点で変わります
