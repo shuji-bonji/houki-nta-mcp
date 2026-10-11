@@ -51,6 +51,7 @@ import {
 } from '../errors.js';
 import type { ClauseRow, DocumentSearchHit } from '../services/db-search.js';
 import {
+  countClauses,
   countDocuments,
   describeExpansionNotes,
   describeSearchNotes,
@@ -372,6 +373,23 @@ function guardDocId(form: DocIdForm, docId: string): LawServiceError | { docId: 
  */
 const AVAILABLE_CLAUSES_LIMIT = 50;
 
+/**
+ * `available_clauses` が上限で切れたときに `hint` の末尾に足す文（SPEC-NTA-GET-TSUTATSU-019）。
+ * 総数が上限以下なら一覧は全件なので、何も足さない
+ *
+ * @param total 一覧の元になった条項の総数（`available_clauses_total`）
+ */
+function availableClausesTruncationNote(total: number): string | undefined {
+  return total > AVAILABLE_CLAUSES_LIMIT
+    ? `available_clauses は先頭 ${AVAILABLE_CLAUSES_LIMIT} 件です（全 ${total} 件）`
+    : undefined;
+}
+
+/** `--bulk-download --tsutatsu="<正式名>"` を付けた案内のコマンド（SPEC-NTA-DB-SCHEMA-027） */
+function bulkDownloadTsutatsuCommand(formal: string, location: DbLocation): string {
+  return guideCommand(`--bulk-download --tsutatsu="${formal}"`, location);
+}
+
 // NOT_IMPLEMENTED は v0.5.0-alpha.1 で全 search 系ハンドラが本実装になり、未使用に。
 // 将来また「未実装スタブ」を作る際は復活させる。
 
@@ -576,12 +594,43 @@ export async function getTsutatsu(
     //    国税庁サイトには取りに行かず available_clauses を返す。国税庁サイトから取れない通達も同じ。
     //    書き戻した節しか無い通達は、国税庁サイトへ進む
     if (hasAnyClause(db, resolved.formal) && (!rootUrl || isBulkCompleted(db, resolved.formal))) {
+      // v0.27.1（SPEC-NTA-GET-TSUTATSU-005・019、#164）: hint と next_actions を国税庁サイトの経路（010）と同じ
+      // 組み立てにし、一覧の総数を available_clauses_total に付ける。v0.27.0 までは hint がフラグだけの
+      // `--bulk-download` で、next_actions が無かった
+      const total = countClauses(db, resolved.formal);
+      const hints: string[] = [];
+      let nextActions: NextAction[];
+      if (rootUrl) {
+        // (a) 基本通達 4 種: 番号の形の確認、検索、027 の形のコマンドで全節を取り直す案内
+        const style = TSUTATSU_TOC_STYLES[resolved.formal] ?? 'shohi';
+        const bulkCommand = bulkDownloadTsutatsuCommand(resolved.formal, location);
+        hints.push(
+          `${resolved.formal}の${describeClauseForm(style)}。番号の形を確かめてください`,
+          `\`nta_search_tsutatsu\` で条項を検索するか、\`${bulkCommand}\` で全節を取り直すと、DB に投入した後の改正を反映できます`
+        );
+        nextActions = [
+          NEXT_ACTIONS.searchTsutatsu(args.clause),
+          NEXT_ACTIONS.bulkDownload(bulkCommand),
+        ];
+      } else {
+        // (b) 基本通達 4 種以外（0.23.x 以前に投入した DB に残っている通達）: 投入のフラグ --tsutatsu は
+        // 4 種しか受け付けないので（SPEC-NTA-CLI-BULK-DOWNLOAD-011）、投入のコマンドを案内しない
+        hints.push(
+          `この通達（${resolved.formal}）は国税庁サイトから取れず、投入のフラグ（--bulk-download の --tsutatsu）でも DB に入れられません（入れられるのは基本通達 4 種だけです）。DB にある条項は available_clauses のとおりです`,
+          '`nta_search_tsutatsu` で条項を検索してください'
+        );
+        nextActions = [NEXT_ACTIONS.searchTsutatsu(args.clause)];
+      }
+      const truncation = availableClausesTruncationNote(total);
+      if (truncation) hints.push(truncation);
       return makeError(
         'ARTICLE_NOT_FOUND',
         `clause "${args.clause}" は DB 内の "${resolved.formal}" に見つかりません`,
         {
-          hint: '別の clause 番号を試すか、`--bulk-download` で再取得してください（最新の改正反映用）',
+          hint: hints.join('。'),
           available_clauses: listAvailableClauses(db, resolved.formal, AVAILABLE_CLAUSES_LIMIT),
+          available_clauses_total: total,
+          next_actions: nextActions,
         }
       );
     }
@@ -655,7 +704,7 @@ function renderLiveResult(
   dbUnopenable = false
 ) {
   // 案内のコマンド（SPEC-NTA-DB-SCHEMA-027）。v0.24.x までは `houki-nta-mcp --bulk-download --tsutatsu="<正式名>"`
-  const bulkCommand = guideCommand(`--bulk-download --tsutatsu="${formal}"`, location);
+  const bulkCommand = bulkDownloadTsutatsuCommand(formal, location);
   switch (live.kind) {
     case 'fetch_error':
       // v0.24.0（SPEC-NTA-GET-TSUTATSU-009・SPEC-NTA-COMMON-ERRORS-018）: 失敗の種類ごとの SOURCE_* にし、tool を付ける。
@@ -693,6 +742,10 @@ function renderLiveResult(
           `1 回の呼び出しで国税庁サイトから取るページの上限（${TSUTATSU_LIVE_FETCH.maxPages}）に達したため、残りの候補ページ ${live.skippedByLimit} 件は見ていません`
         );
       }
+      // v0.27.1（SPEC-NTA-GET-TSUTATSU-019、#164）: 一覧の総数を付け、上限で切れたことを hint に書く
+      const availableTotal = live.availableClauses.length;
+      const truncation = availableClausesTruncationNote(availableTotal);
+      if (truncation) hints.push(truncation);
       const message = live.allMissing
         ? `clause "${args.clause}" の候補ページは国税庁サイトにありませんでした（${live.searchedUrls.length} ページ）`
         : `clause "${args.clause}" は国税庁サイトの候補ページ（${live.searchedUrls.length} ページ）に見つかりません`;
@@ -701,6 +754,7 @@ function renderLiveResult(
         hint: hints.join('。'),
         // v0.23.0（T4）: DB の経路と同じく最大 50 件にする（SPEC-NTA-GET-TSUTATSU-010）
         available_clauses: live.availableClauses.slice(0, AVAILABLE_CLAUSES_LIMIT),
+        available_clauses_total: availableTotal,
         searched_urls: live.searchedUrls,
         next_actions: dbUnopenable
           ? [NEXT_ACTIONS.searchTsutatsu(args.clause ?? '')]

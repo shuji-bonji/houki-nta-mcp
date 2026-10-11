@@ -759,6 +759,19 @@ export function hasAnyClause(db: DatabaseT.Database, formalName?: string): boole
 }
 
 /**
+ * その通達の条項の総数（SPEC-NTA-GET-TSUTATSU-019 の `available_clauses_total`）。
+ * `listAvailableClauses` が上限で切る前の件数
+ */
+export function countClauses(db: DatabaseT.Database, formalName: string): number {
+  const row = db
+    .prepare(
+      `SELECT count(*) AS n FROM clause c JOIN tsutatsu t ON t.id = c.tsutatsu_id WHERE t.formal_name = ?`
+    )
+    .get(formalName) as { n: number };
+  return row.n;
+}
+
+/**
  * Issue #54: その通達を bulk download で全章取り込んであるか（`tsutatsu.bulk_completed_at`）。
  * 国税庁サイトから取って書き戻した節しか無い通達は false
  */

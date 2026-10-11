@@ -77,6 +77,11 @@ export interface LawServiceError {
   resolved?: unknown;
   /** houki-nta-mcp 固有: DB 内に存在する clause 番号一覧 */
   available_clauses?: unknown;
+  /**
+   * houki-nta-mcp 固有: `available_clauses` の元になった条項の総数（SPEC-NTA-GET-TSUTATSU-019、#164）。
+   * `available_clauses` は最大 50 件なので、これより小さいときは一覧が先頭 50 件で切れている
+   */
+  available_clauses_total?: number;
   /** houki-nta-mcp 固有: 国税庁サイトから条項を探して取得した（取得を試みた）ページの URL（Issue #54） */
   searched_urls?: string[];
   /** houki-nta-mcp 固有: DB 内に存在する docId 一覧 */
@@ -102,6 +107,7 @@ export function makeError(
     detail?: LawServiceError['detail'];
     resolved?: unknown;
     available_clauses?: unknown;
+    available_clauses_total?: number;
     searched_urls?: string[];
     available_doc_ids?: unknown;
     supported_for_live?: unknown;
@@ -119,6 +125,9 @@ export function makeError(
   if (options.resolved !== undefined) err.resolved = options.resolved;
   if (options.available_clauses !== undefined) {
     err.available_clauses = options.available_clauses;
+  }
+  if (options.available_clauses_total !== undefined) {
+    err.available_clauses_total = options.available_clauses_total;
   }
   if (options.searched_urls !== undefined) err.searched_urls = options.searched_urls;
   if (options.available_doc_ids !== undefined) {
